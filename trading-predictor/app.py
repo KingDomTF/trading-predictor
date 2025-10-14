@@ -248,7 +248,7 @@ st.markdown("**Stima la probabilità di successo delle tue operazioni XAU/USD**"
 
 # Sidebar
 with st.sidebar:
-    st.header(⚙️ Parametri Operazione")
+    st.header("⚙️ Parametri Operazione")
     
     direction = st.selectbox("📊 Direzione", ["long", "short"])
     entry = st.number_input("💰 Entry Price", value=2000.0, step=0.1, format="%.2f")
