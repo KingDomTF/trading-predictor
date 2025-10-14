@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 from datetime import datetime, timedelta
 import warnings
@@ -17,27 +15,27 @@ def calculate_technical_indicators(df):
     df = df.copy()
     
     # EMA
-    df['EMA_20_60'] = df['Close'].ewm(span=20).mean()
-    df['EMA_50_60'] = df['Close'].ewm(span=50).mean()
+    df['EMA_20'] = df['Close'].ewm(span=20).mean()
+    df['EMA_50'] = df['Close'].ewm(span=50).mean()
     
     # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
-    df['RSI_60'] = 100 - (100 / (1 + rs))
+    df['RSI'] = 100 - (100 / (1 + rs))
     
     # MACD
     exp1 = df['Close'].ewm(span=12).mean()
     exp2 = df['Close'].ewm(span=26).mean()
-    df['MACD_60'] = exp1 - exp2
-    df['MACD_signal_60'] = df['MACD_60'].ewm(span=9).mean()
+    df['MACD'] = exp1 - exp2
+    df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
     
     # Bollinger Bands
-    df['BB_middle_60'] = df['Close'].rolling(window=20).mean()
+    df['BB_middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
-    df['BB_upper_60'] = df['BB_middle_60'] + (bb_std * 2)
-    df['BB_lower_60'] = df['BB_middle_60'] - (bb_std * 2)
+    df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
+    df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
     
     # ATR
     high_low = df['High'] - df['Low']
@@ -45,10 +43,14 @@ def calculate_technical_indicators(df):
     low_close = np.abs(df['Low'] - df['Close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = np.max(ranges, axis=1)
-    df['ATR_60'] = true_range.rolling(14).mean()
+    df['ATR'] = true_range.rolling(14).mean()
     
     # Volume
-    df['Volume_MA_60'] = df['Volume'].rolling(window=20).mean()
+    df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
+    
+    # Trend
+    df['Price_Change'] = df['Close'].pct_change()
+    df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x[-1] > x[0] else 0)
     
     df = df.dropna()
     return df
@@ -62,26 +64,23 @@ def generate_features(df_ind, entry, sl, tp, direction, main_tf):
     tp_distance = abs(tp - entry) / entry * 100
     
     features = {
-        'entry_price': entry,
         'sl_distance_pct': sl_distance,
         'tp_distance_pct': tp_distance,
         'rr_ratio': rr_ratio,
         'direction': 1 if direction == 'long' else 0,
         'main_tf': main_tf,
-        'current_price': latest['Close'],
-        'rsi': latest['RSI_60'],
-        'macd': latest['MACD_60'],
-        'macd_signal': latest['MACD_signal_60'],
-        'atr': latest['ATR_60'],
-        'ema_20': latest['EMA_20_60'],
-        'ema_50': latest['EMA_50_60'],
-        'bb_upper': latest['BB_upper_60'],
-        'bb_lower': latest['BB_lower_60'],
-        'volume_ratio': latest['Volume'] / latest['Volume_MA_60'] if latest['Volume_MA_60'] > 0 else 1.0
+        'rsi': latest['RSI'],
+        'macd': latest['MACD'],
+        'macd_signal': latest['MACD_signal'],
+        'atr': latest['ATR'],
+        'ema_diff': (latest['EMA_20'] - latest['EMA_50']) / latest['Close'] * 100,
+        'bb_position': (latest['Close'] - latest['BB_lower']) / (latest['BB_upper'] - latest['BB_lower']),
+        'volume_ratio': latest['Volume'] / latest['Volume_MA'] if latest['Volume_MA'] > 0 else 1.0,
+        'price_change': latest['Price_Change'] * 100,
+        'trend': latest['Trend']
     }
     
-    feature_vector = np.array(list(features.values()), dtype=np.float32)
-    return feature_vector
+    return np.array(list(features.values()), dtype=np.float32)
 
 def simulate_historical_trades(df_ind, n_trades=500):
     """Simula trade storici per training."""
@@ -108,86 +107,60 @@ def simulate_historical_trades(df_ind, n_trades=500):
         
         # Simula outcome
         future_prices = df_ind.iloc[idx+1:idx+51]['Close'].values
-        if direction == 'long':
-            hit_tp = np.any(future_prices >= tp)
-            hit_sl = np.any(future_prices <= sl)
-        else:
-            hit_tp = np.any(future_prices <= tp)
-            hit_sl = np.any(future_prices >= sl)
-        
-        success = 1 if hit_tp and not hit_sl else 0
-        
-        X_list.append(features)
-        y_list.append(success)
+        if len(future_prices) > 0:
+            if direction == 'long':
+                hit_tp = np.any(future_prices >= tp)
+                hit_sl = np.any(future_prices <= sl)
+            else:
+                hit_tp = np.any(future_prices <= tp)
+                hit_sl = np.any(future_prices >= sl)
+            
+            success = 1 if hit_tp and not hit_sl else 0
+            
+            X_list.append(features)
+            y_list.append(success)
     
     return np.array(X_list), np.array(y_list)
 
-class TradeSuccessDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = torch.FloatTensor(X)
-        self.y = torch.FloatTensor(y)
+def train_model(X_train, y_train):
+    """Addestra il modello Random Forest."""
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_train)
     
-    def __len__(self):
-        return len(self.X)
+    model = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=10,
+        min_samples_split=5,
+        random_state=42,
+        n_jobs=-1
+    )
+    model.fit(X_scaled, y_train)
     
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+    return model, scaler
 
-class TradePredictorNN(nn.Module):
-    def __init__(self, input_size):
-        super().__init__()
-        self.network = nn.Sequential(
-            nn.Linear(input_size, 128),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
-    
-    def forward(self, x):
-        return self.network(x)
-
-def train_model(X_train, y_train, epochs=50, batch_size=32):
-    """Addestra il modello."""
-    dataset = TradeSuccessDataset(X_train, y_train)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    
-    model = TradePredictorNN(X_train.shape[1])
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    
-    model.train()
-    for epoch in range(epochs):
-        for batch_X, batch_y in dataloader:
-            optimizer.zero_grad()
-            outputs = model(batch_X).squeeze()
-            loss = criterion(outputs, batch_y)
-            loss.backward()
-            optimizer.step()
-    
-    return model
-
-def predict_success(model, features):
+def predict_success(model, scaler, features):
     """Predice probabilità di successo."""
-    model.eval()
-    with torch.no_grad():
-        features_tensor = torch.FloatTensor(features).unsqueeze(0)
-        prob = model(features_tensor).item()
+    features_scaled = scaler.transform(features.reshape(1, -1))
+    prob = model.predict_proba(features_scaled)[0][1]
     return prob * 100
 
 def get_dominant_factors(model, features):
-    """Identifica fattori dominanti (semplificato)."""
-    feature_names = ['Entry Price', 'SL Distance %', 'TP Distance %', 'R/R Ratio', 
-                     'Direction', 'TimeFrame', 'Current Price', 'RSI', 'MACD', 
-                     'MACD Signal', 'ATR', 'EMA 20', 'EMA 50', 'BB Upper', 'BB Lower', 'Volume Ratio']
+    """Identifica fattori dominanti."""
+    feature_names = [
+        'SL Distance %', 'TP Distance %', 'R/R Ratio', 'Direction', 'TimeFrame',
+        'RSI', 'MACD', 'MACD Signal', 'ATR', 'EMA Diff %',
+        'BB Position', 'Volume Ratio', 'Price Change %', 'Trend'
+    ]
     
-    indices = np.argsort(np.abs(features))[-5:][::-1]
-    return [f"{feature_names[i]}: {features[i]:.2f}" for i in indices if i < len(feature_names)]
+    importances = model.feature_importances_
+    indices = np.argsort(importances)[-5:][::-1]
+    
+    factors = []
+    for i in indices:
+        if i < len(feature_names):
+            factors.append(f"{feature_names[i]}: {features[i]:.2f} (importanza: {importances[i]:.2%})")
+    
+    return factors
 
 # ==================== STREAMLIT APP ====================
 
@@ -196,15 +169,24 @@ def load_sample_data(symbol='GC=F', period='1y'):
     """Carica dati reali da yfinance."""
     try:
         data = yf.download(symbol, period=period, progress=False)
+        if len(data) < 100:
+            raise Exception("Dati insufficienti")
         data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
         return data
     except:
-        dates = pd.date_range(start='2024-01-01', periods=1000, freq='1H')
+        # Dati simulati
+        dates = pd.date_range(start='2023-01-01', periods=1000, freq='1H')
+        base_price = 2000
+        trend = np.cumsum(np.random.randn(1000) * 0.3)
+        noise = np.random.randn(1000) * 2
+        
+        close_prices = base_price + trend + noise
+        
         data = pd.DataFrame({
-            'Open': 2000 + np.cumsum(np.random.randn(1000) * 0.5),
-            'High': 2000 + np.cumsum(np.random.randn(1000) * 0.5) + np.random.rand(1000),
-            'Low': 2000 + np.cumsum(np.random.randn(1000) * 0.5) - np.random.rand(1000),
-            'Close': 2000 + np.cumsum(np.random.randn(1000) * 0.5),
+            'Open': close_prices + np.random.randn(1000) * 0.5,
+            'High': close_prices + np.abs(np.random.randn(1000) * 1.5),
+            'Low': close_prices - np.abs(np.random.randn(1000) * 1.5),
+            'Close': close_prices,
             'Volume': np.random.randint(1000, 10000, 1000)
         }, index=dates)
         return data
@@ -214,24 +196,30 @@ def train_or_load_model():
     """Addestra il modello."""
     data = load_sample_data()
     df_ind = calculate_technical_indicators(data)
-    X, y = simulate_historical_trades(df_ind, n_trades=300)
-    model = train_model(X, y, epochs=30)
-    return model
+    X, y = simulate_historical_trades(df_ind, n_trades=500)
+    model, scaler = train_model(X, y)
+    return model, scaler, df_ind
 
 # Configurazione pagina
 st.set_page_config(
-    page_title="Trading Predictor",
+    page_title="Trading Predictor AI",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS personalizzato per mobile
+# CSS personalizzato
 st.markdown("""
 <style>
     .main .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
+        max-width: 1200px;
+    }
+    .stMetric {
+        background-color: #f0f2f6;
+        padding: 10px;
+        border-radius: 5px;
     }
     @media (max-width: 768px) {
         .main .block-container {
@@ -243,110 +231,157 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.title("📈 Trading Success Predictor")
-st.markdown("**Stima la probabilità di successo delle tue operazioni XAU/USD**")
+st.title("📈 Trading Success Predictor AI")
+st.markdown("**Analisi predittiva per operazioni XAU/USD con Machine Learning**")
 
 # Sidebar
 with st.sidebar:
-    st.header("⚙️ Parametri Operazione")
+    st.header("⚙️ Parametri Trade")
     
-    direction = st.selectbox("📊 Direzione", ["long", "short"])
-    entry = st.number_input("💰 Entry Price", value=2000.0, step=0.1, format="%.2f")
-    sl = st.number_input("🛑 Stop Loss", value=1980.0, step=0.1, format="%.2f")
-    tp = st.number_input("🎯 Take Profit", value=2050.0, step=0.1, format="%.2f")
+    direction = st.selectbox("📊 Direzione", ["long", "short"], index=0)
     
-    main_tf = st.selectbox(
-        "⏰ Time Frame",
-        [15, 60, 240, 1440],
-        format_func=lambda x: f"{x}min" if x < 60 else (f"{x//60}H" if x < 1440 else "D1")
-    )
+    col1, col2 = st.columns(2)
+    with col1:
+        entry = st.number_input("💰 Entry", value=2000.0, step=0.5, format="%.2f")
+    with col2:
+        main_tf = st.selectbox("⏰ TF", [15, 60, 240, 1440], index=1,
+                               format_func=lambda x: f"{x}m" if x < 60 else (f"{x//60}H" if x < 1440 else "D1"))
+    
+    sl = st.number_input("🛑 Stop Loss", value=1980.0, step=0.5, format="%.2f")
+    tp = st.number_input("🎯 Take Profit", value=2050.0, step=0.5, format="%.2f")
     
     st.markdown("---")
+    
+    # Validazione input
+    if direction == 'long':
+        if sl >= entry:
+            st.error("❌ SL deve essere < Entry")
+        if tp <= entry:
+            st.error("❌ TP deve essere > Entry")
+    else:
+        if sl <= entry:
+            st.error("❌ SL deve essere > Entry")
+        if tp >= entry:
+            st.error("❌ TP deve essere < Entry")
+    
     refresh_data = st.button("🔄 Aggiorna Dati", use_container_width=True)
 
-# Inizializzazione dati
-if 'df_ind' not in st.session_state or refresh_data:
-    with st.spinner("📊 Caricamento dati..."):
-        data = load_sample_data()
-        st.session_state.df_ind = calculate_technical_indicators(data)
-        st.success("✅ Dati aggiornati!")
-
-df_ind = st.session_state.df_ind
-
-# Inizializzazione modello
-if 'model' not in st.session_state:
-    with st.spinner("🧠 Addestramento modello AI..."):
-        st.session_state.model = train_or_load_model()
-        st.success("✅ Modello pronto!")
+# Inizializzazione
+if 'model' not in st.session_state or refresh_data:
+    with st.spinner("🧠 Caricamento AI e dati..."):
+        model, scaler, df_ind = train_or_load_model()
+        st.session_state.model = model
+        st.session_state.scaler = scaler
+        st.session_state.df_ind = df_ind
+        st.success("✅ Sistema pronto!")
 
 model = st.session_state.model
+scaler = st.session_state.scaler
+df_ind = st.session_state.df_ind
+
+# Statistiche correnti
+col1, col2, col3, col4 = st.columns(4)
+latest = df_ind.iloc[-1]
+with col1:
+    st.metric("Prezzo Corrente", f"${latest['Close']:.2f}")
+with col2:
+    st.metric("RSI", f"{latest['RSI']:.1f}")
+with col3:
+    st.metric("ATR", f"{latest['ATR']:.2f}")
+with col4:
+    trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
+    st.metric("Trend", trend_emoji)
 
 # Predizione
-if st.button("🚀 Calcola Probabilità", type="primary", use_container_width=True):
-    with st.spinner("🔮 Analisi in corso..."):
-        features = generate_features(df_ind, entry, sl, tp, direction, main_tf)
-        success_prob = predict_success(model, features)
-        factors = get_dominant_factors(model, features)
-        
-        # Risultato principale
-        st.markdown("### 🎯 Risultato Predizione")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Probabilità Successo", f"{success_prob:.1f}%")
-        with col2:
-            rr = abs(tp - entry) / abs(entry - sl)
-            st.metric("Risk/Reward", f"{rr:.2f}")
-        with col3:
-            st.metric("Direzione", direction.upper())
-        
-        # Interpretazione
-        if success_prob >= 70:
-            st.success("✅ **Probabilità ALTA** - Setup favorevole")
-        elif success_prob >= 50:
-            st.warning("⚠️ **Probabilità MEDIA** - Valuta attentamente")
-        else:
-            st.error("❌ **Probabilità BASSA** - Setup sfavorevole")
-        
-        # Fattori dominanti
-        st.markdown("### 📊 Fattori Principali")
-        for i, factor in enumerate(factors, 1):
-            st.write(f"{i}. {factor}")
-        
-        # Grafico
-        st.markdown("### 📈 Indicatori Tecnici (ultimi 100 periodi)")
-        chart_data = df_ind.tail(100)[['Close', 'EMA_20_60', 'EMA_50_60']].copy()
-        chart_data.columns = ['Prezzo', 'EMA 20', 'EMA 50']
-        st.line_chart(chart_data)
-        
-        # RSI
-        st.markdown("### 📉 RSI")
-        rsi_data = df_ind.tail(100)[['RSI_60']].copy()
-        rsi_data.columns = ['RSI']
-        st.line_chart(rsi_data)
+st.markdown("---")
+predict_btn = st.button("🚀 ANALIZZA TRADE", type="primary", use_container_width=True)
 
-# Upload CSV personalizzato
-with st.sidebar:
-    st.markdown("---")
-    st.markdown("### 📁 Dati Personalizzati")
-    uploaded_file = st.file_uploader(
-        "Carica CSV (Date, Open, High, Low, Close, Volume)",
-        type=['csv']
-    )
+if predict_btn:
+    # Validazione
+    valid = True
+    if direction == 'long' and (sl >= entry or tp <= entry):
+        st.error("❌ Verifica i livelli: per LONG, SL < Entry < TP")
+        valid = False
+    elif direction == 'short' and (sl <= entry or tp >= entry):
+        st.error("❌ Verifica i livelli: per SHORT, TP < Entry < SL")
+        valid = False
     
-    if uploaded_file:
-        try:
-            data = pd.read_csv(uploaded_file, parse_dates=['Date'], index_col='Date')
-            df_ind = calculate_technical_indicators(data)
-            st.session_state.df_ind = df_ind
-            st.success("✅ CSV caricato!")
-        except Exception as e:
-            st.error(f"❌ Errore: {str(e)}")
+    if valid:
+        with st.spinner("🔮 Analisi in corso..."):
+            features = generate_features(df_ind, entry, sl, tp, direction, main_tf)
+            success_prob = predict_success(model, scaler, features)
+            factors = get_dominant_factors(model, features)
+            
+            # Risultato principale
+            st.markdown("## 🎯 Risultato Analisi")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("🎲 Probabilità Successo", f"{success_prob:.1f}%", 
+                         delta=f"{success_prob-50:.1f}%" if success_prob > 50 else None)
+            with col2:
+                rr = abs(tp - entry) / abs(entry - sl)
+                st.metric("⚖️ Risk/Reward", f"{rr:.2f}x")
+            with col3:
+                risk_pct = abs(entry - sl) / entry * 100
+                st.metric("📉 Risk %", f"{risk_pct:.2f}%")
+            with col4:
+                reward_pct = abs(tp - entry) / entry * 100
+                st.metric("📈 Reward %", f"{reward_pct:.2f}%")
+            
+            # Interpretazione
+            st.markdown("### 💡 Valutazione")
+            if success_prob >= 65:
+                st.success(f"✅ **SETUP FAVOREVOLE** ({success_prob:.1f}% probabilità)")
+                st.write("Il modello indica condizioni favorevoli per questo trade.")
+            elif success_prob >= 50:
+                st.warning(f"⚠️ **SETUP NEUTRALE** ({success_prob:.1f}% probabilità)")
+                st.write("Probabilità equilibrata. Valuta attentamente altri fattori.")
+            else:
+                st.error(f"❌ **SETUP SFAVOREVOLE** ({success_prob:.1f}% probabilità)")
+                st.write("Il modello suggerisce di evitare questo trade.")
+            
+            # Fattori dominanti
+            st.markdown("### 📊 Fattori Chiave dell'Analisi")
+            for i, factor in enumerate(factors, 1):
+                st.write(f"**{i}.** {factor}")
+            
+            # Grafici
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("### 📈 Prezzo e Medie Mobili")
+                chart_data = df_ind.tail(100)[['Close', 'EMA_20', 'EMA_50']].copy()
+                chart_data.columns = ['Prezzo', 'EMA 20', 'EMA 50']
+                st.line_chart(chart_data, height=300)
+            
+            with col2:
+                st.markdown("### 📉 RSI (14)")
+                rsi_data = df_ind.tail(100)[['RSI']].copy()
+                st.line_chart(rsi_data, height=300)
+
+# Info
+with st.expander("ℹ️ Come funziona"):
+    st.markdown("""
+    **Questo strumento usa Machine Learning (Random Forest) per:**
+    - Analizzare indicatori tecnici (RSI, MACD, EMA, Bollinger Bands, ATR)
+    - Valutare setup di trading basati su dati storici
+    - Stimare probabilità di successo del trade
+    
+    **Indicatori analizzati:**
+    - 📊 RSI: forza relativa del trend
+    - 📈 MACD: momentum e direzione
+    - 🎯 EMA: medie mobili esponenziali
+    - 📉 Bollinger Bands: volatilità
+    - ⚡ ATR: volatilità media
+    - 📊 Volume: forza del movimento
+    """)
 
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: #666;'>
-    <small>⚠️ Disclaimer: App per scopi educativi. Non costituisce consiglio finanziario.</small>
+<div style='text-align: center; color: #666; font-size: 0.9em;'>
+    ⚠️ <strong>Disclaimer:</strong> Questo strumento è per scopi educativi e di analisi.<br>
+    Non costituisce consiglio finanziario. Fai sempre le tue ricerche prima di operare.
 </div>
 """, unsafe_allow_html=True)
