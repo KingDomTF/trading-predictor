@@ -32,6 +32,10 @@ def calculate_technical_indicators(df):
     # Bollinger Bands
     df['BB_middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
+    
+    # Debug: Verifica tipi (aggiungi st.write in Streamlit per vedere output)
+    # print(type(bb_std), bb_std.shape)  # Dovrebbe essere <class 'pandas.core.series.Series'> (n,)
+    
     df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
     df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
    
