@@ -166,16 +166,14 @@ def get_dominant_factors(model, features):
 
 # ==================== STREAMLIT APP ====================
 @st.cache_data
-def load_sample_data(symbol='GC=F', interval='1d'):
+def load_sample_data(symbol='GC=F', interval='1h'):
     """Carica dati reali da yfinance con timeframe specificato."""
     period_map = {
         '5m': '60d',
         '15m': '60d',
-        '30m': '60d',
-        '1h': '730d',
-        '1d': '1y'
+        '1h': '730d'
     }
-    period = period_map.get(interval, '1y')
+    period = period_map.get(interval, '730d')
     try:
         data = yf.download(symbol, period=period, interval=interval, progress=False)
         if len(data) < 100:
@@ -202,7 +200,7 @@ def load_sample_data(symbol='GC=F', interval='1d'):
         return data
 
 @st.cache_resource
-def train_or_load_model(symbol='GC=F', interval='1d'):
+def train_or_load_model(symbol='GC=F', interval='1h'):
     """Addestra il modello con dati al timeframe specificato."""
     data = load_sample_data(symbol, interval)
     df_ind = calculate_technical_indicators(data)
@@ -254,8 +252,8 @@ with st.sidebar:
     with col1:
         entry = st.number_input("💰 Entry", value=2000.0, step=0.5, format="%.2f")
     with col2:
-        main_tf = st.selectbox("⏰ TF Analisi", [15, 60, 240, 1440], index=1,
-                               format_func=lambda x: f"{x}m" if x < 60 else (f"{x//60}H" if x < 1440 else "D1"))
+        main_tf = st.selectbox("⏰ TF Analisi", [5, 15, 60], index=1,
+                               format_func=lambda x: f"{x}m" if x < 60 else f"{x//60}H")
   
     sl = st.number_input("🛑 Stop Loss", value=1980.0, step=0.5, format="%.2f")
     tp = st.number_input("🎯 Take Profit", value=2050.0, step=0.5, format="%.2f")
@@ -263,7 +261,7 @@ with st.sidebar:
     st.markdown("---")
   
     st.header("📊 Timeframe Dati")
-    data_interval = st.selectbox("⏰ Timeframe Dati", ['5m', '15m', '30m', '1h', '1d'], index=4)
+    data_interval = st.selectbox("⏰ Timeframe Dati", ['5m', '15m', '1h'], index=2)
   
     # Validazione input
     if direction == 'long':
