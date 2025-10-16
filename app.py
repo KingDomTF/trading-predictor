@@ -32,10 +32,6 @@ def calculate_technical_indicators(df):
     # Bollinger Bands
     df['BB_middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
-   
-    # Debug: Verifica tipi
-    print(type(bb_std), bb_std.shape)  # Output nel log, dovrebbe essere Series (n,)
-   
     df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
     df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
   
@@ -176,8 +172,14 @@ def load_sample_data(symbol='GC=F', interval='1h'):
     period = period_map.get(interval, '730d')
     try:
         data = yf.download(symbol, period=period, interval=interval, progress=False)
+        
+        # Fix per multi-index colonne in versioni recenti di yfinance
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)  # Rimuove livello 'Ticker'
+        
         if len(data) < 100:
             raise Exception("Dati insufficienti")
+        
         data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
         return data
     except Exception as e:
