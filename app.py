@@ -160,34 +160,34 @@ def get_dominant_factors(model, features):
   
     return factors
 
-# Suggerimenti basati su ricerca web (statici per semplicità, aggiornati al 17 ottobre 2025)
+# Suggerimenti basati su ricerca web, inclusa stagionalità e news (aggiornati al 17 ottobre 2025)
 web_signals = {
     'GC=F': [  # XAUUSD / Gold
-        {'Direction': 'Long', 'Entry': 4315, 'SL': 4300, 'TP': 4350, 'Probability': 65},
-        {'Direction': 'Short', 'Entry': 4350, 'SL': 4380, 'TP': 4316, 'Probability': 70},
-        {'Direction': 'Long', 'Entry': 4320, 'SL': 4273, 'TP': 4400, 'Probability': 60},
-        {'Direction': 'Short', 'Entry': 4340, 'SL': 4360, 'TP': 4300, 'Probability': 68},
-        {'Direction': 'Long', 'Entry': 4310, 'SL': 4290, 'TP': 4330, 'Probability': 75},
+        {'Direction': 'Long', 'Entry': 4315, 'SL': 4300, 'TP': 4350, 'Probability': 65, 'Seasonality_Note': 'Ottobre bilanciato, forte finestra intorno al 11/14. Aprile quieter.', 'News_Summary': 'Gold a $4218, rally verso $4440, volatility alta.'},
+        {'Direction': 'Short', 'Entry': 4350, 'SL': 4380, 'TP': 4316, 'Probability': 70, 'Seasonality_Note': 'Ottobre bilanciato, forte finestra intorno al 11/14. Aprile quieter.', 'News_Summary': 'Gold a $4218, rally verso $4440, volatility alta.'},
+        {'Direction': 'Long', 'Entry': 4320, 'SL': 4273, 'TP': 4400, 'Probability': 60, 'Seasonality_Note': 'Ottobre bilanciato, forte finestra intorno al 11/14. Aprile quieter.', 'News_Summary': 'Gold a $4218, rally verso $4440, volatility alta.'},
+        {'Direction': 'Short', 'Entry': 4340, 'SL': 4360, 'TP': 4300, 'Probability': 68, 'Seasonality_Note': 'Ottobre bilanciato, forte finestra intorno al 11/14. Aprile quieter.', 'News_Summary': 'Gold a $4218, rally verso $4440, volatility alta.'},
+        {'Direction': 'Long', 'Entry': 4310, 'SL': 4290, 'TP': 4330, 'Probability': 75, 'Seasonality_Note': 'Ottobre bilanciato, forte finestra intorno al 11/14. Aprile quieter.', 'News_Summary': 'Gold a $4218, rally verso $4440, volatility alta.'},
     ],
     'EURUSD=X': [  # EUR/USD
-        {'Direction': 'Sell', 'Entry': 1.17, 'SL': 1.18, 'TP': 1.15, 'Probability': 65},
-        {'Direction': 'Buy', 'Entry': 1.16, 'SL': 1.15, 'TP': 1.18, 'Probability': 60},
-        {'Direction': 'Sell', 'Entry': 1.17064, 'SL': 1.175, 'TP': 1.16, 'Probability': 70},
+        {'Direction': 'Sell', 'Entry': 1.17, 'SL': 1.18, 'TP': 1.15, 'Probability': 65, 'Seasonality_Note': 'Ottobre modestly bullish, average +0.45% da 1971.', 'News_Summary': 'EUR/USD a 1.16995, bullish verso 1.18-1.20 in Q4.'},
+        {'Direction': 'Buy', 'Entry': 1.16, 'SL': 1.15, 'TP': 1.18, 'Probability': 60, 'Seasonality_Note': 'Ottobre modestly bullish, average +0.45% da 1971.', 'News_Summary': 'EUR/USD a 1.16995, bullish verso 1.18-1.20 in Q4.'},
+        {'Direction': 'Sell', 'Entry': 1.17064, 'SL': 1.175, 'TP': 1.16, 'Probability': 70, 'Seasonality_Note': 'Ottobre modestly bullish, average +0.45% da 1971.', 'News_Summary': 'EUR/USD a 1.16995, bullish verso 1.18-1.20 in Q4.'},
     ],
     'SI=F': [  # Silver
-        {'Direction': 'Buy', 'Entry': 50.49, 'SL': 48.0, 'TP': 53.0, 'Probability': 65},
-        {'Direction': 'Sell', 'Entry': 52.653, 'SL': 53.765, 'TP': 52.25, 'Probability': 60},
-        {'Direction': 'Buy', 'Entry': 52.75, 'SL': 50.0, 'TP': 55.0, 'Probability': 70},
+        {'Direction': 'Buy', 'Entry': 50.49, 'SL': 48.0, 'TP': 53.0, 'Probability': 65, 'Seasonality_Note': 'Forte da June a Sept, peaks in March/Sept, lows in June.', 'News_Summary': 'Silver a $52.84, up 76% in 2025, rally.'},
+        {'Direction': 'Sell', 'Entry': 52.653, 'SL': 53.765, 'TP': 52.25, 'Probability': 60, 'Seasonality_Note': 'Forte da June a Sept, peaks in March/Sept, lows in June.', 'News_Summary': 'Silver a $52.84, up 76% in 2025, rally.'},
+        {'Direction': 'Buy', 'Entry': 52.75, 'SL': 50.0, 'TP': 55.0, 'Probability': 70, 'Seasonality_Note': 'Forte da June a Sept, peaks in March/Sept, lows in June.', 'News_Summary': 'Silver a $52.84, up 76% in 2025, rally.'},
     ],
     'GBPUSD=X': [  # GBP/USD
-        {'Direction': 'Sell', 'Entry': 1.33576, 'SL': 1.34, 'TP': 1.33, 'Probability': 65},
-        {'Direction': 'Buy', 'Entry': 1.345, 'SL': 1.34, 'TP': 1.35, 'Probability': 60},
-        {'Direction': 'Sell', 'Entry': 1.34529, 'SL': 1.35, 'TP': 1.34, 'Probability': 70},
+        {'Direction': 'Sell', 'Entry': 1.33576, 'SL': 1.34, 'TP': 1.33, 'Probability': 65, 'Seasonality_Note': 'Luglio strength, per Oct non specifico.', 'News_Summary': 'GBP/USD a 1.3450, bullish, Fed easing.'},
+        {'Direction': 'Buy', 'Entry': 1.345, 'SL': 1.34, 'TP': 1.35, 'Probability': 60, 'Seasonality_Note': 'Luglio strength, per Oct non specifico.', 'News_Summary': 'GBP/USD a 1.3450, bullish, Fed easing.'},
+        {'Direction': 'Sell', 'Entry': 1.34529, 'SL': 1.35, 'TP': 1.34, 'Probability': 70, 'Seasonality_Note': 'Luglio strength, per Oct non specifico.', 'News_Summary': 'GBP/USD a 1.3450, bullish, Fed easing.'},
     ],
     'BTC-USD': [  # Bitcoin
-        {'Direction': 'Sell', 'Entry': 110888.48, 'SL': 113154.63, 'TP': 105705.99, 'Probability': 65},
-        {'Direction': 'Buy', 'Entry': 112500, 'SL': 110000, 'TP': 115000, 'Probability': 60},
-        {'Direction': 'Buy', 'Entry': 107989.20, 'SL': 105000, 'TP': 110000, 'Probability': 70},
+        {'Direction': 'Sell', 'Entry': 110888.48, 'SL': 113154.63, 'TP': 105705.99, 'Probability': 65, 'Seasonality_Note': 'Ottobre favors long bias, forte intorno 11/16.', 'News_Summary': 'Bitcoin down to $105,732, slip below 200-day SMA, oversold vs gold.'},
+        {'Direction': 'Buy', 'Entry': 112500, 'SL': 110000, 'TP': 115000, 'Probability': 60, 'Seasonality_Note': 'Ottobre favors long bias, forte intorno 11/16.', 'News_Summary': 'Bitcoin down to $105,732, slip below 200-day SMA, oversold vs gold.'},
+        {'Direction': 'Buy', 'Entry': 107989.20, 'SL': 105000, 'TP': 110000, 'Probability': 70, 'Seasonality_Note': 'Ottobre favors long bias, forte intorno 11/16.', 'News_Summary': 'Bitcoin down to $105,732, slip below 200-day SMA, oversold vs gold.'},
     ],
     # Aggiungi altri strumenti se necessario
 }
@@ -367,7 +367,11 @@ if session_key in st.session_state:
                 'TP': '{:.2f}',
                 'Probability': '{:.0f}%'
             }))
-            st.write("Questi suggerimenti sono derivati da analisi web recenti. Verifica sempre in tempo reale.")
+            st.markdown("#### 📅 Note sulla Stagionalità")
+            st.write(suggestions_df.iloc[0]['Seasonality_Note'])  # Mostra per il primo, assumendo uguale
+            st.markdown("#### 📰 Riepilogo News")
+            st.write(suggestions_df.iloc[0]['News_Summary'])  # Mostra per il primo
+            st.write("Questi suggerimenti sono derivati da analisi web recenti, inclusa stagionalità e news. Verifica sempre in tempo reale.")
         else:
             st.warning("Nessun suggerimento web disponibile per questo strumento. Usa l'analisi manuale o suggerisci trade generati.")
 
@@ -479,7 +483,7 @@ with st.expander("ℹ️ Come funziona"):
     - Analizzare indicatori tecnici (RSI, MACD, EMA, Bollinger Bands, ATR)
     - Valutare setup di trading basati su dati storici reali
     - Stimare probabilità di successo del trade
-    - Mostrare suggerimenti basati su ricerca web per strumenti popolari
+    - Mostrare suggerimenti basati su ricerca web per strumenti popolari, inclusa stagionalità e news
   
     **Indicatori analizzati:**
     - 📊 RSI: forza relativa del trend
