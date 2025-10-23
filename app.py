@@ -4,6 +4,8 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import yfinance as yf
+from statsmodels.tsa.arima.model import ARIMA
+import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -160,8 +162,30 @@ def get_dominant_factors(model, features):
    
     return factors
 
-def get_web_signals(symbol):
-    """Funzione dinamica per ottenere segnali web aggiornati."""
+def get_sentiment(text):
+    """Semplice analisi sentiment basata su parole chiave."""
+    positive_words = ['rally', 'up', 'bullish', 'gain', 'positive', 'strong', 'rise', 'surge', 'boom']
+    negative_words = ['down', 'bearish', 'loss', 'negative', 'weak', 'slip', 'fall', 'drop', 'crash']
+    score = sum(word in text.lower() for word in positive_words) - sum(word in text.lower() for word in negative_words)
+    if score > 0:
+        return 'Positive', score
+    elif score < 0:
+        return 'Negative', score
+    else:
+        return 'Neutral', 0
+
+def predict_price(df_ind, steps=5):
+    """Previsione prezzo con ARIMA."""
+    try:
+        model = ARIMA(df_ind['Close'], order=(5,1,0))
+        model_fit = model.fit()
+        forecast = model_fit.forecast(steps=steps)
+        return forecast.mean(), forecast
+    except:
+        return None, None
+
+def get_web_signals(symbol, df_ind):
+    """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
     try:
         ticker = yf.Ticker(symbol)
         
@@ -173,40 +197,80 @@ def get_web_signals(symbol):
         
         # News recenti
         news = ticker.news
-        news_summary = ' | '.join([item['title'] for item in news[:5]]) if news else 'Nessuna news recente disponibile.'
+        news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente disponibile.'
         
-        # Calcolo stagionalità per Ottobre basato su dati storici (media return mensile)
+        # Sentiment
+        sentiment_label, sentiment_score = get_sentiment(news_summary)
+        
+        # Calcolo stagionalità
         hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
         if len(hist_monthly) < 12:
             seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
         else:
             hist_monthly['Return'] = hist_monthly['Close'].pct_change()
-            oct_returns = hist_monthly[hist_monthly.index.month == 10]['Return']
-            avg_oct = oct_returns.mean() * 100 if not oct_returns.empty else 0
-            seasonality_note = f'Ottobre ha un ritorno medio storico di {avg_oct:.2f}%. Basato su pattern storici e reazioni di mercato a news simili.'
+            hist_monthly['Month'] = hist_monthly.index.month
+            monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
+            current_month = datetime.datetime.now().month
+            avg_current = monthly_returns.get(current_month, 0) * 100
+            seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%. Basato su pattern storici e reazioni di mercato a news simili.'
         
-        # Genera suggerimenti predittivi intorno al prezzo corrente, simulando segnali web
+        # Previsione prezzo (usa df_ind per timeframe specifico)
+        _, forecast_series = predict_price(df_ind, steps=5)
+        forecast_note = f'Previsione media per i prossimi 5 periodi: {forecast_series.mean():.2f}' if forecast_series is not None else 'Previsione non disponibile.'
+        
+        # Genera suggerimenti precisi basati su sentiment e trend
+        latest = df_ind.iloc[-1]
+        atr = latest['ATR']
+        trend = latest['Trend']
         suggestions = []
-        for _ in range(3):
-            direction = np.random.choice(['Long', 'Short', 'Buy', 'Sell'])
-            entry = round(current_price * np.random.uniform(0.99, 1.01), 2)  # Leggera variazione intorno al corrente
-            sl_pct = np.random.uniform(0.5, 2.0)
-            tp_pct = np.random.uniform(1.0, 4.0)
-            if 'Long' in direction or 'Buy' in direction:
-                sl = round(entry * (1 - sl_pct / 100), 2)
-                tp = round(entry * (1 + tp_pct / 100), 2)
+        directions = ['Long', 'Short'] if '=X' not in symbol else ['Buy', 'Sell']
+        
+        for dir in directions:
+            is_positive_dir = (dir in ['Long', 'Buy'] and (sentiment_score > 0 or trend == 1)) or (dir in ['Short', 'Sell'] and (sentiment_score < 0 or trend == 0))
+            prob = 70 if is_positive_dir else 60
+            entry = round(current_price, 2)
+            sl_mult = 1.0 if is_positive_dir else 1.5
+            tp_mult = 2.5 if is_positive_dir else 2.0
+            if dir in ['Long', 'Buy']:
+                sl = round(entry - atr * sl_mult, 2)
+                tp = round(entry + atr * tp_mult, 2)
             else:
-                sl = round(entry * (1 + sl_pct / 100), 2)
-                tp = round(entry * (1 - tp_pct / 100), 2)
-            prob = round(np.random.uniform(60, 75), 0)
+                sl = round(entry + atr * sl_mult, 2)
+                tp = round(entry - atr * tp_mult, 2)
             suggestions.append({
-                'Direction': direction,
+                'Direction': dir,
                 'Entry': entry,
                 'SL': sl,
                 'TP': tp,
                 'Probability': prob,
                 'Seasonality_Note': seasonality_note,
-                'News_Summary': news_summary
+                'News_Summary': news_summary,
+                'Sentiment': sentiment_label,
+                'Forecast_Note': forecast_note
+            })
+        
+        # Aggiungi un terzo suggerimento se sentiment neutrale
+        if sentiment_score == 0:
+            dir = directions[0] if trend == 1 else directions[1]
+            entry = round(current_price, 2)
+            sl_mult = 1.2
+            tp_mult = 2.2
+            if dir in ['Long', 'Buy']:
+                sl = round(entry - atr * sl_mult, 2)
+                tp = round(entry + atr * tp_mult, 2)
+            else:
+                sl = round(entry + atr * sl_mult, 2)
+                tp = round(entry - atr * tp_mult, 2)
+            suggestions.append({
+                'Direction': dir,
+                'Entry': entry,
+                'SL': sl,
+                'TP': tp,
+                'Probability': 65,
+                'Seasonality_Note': seasonality_note,
+                'News_Summary': news_summary,
+                'Sentiment': sentiment_label,
+                'Forecast_Note': forecast_note
             })
         
         return suggestions
@@ -215,38 +279,40 @@ def get_web_signals(symbol):
         return []
 
 def suggest_trades(model, scaler, df_ind, main_tf, num_suggestions=5, prob_threshold=65.0):
-    """Suggerisce trade con alta probabilità."""
+    """Suggerisce trade con alta probabilità, più precisi."""
     latest = df_ind.iloc[-1]
     entry = latest['Close']
     atr = latest['ATR']
+    trend = latest['Trend']
    
     suggestions = []
-    for _ in range(50):
-        direction = np.random.choice(['long', 'short'])
-        sl_pct = np.random.uniform(0.5, 2.0)
-        tp_pct = np.random.uniform(1.0, 4.0)
-       
-        if direction == 'long':
-            sl = entry - (atr * sl_pct / 100 * 10)
-            tp = entry + (atr * tp_pct / 100 * 10)
-        else:
-            sl = entry + (atr * sl_pct / 100 * 10)
-            tp = entry - (atr * tp_pct / 100 * 10)
-       
-        features = generate_features(df_ind, entry, sl, tp, direction, main_tf)
-        success_prob = predict_success(model, scaler, features)
-       
-        if success_prob >= prob_threshold:
-            suggestions.append({
-                'Direction': direction,
-                'Entry': entry,
-                'SL': sl,
-                'TP': tp,
-                'Probability': success_prob
-            })
-       
-        if len(suggestions) >= num_suggestions:
-            break
+    # Combinazioni precise basate su ATR e trend
+    sl_pcts = [0.5, 1.0, 1.5]
+    tp_pcts = [1.5, 2.5, 3.5]
+    for sl_pct in sl_pcts:
+        for tp_pct in tp_pcts:
+            direction = 'long' if trend == 1 else 'short'
+            if direction == 'long':
+                sl = entry - (atr * sl_pct)
+                tp = entry + (atr * tp_pct)
+            else:
+                sl = entry + (atr * sl_pct)
+                tp = entry - (atr * tp_pct)
+           
+            features = generate_features(df_ind, entry, sl, tp, direction, main_tf)
+            success_prob = predict_success(model, scaler, features)
+           
+            if success_prob >= prob_threshold:
+                suggestions.append({
+                    'Direction': direction,
+                    'Entry': entry,
+                    'SL': sl,
+                    'TP': tp,
+                    'Probability': success_prob
+                })
+           
+            if len(suggestions) >= num_suggestions:
+                return pd.DataFrame(suggestions)
    
     return pd.DataFrame(suggestions)
 
@@ -286,6 +352,15 @@ def train_or_load_model(symbol, interval='1h'):
     model, scaler = train_model(X, y)
     return model, scaler, df_ind
 
+# Mappatura nomi propri
+proper_names = {
+    'GC=F': 'XAU/USD',
+    'EURUSD=X': 'EUR/USD',
+    'SI=F': 'XAG/USD',
+    'BTC-USD': 'BTC/USD',
+    # Aggiungi altri se necessario
+}
+
 # Configurazione pagina
 st.set_page_config(
     page_title="Trading Predictor AI",
@@ -320,6 +395,8 @@ st.markdown("**Analisi predittiva per operazioni su vari strumenti con Machine L
 col1, col2 = st.columns([3, 1])
 with col1:
     symbol = st.text_input("📈 Seleziona Strumento (Ticker)", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento)")
+    proper_name = proper_names.get(symbol, symbol)
+    st.write(f"Strumento: {proper_name}")
 with col2:
     data_interval = st.selectbox("⏰ Timeframe Dati", ['5m', '15m', '1h'], index=2)
 main_tf = 60 # Fisso per analisi
@@ -343,10 +420,16 @@ if session_key in st.session_state:
     scaler = state['scaler']
     df_ind = state['df_ind']
     
+    # Calcola previsione prezzo
+    avg_forecast, forecast_series = predict_price(df_ind, steps=5)
+    
+    # Recupero segnali web dinamici
+    web_signals_list = get_web_signals(symbol, df_ind)
+    
     # Layout: Statistiche correnti
     st.markdown("### 📊 Statistiche Correnti")
     latest = df_ind.iloc[-1]
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Prezzo", f"${latest['Close']:.2f}")
     with col2:
@@ -356,10 +439,12 @@ if session_key in st.session_state:
     with col4:
         trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
         st.metric("Trend", trend_emoji)
+    with col5:
+        if avg_forecast is not None:
+            st.metric("Previsione Prezzo (next 5)", f"{avg_forecast:.2f}")
+        else:
+            st.metric("Previsione Prezzo", "N/A")
     st.markdown("---")
-    
-    # Recupero segnali web dinamici
-    web_signals_list = get_web_signals(symbol)
     
     # Layout: Suggerimenti Web con Analisi AI
     col_left, col_right = st.columns([1, 1])
@@ -376,14 +461,16 @@ if session_key in st.session_state:
             for idx, row in suggestions_df.iterrows():
                 col_trade, col_btn = st.columns([4, 1])
                 with col_trade:
-                    st.write(f"**{row['Direction'].upper()}** Entry: {row['Entry']:.2f} | SL: {row['SL']:.2f} | TP: {row['TP']:.2f} | Prob: {row['Probability']:.0f}%")
+                    st.write(f"**{row['Direction'].upper()}** Entry: {row['Entry']:.2f} | SL: {row['SL']:.2f} | TP: {row['TP']:.2f} | Prob: {row['Probability']:.0f}% | Sentiment: {row['Sentiment']}")
                 with col_btn:
                     if st.button("📊", key=f"analyze_{idx}"):
                         st.session_state.selected_trade = row
            
-            with st.expander("📅 Stagionalità & 📰 News"):
+            with st.expander("📅 Stagionalità & 📰 News & 🔮 Previsione"):
                 st.write("**Stagionalità:**", suggestions_df.iloc[0]['Seasonality_Note'])
                 st.write("**News:**", suggestions_df.iloc[0]['News_Summary'])
+                st.write("**Sentiment News:**", suggestions_df.iloc[0]['Sentiment'])
+                st.write("**Previsione:**", suggestions_df.iloc[0]['Forecast_Note'])
         else:
             st.info("Nessun suggerimento web per questo strumento.")
    
@@ -473,7 +560,7 @@ with st.expander("ℹ️ Come funziona"):
     **Machine Learning (Random Forest) analizza:**
     - 📊 Indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR)
     - 📈 Setup storici e probabilità di successo
-    - 💡 Suggerimenti web con stagionalità e news (ora aggiornati dinamicamente con dati storici e news recenti per confronti predittivi)
+    - 💡 Suggerimenti web con stagionalità, news, sentiment e previsioni (aggiornati dinamicamente)
     """)
 
 # Footer
