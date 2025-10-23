@@ -4,7 +4,6 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import yfinance as yf
-from statsmodels.tsa.arima.model import ARIMA
 import datetime
 import warnings
 warnings.filterwarnings('ignore')
@@ -175,11 +174,12 @@ def get_sentiment(text):
         return 'Neutral', 0
 
 def predict_price(df_ind, steps=5):
-    """Previsione prezzo con ARIMA."""
+    """Previsione prezzo semplice basata su EMA."""
     try:
-        model = ARIMA(df_ind['Close'], order=(5,1,0))
-        model_fit = model.fit()
-        forecast = model_fit.forecast(steps=steps)
+        last_price = df_ind['Close'].iloc[-1]
+        ema = df_ind['Close'].ewm(span=steps).mean().iloc[-1]
+        forecast_values = [last_price + (ema - last_price) * (i / steps) for i in range(1, steps + 1)]
+        forecast = np.array(forecast_values)
         return forecast.mean(), forecast
     except:
         return None, None
