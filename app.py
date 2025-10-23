@@ -283,36 +283,16 @@ st.markdown("""
 st.title("📈 Trading Success Predictor AI")
 st.markdown("**Analisi predittiva per operazioni su vari strumenti con Machine Learning**")
 
-# Parametri Trade nella pagina principale
-st.markdown("### ⚙️ Parametri Trade")
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-
+# Parametri semplificati
+col1, col2 = st.columns([3, 1])
 with col1:
-    symbol = st.text_input("📈 Strumento", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD")
+    symbol = st.text_input("📈 Seleziona Strumento (Ticker)", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento)")
 with col2:
-    direction = st.selectbox("📊 Direzione", ["long", "short"])
-with col3:
-    entry = st.number_input("💰 Entry", value=2000.0, step=0.5, format="%.2f")
-with col4:
-    sl = st.number_input("🛑 Stop Loss", value=1980.0, step=0.5, format="%.2f")
-with col5:
-    tp = st.number_input("🎯 Take Profit", value=2050.0, step=0.5, format="%.2f")
-with col6:
-    data_interval = st.selectbox("⏰ Timeframe", ['5m', '15m', '1h'], index=2)
+    data_interval = st.selectbox("⏰ Timeframe Dati", ['5m', '15m', '1h'], index=2)
 
 main_tf = 60  # Fisso per analisi
 
-# Validazione
-if direction == 'long' and (sl >= entry or tp <= entry):
-    st.error("❌ Per LONG: SL < Entry < TP")
-elif direction == 'short' and (sl <= entry or tp >= entry):
-    st.error("❌ Per SHORT: TP < Entry < SL")
-
-col_btn1, col_btn2 = st.columns(2)
-with col_btn1:
-    refresh_data = st.button("🔄 Aggiorna Dati", use_container_width=True)
-with col_btn2:
-    predict_btn = st.button("🚀 ANALIZZA TRADE", type="primary", use_container_width=True)
+refresh_data = st.button("🔄 Carica/Aggiorna Dati", use_container_width=True)
 
 st.markdown("---")
 
@@ -349,7 +329,7 @@ if session_key in st.session_state:
 
     st.markdown("---")
 
-    # Layout a due colonne: Suggerimenti Web + Grafici
+    # Layout: Suggerimenti Web con Analisi AI
     col_left, col_right = st.columns([1, 1])
     
     with col_left:
@@ -357,12 +337,17 @@ if session_key in st.session_state:
         if symbol in web_signals:
             suggestions_df = pd.DataFrame(web_signals[symbol])
             suggestions_df = suggestions_df.sort_values(by='Probability', ascending=False)
-            st.dataframe(suggestions_df[['Direction', 'Entry', 'SL', 'TP', 'Probability']].style.format({
-                'Entry': '{:.2f}',
-                'SL': '{:.2f}',
-                'TP': '{:.2f}',
-                'Probability': '{:.0f}%'
-            }), use_container_width=True)
+            
+            # Seleziona un trade per l'analisi
+            st.markdown("**Clicca su un trade per analizzarlo:**")
+            
+            for idx, row in suggestions_df.iterrows():
+                col_trade, col_btn = st.columns([4, 1])
+                with col_trade:
+                    st.write(f"**{row['Direction'].upper()}** Entry: {row['Entry']:.2f} | SL: {row['SL']:.2f} | TP: {row['TP']:.2f} | Prob: {row['Probability']:.0f}%")
+                with col_btn:
+                    if st.button("📊", key=f"analyze_{idx}"):
+                        st.session_state.selected_trade = row
             
             with st.expander("📅 Stagionalità & 📰 News"):
                 st.write("**Stagionalità:**", suggestions_df.iloc[0]['Seasonality_Note'])
@@ -379,50 +364,74 @@ if session_key in st.session_state:
         rsi_data = df_ind.tail(100)[['RSI']].copy()
         st.line_chart(rsi_data, height=200)
 
-    # Predizione manuale
-    if predict_btn:
-        valid = True
-        if direction == 'long' and (sl >= entry or tp <= entry):
-            st.error("❌ Verifica i livelli per LONG")
-            valid = False
-        elif direction == 'short' and (sl <= entry or tp >= entry):
-            st.error("❌ Verifica i livelli per SHORT")
-            valid = False
+    # Analisi del trade selezionato
+    if 'selected_trade' in st.session_state:
+        trade = st.session_state.selected_trade
         
-        if valid:
-            with st.spinner("🔮 Analisi in corso..."):
-                features = generate_features(df_ind, entry, sl, tp, direction, main_tf)
-                success_prob = predict_success(model, scaler, features)
-                factors = get_dominant_factors(model, features)
-                
-                st.markdown("---")
-                st.markdown("## 🎯 Risultato Analisi")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("🎲 Probabilità", f"{success_prob:.1f}%")
-                with col2:
-                    rr = abs(tp - entry) / abs(entry - sl)
-                    st.metric("⚖️ R/R", f"{rr:.2f}x")
-                with col3:
-                    risk_pct = abs(entry - sl) / entry * 100
-                    st.metric("📉 Risk", f"{risk_pct:.2f}%")
-                with col4:
-                    reward_pct = abs(tp - entry) / entry * 100
-                    st.metric("📈 Reward", f"{reward_pct:.2f}%")
-                
-                # Interpretazione
-                if success_prob >= 65:
-                    st.success(f"✅ **SETUP FAVOREVOLE** ({success_prob:.1f}%)")
-                elif success_prob >= 50:
-                    st.warning(f"⚠️ **SETUP NEUTRALE** ({success_prob:.1f}%)")
+        with st.spinner("🔮 Analisi AI in corso..."):
+            direction = 'long' if trade['Direction'].lower() in ['long', 'buy'] else 'short'
+            entry = trade['Entry']
+            sl = trade['SL']
+            tp = trade['TP']
+            
+            features = generate_features(df_ind, entry, sl, tp, direction, main_tf)
+            success_prob = predict_success(model, scaler, features)
+            factors = get_dominant_factors(model, features)
+            
+            st.markdown("---")
+            st.markdown("## 🎯 Risultato Analisi AI")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                delta = success_prob - trade['Probability']
+                st.metric("🎲 Probabilità AI", f"{success_prob:.1f}%", 
+                         delta=f"{delta:+.1f}%" if delta != 0 else None,
+                         help=f"Web: {trade['Probability']:.0f}%")
+            with col2:
+                rr = abs(tp - entry) / abs(entry - sl)
+                st.metric("⚖️ Risk/Reward", f"{rr:.2f}x")
+            with col3:
+                risk_pct = abs(entry - sl) / entry * 100
+                st.metric("📉 Risk %", f"{risk_pct:.2f}%")
+            with col4:
+                reward_pct = abs(tp - entry) / entry * 100
+                st.metric("📈 Reward %", f"{reward_pct:.2f}%")
+            
+            # Interpretazione confronto
+            st.markdown("### 💡 Valutazione")
+            col_web, col_ai = st.columns(2)
+            
+            with col_web:
+                st.write(f"**Analisi Web:** {trade['Probability']:.0f}%")
+                if trade['Probability'] >= 65:
+                    st.success("✅ Setup favorevole")
+                elif trade['Probability'] >= 50:
+                    st.warning("⚠️ Setup neutrale")
                 else:
-                    st.error(f"❌ **SETUP SFAVOREVOLE** ({success_prob:.1f}%)")
-                
-                # Fattori
-                st.markdown("### 📊 Fattori Chiave")
-                for i, factor in enumerate(factors, 1):
-                    st.write(f"**{i}.** {factor}")
+                    st.error("❌ Setup sfavorevole")
+            
+            with col_ai:
+                st.write(f"**Analisi AI:** {success_prob:.1f}%")
+                if success_prob >= 65:
+                    st.success("✅ Setup favorevole")
+                elif success_prob >= 50:
+                    st.warning("⚠️ Setup neutrale")
+                else:
+                    st.error("❌ Setup sfavorevole")
+            
+            # Confronto
+            if abs(success_prob - trade['Probability']) > 10:
+                if success_prob > trade['Probability']:
+                    st.info(f"💡 L'AI è più ottimista (+{success_prob - trade['Probability']:.1f}%)")
+                else:
+                    st.warning(f"⚠️ L'AI è più prudente ({success_prob - trade['Probability']:.1f}%)")
+            else:
+                st.success("✅ Analisi Web e AI sono allineate")
+            
+            # Fattori
+            st.markdown("### 📊 Fattori Chiave dell'AI")
+            for i, factor in enumerate(factors, 1):
+                st.write(f"**{i}.** {factor}")
 
 else:
     st.warning("Carica i dati per lo strumento selezionato.")
