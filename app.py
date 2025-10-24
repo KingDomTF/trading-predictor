@@ -455,13 +455,27 @@ if session_key in st.session_state:
             st.info("Nessun suggerimento web per questo strumento.")
    
     with col_right:
-        st.markdown("### 📈 Grafici Tecnici")
-        chart_data = df_ind.tail(100)[['Close', 'EMA_20', 'EMA_50']].copy()
-        chart_data.columns = ['Prezzo', 'EMA 20', 'EMA 50']
-        st.line_chart(chart_data, height=250)
-       
-        rsi_data = df_ind.tail(100)[['RSI']].copy()
-        st.line_chart(rsi_data, height=200)
+        st.markdown("### 📈 Potenziali Asset in Crescita")
+        st.markdown("Basato su analisi di periodi storici simili al 2025 (es. mid-1990s per tech boom, periodi di incertezza per metalli preziosi).")
+        data = [
+            {"Nome": "Gold", "Ticker": "GC=F", "Motivazione": "Forte performance in periodi di incertezza economica e inflazione."},
+            {"Nome": "Silver", "Ticker": "SI=F", "Motivazione": "Simile all'oro, con potenziale in mercati volatili."},
+            {"Nome": "Bitcoin", "Ticker": "BTC-USD", "Motivazione": "Crescita in periodi di innovazione finanziaria e rischio."},
+            {"Nome": "Nvidia", "Ticker": "NVDA", "Motivazione": "Leader in AI, simile al boom tech degli anni '90."},
+            {"Nome": "Broadcom", "Ticker": "AVGO", "Motivazione": "Crescita in semiconduttori e tech."},
+            {"Nome": "Palantir", "Ticker": "PLTR", "Motivazione": "Focus su data analytics e AI."},
+            {"Nome": "JPMorgan", "Ticker": "JPM", "Motivazione": "Banche stabili in periodi di crescita moderata."},
+            {"Nome": "Microsoft", "Ticker": "MSFT", "Motivazione": "Dominio in cloud e AI."},
+            {"Nome": "Amazon", "Ticker": "AMZN", "Motivazione": "E-commerce e cloud in espansione."},
+            {"Nome": "Tesla", "Ticker": "TSLA", "Motivazione": "Innovazione in EV e energia."},
+            {"Nome": "Copper", "Ticker": "HG=F", "Motivazione": "Domanda industriale in periodi di ripresa."},
+            {"Nome": "Lithium", "Ticker": "LIT", "Motivazione": "Crescita in batterie e EV."},
+            {"Nome": "Uranium", "Ticker": "URA", "Motivazione": "Transizione energetica."},
+            {"Nome": "Oil", "Ticker": "CL=F", "Motivazione": "Potenziale rebound dopo cali."},
+            {"Nome": "Nasdaq-100 ETF", "Ticker": "QQQ", "Motivazione": "Esposizione a tech growth stocks."}
+        ]
+        growth_df = pd.DataFrame(data)
+        st.table(growth_df)
     
     # Analisi del trade selezionato
     if 'selected_trade' in st.session_state:
