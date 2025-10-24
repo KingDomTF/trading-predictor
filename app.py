@@ -426,26 +426,6 @@ if session_key in st.session_state:
     # Recupero segnali web dinamici
     web_signals_list = get_web_signals(symbol, df_ind)
     
-    # Layout: Statistiche correnti
-    st.markdown("### 📊 Statistiche Correnti")
-    latest = df_ind.iloc[-1]
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("Prezzo", f"${latest['Close']:.2f}")
-    with col2:
-        st.metric("RSI", f"{latest['RSI']:.1f}")
-    with col3:
-        st.metric("ATR", f"{latest['ATR']:.2f}")
-    with col4:
-        trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
-        st.metric("Trend", trend_emoji)
-    with col5:
-        if avg_forecast is not None:
-            st.metric("Previsione Prezzo (next 5)", f"{avg_forecast:.2f}")
-        else:
-            st.metric("Previsione Prezzo", "N/A")
-    st.markdown("---")
-    
     # Layout: Suggerimenti Web con Analisi AI
     col_left, col_right = st.columns([1, 1])
    
@@ -498,6 +478,24 @@ if session_key in st.session_state:
             factors = get_dominant_factors(model, features)
            
             st.markdown("---")
+            # Layout: Statistiche correnti
+            st.markdown("### 📊 Statistiche Correnti")
+            latest = df_ind.iloc[-1]
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col1:
+                st.metric("Prezzo", f"${latest['Close']:.2f}")
+            with col2:
+                st.metric("RSI", f"{latest['RSI']:.1f}")
+            with col3:
+                st.metric("ATR", f"{latest['ATR']:.2f}")
+            with col4:
+                trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
+                st.metric("Trend", trend_emoji)
+            with col5:
+                if avg_forecast is not None:
+                    st.metric("Previsione Prezzo (next 5)", f"{avg_forecast:.2f}")
+                else:
+                    st.metric("Previsione Prezzo", "N/A")
             st.markdown("## 🎯 Risultato Analisi AI")
            
             col1, col2, col3, col4 = st.columns(4)
