@@ -1,4 +1,4 @@
-Ho pensato per 41spythonimport streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
