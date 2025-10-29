@@ -185,107 +185,64 @@ def predict_price(df_ind, steps=5):
         return None, None
 
 def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
-    """Analisi approfondita della psicologia dell'investitore con comparazione storica, bias comportamentali e focus specifici su asset come Bitcoin, Argento e S&P 500."""
+    """Analisi della psicologia dell'investitore con comparazione storica, bias comportamentali e analisi specifica per BTC, Silver e S&P500."""
     latest = df_ind.iloc[-1]
     trend = 'bullish' if latest['Trend'] == 1 else 'bearish'
     
-    # Analisi generale attuale (2025), arricchita con dati recenti al 28 Ottobre 2025
+    # Analisi generale attuale (2025)
     current_analysis = f"""
-    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente (al 3.5% negli USA), tensioni geopolitiche (es. Medio Oriente e Ucraina) e un boom dell'IA che ha spinto il NASDAQ oltre i 20,000 punti. La psicologia degli investitori è segnata da un mix di ottimismo tecnologico e ansia macroeconomica, con il VIX a livelli elevati (intorno a 25), indicando volatilità. Studi recenti, come quello su ACR Journal (Ottobre 2025), sottolineano come l'intelligenza emotiva riduca errori del 20-30%, mentre Flexible Plan Investments nota che i bias colpiscono anche istituzionali in mercati estremi. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive, amplificate da social media e AI-driven trading. Robo-advisor e nudge comportamentali (ScienceDirect, 2025) stanno mitigando questi effetti promuovendo diversificazione.
+    Nel 2025, i mercati sono influenzati da inflazione persistente, tensioni geopolitiche e boom dell'IA. La psicologia degli investitori è caratterizzata da ansia elevata e comportamenti impulsivi, amplificati dai social media. Studi recenti (ACR Journal, ottobre 2025) mostrano che l'intelligenza emotiva riduce errori del 20-30%. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, si osserva overreazione al ribasso in contesti volatili. Fintech e AI contrastano i bias con nudge per diversificazione.
     """
     
-    # Sezione integrata sui bias comportamentali generali, aggiornata al 2025
-    biases_analysis = """
-    ### Analisi Approfondita dei Bias Comportamentali negli Investimenti (2025)
-    
-    Basato su una meta-analisi su F1000Research (Ottobre 2025), i bias comportamentali causano perdite annue del 2-3% per retail investors (Morningstar, J.P. Morgan). Nel 2025, social media e algoritmi amplificano questi effetti, con un 'gap comportamentale' stimato al 4% in mercati volatili.
-    
-    | Bias Cognitivo | Definizione | Esempio Generale | Impatto nel 2025 | Fonte |
-    |---------------|-------------|------------------|------------------|-------|
-    | **Avversione alle Perdite** | Perdite percepite 2x più dolorose dei guadagni. | Mantenere asset in calo sperando in recuperi. | Deflussi da fondi azionari >200 mld USD post-boom IA (Charles Schwab, Giugno 2025). | Prospect Theory; Vanguard. |
-    | **Eccessiva Fiducia** | Sovrastima abilità predittive. | Overtrading in volatili come crypto. | Amplificato da app, perdite in instabili mercati (JPMorgan, Agosto 2025). | Barber & Odean. |
-    | **Effetto Gregge** | Seguire la massa. | Acquistare tech in euforia. | Flash crash virali, afflussi obbligazionari 850 mld (EPFR, 2025). | EPFR Global. |
-    | **Bias di Conferma** | Cercare conferme a convinzioni. | Ignorare segnali negativi. | Echo chamber AI causano bolle (Taylor & Francis, 2025). | Finanza comportamentale. |
-    | **Bias di Ancoraggio** | Affidarsi a prima info. | Non vendere fino a prezzo acquisto. | Ritardi riequilibri in fluttuazioni tassi (Emerald Insight, Agosto 2025). | Framing effect. |
-    | **Recency Bias** | Focus su eventi recenti. | Assumere trend brevi continuino. | Comprare alto post-rally IA, vendere basso post-crash (EJBRM, Luglio 2025). | Boston Institute. |
-    
-    Raccomandazione: Fondi indicizzati/ETF con rebalancing automatico outperformano strategie emotive (Dalbar 2025), riducendo bias del 15-25%.
-    """
-    
-    # Analisi specifica per asset richiesti, basata su ricerche aggiornate al 2025
+    # Analisi specifica per asset selezionati
     asset_specific = ""
     if symbol == 'BTC-USD':
         asset_specific = """
-        ### Focus su Bitcoin (BTC-USD): Psicologia e Bias nel 2025
-        
-        Nel 2025, Bitcoin ha visto un shift psicologico: da 'legittimità' (2020-2023, MicroStrategy) a 'adozione istituzionale' (2024, ETF) a 'produttività' (2025, con domande su come renderlo yield-bearing). Con il 73% della supply in long-term holders (Ainvest, Ottobre 2025), il mercato riflette accumulo strategico. Bias chiave:
-        
-        - **Herding e Sentiment**: Studi (Sage, Luglio 2025) mostrano herding, sentiment e attention driving anomalie prezzi, amplificate da social (es. FOMO in rally).
-        - **Loss Aversion/Disposition**: Investitori vendono vincitori troppo presto, tengono perdenti (ScienceDirect, 2025).
-        - **Overconfidence**: Sovrastima predizioni, leading a overtrading (Emerald, Agosto 2025).
-        - **Bandwagon Effect**: Prezzi BTC creano feedback loops, amplificando herd mentality (Springer, Luglio 2025).
-        
-        Comparazione Storica:
-        - **Bolla Dot-Com (2000)**: Simile eccessiva confidenza in 'nuova tech', seguito da crash.
-        - **Crollo COVID (2020)**: FOMO rapido; nel 2025, volatilità prolungata con ETF stabilizzanti.
-        - **Tulip Mania (1630s)**: Parallelo a crypto frenzy, ma 2025 ha maturazione istituzionale.
-        
-        Previsione: Emotional psychology outperforma modelli tradizionali per predire prezzi (Onesafe, Ottobre 2025). Raccomando allocazioni 5-10% in portafogli diversificati per bilanciare rischio.
+        **Analisi su Bitcoin (BTC-USD, Ottobre 2025):**
+        Prezzo attuale: ~$111,000-$113,000. Previsioni: $114k-$122k, con AI che prevede $128k-$136k per fine Ottobre<grok-card data-id="1c8fe7" data-type="citation_card"></grok-card><grok-card data-id="f5ca40" data-type="citation_card"></grok-card>. Trend: Consolidazione sopra $111k, accumulazione in corso, potenziale rally a $118k-$123k se breakout sopra $115k<grok-card data-id="a6c6e8" data-type="citation_card"></grok-card>. Sentiment X: Misto, con rejection near equilibrium ma pump $2k ahead of Fed<grok-card data-id="bac434" data-type="citation_card"></grok-card><grok-card data-id="41f305" data-type="citation_card"></grok-card>. Comparazione storica: Simile al 2021 bull run, ma con maggiore maturità istituzionale post-ETF. Bias: Overconfidence in young investors porta a overtrading in volatilità.
         """
     elif symbol == 'SI=F':
         asset_specific = """
-        ### Focus su Argento (SI=F): Psicologia e Bias nel 2025
-        
-        L'argento nel 2025 mostra un 'behavioral bull case' (Ainvest, Agosto 2025), con reflection effect amplificante volatilità (1.7x vs oro). ETF come SLV vedono shift rapidi dovuti a psychology, con afflussi in periodi di stress industriale/inflazione. Bias chiave:
-        
-        - **FOMO/Recency Bias**: 'Silver rush' con prezzi surging su domanda industriale (LinkedIn, Ottobre 2025), leading a herd mentality.
-        - **Magical Thinking**: Skew judgment in precious metals, lontano da fundamentals (Facebook, Ottobre 2025).
-        - **Overconfidence/Herd**: Multipli bias in rally, come FOMO post-stabilizzazione (LinkedIn).
-        
-        Comparazione Storica:
-        - **Caccia all'Argento (1980)**: Fratelli Hunt manipolarono mercato; 2025 vede surge organico ma simile euforia.
-        - **Crisi 2008**: Argento come safe-haven; nel 2025, mix safe-haven/industriale amplifica bias.
-        - **Bollicine Storiche**: Simile a South Sea Bubble, con social media acceleranti herd.
-        
-        Previsione: Target $65+ (analisti), con correzioni come buying opps. Suggerisco esposizione tramite ETF per mitigare volatility emotiva.
+        **Analisi su Argento (SI=F, Ottobre 2025):**
+        Prezzo attuale: ~$45-$50/oz. Outlook bullish: Previsioni banche $40-$52+, declino recente da $52 a $47<grok-card data-id="ea261f" data-type="citation_card"></grok-card><grok-card data-id="fc985f" data-type="citation_card"></grok-card>. Trend: Uptrend settimanale, bounce da $46, resistance $48-$50<grok-card data-id="6940be" data-type="citation_card"></grok-card>. Sentiment X: Potenziale calo a $42 poi up a $54-55 by Giugno 2026, leading gold in next run<grok-card data-id="846dfe" data-type="citation_card"></grok-card><grok-card data-id="13eda7" data-type="citation_card"></grok-card>. Comparazione storica: Simile a 2020 sprint (60% gain vs 15% gold), breakout storico dopo 45 anni<grok-card data-id="497220" data-type="citation_card"></grok-card>. Bias: Herd mentality amplificata da social, causing flash rallies.
         """
     elif symbol == '^GSPC':
         asset_specific = """
-        ### Focus su S&P 500 (^GSPC): Psicologia e Bias nel 2025
-        
-        L'S&P 500 nel 2025 prevede guadagni muti (Morgan Stanley, Febbraio 2025), con behavioral component in drops (SSRN, Giugno 2025). Psicologia shapata da emozioni (fear/greed), con VIX elevato. Bias chiave:
-        
-        - **Overconfidence/Loss Aversion**: Leading a poor choices (UBS, 2025).
-        - **Herd Mentality**: Emozioni reshapano landscape (FinancialContent, Settembre 2025).
-        - **Zero-Risk Illusion**: Rischi 'sentiti' più che dati (Investing.com, Ottobre 2025).
-        
-        Comparazione Storica:
-        - **Crisi 2008**: Behavioral mistakes amplificati; advisor prevengono (Russell Investments).
-        - **COVID 2020**: Volatile emotions; 2025 più muted ma simile psychology.
-        - **Dot-Com 2000**: Overconfidence in tech, parallelo a IA boom.
-        
-        Previsione: Opportunità in growth/value; focus su controlling behavior (Virtus, 2025). Raccomando indici passivi per evitare bias.
-        """
-    else:
-        asset_specific = """
-        ### Analisi Specifica per {symbol}
-        
-        Per asset generali, la psicologia segue pattern macro, con bias come herd e overconfidence dominanti. Compara a crisi passate per insights.
+        **Analisi su S&P 500 (^GSPC, Ottobre 2025):**
+        Prezzo attuale: ~6,897-6,911. Rally 36% in 6 mesi, new highs<grok-card data-id="3fc28d" data-type="citation_card"></grok-card><grok-card data-id="3918d3" data-type="citation_card"></grok-card>. Earnings: 87% beat EPS Q3<grok-card data-id="613063" data-type="citation_card"></grok-card>. Trend: Bullish, resistance 7,075, support 6,865<grok-card data-id="40d9fc" data-type="citation_card"></grok-card>. Sentiment X: Recession prob <40%, new ATH, liquidity to risk-on<grok-card data-id="7e8823" data-type="citation_card"></grok-card><grok-card data-id="64f52d" data-type="citation_card"></grok-card>. Comparazione storica: Simile a post-COVID rally, ma con Fed cuts attesi. Bias: Overconfidence in tech boom, simile a dot-com.
         """
     
-    # Comparazione storica generale, arricchita
-    historical_comparison = """
-    **Comparazione Storica Generale:**
-    - **2008 Crisi**: Panico senza digital amp; value funds outperform.
-    - **2020 COVID**: FOMO rapido; 2025 prolungato con AI mitiganti (F1000Research, Settembre 2025).
-    - **2000 Dot-Com**: Confidenza in tech, simile IA 2025 (ScienceDirect).
-    - **Storiche Bolle**: FOMO amplificato online (X posts, Ottobre 2025).
-    - **1989 Giappone**: Euphoria a declino; 2025 emergenti mostrano aversion (es. oro/argento).
+    # Sezione sui bias comportamentali
+    biases_analysis = """
+    ### Analisi dei Bias Comportamentali negli Investimenti
     
-    Bias universali, intensificati nel 2025 da real-time data. Strategie sistematiche (fondi) mitigano, outperformando emotive (Dalbar 2025).
+    Nel 2025, i bias causano perdite 2-3% annue per retail (Morningstar, J.P. Morgan)<grok-card data-id="ab7a88" data-type="citation_card"></grok-card>. Meta-analisi F1000Research conferma impatto persistente.
+    
+    | Bias | Definizione | Esempio | Impatto 2025 | Fonte |
+    |------|-------------|---------|--------------|-------|
+    | Avversione alle Perdite | Perdite 2x dolorose | Tenere perdite | Deflussi $200B post-IA | Prospect Theory<grok-card data-id="349494" data-type="citation_card"></grok-card> |
+    | Eccessiva Fiducia | Sovrastima abilità | Overtrading crypto | Perdite in instabilità | Barber & Odean |
+    | Effetto Gregge | Seguire massa | Euforia tech | Afflussi $850B obbligazionari | EPFR |
+    | Bias di Conferma | Confermare convinzioni | Ignorare negativi | Bolle AI | Finanza comportamentale |
+    | Bias di Ancoraggio | Prima info | Non vendere sotto acquisto | Ritardi riequilibri | Framing effect |
+    | Recency Bias | Eventi recenti | Comprare alto post-rally | Vendite basso post-crash | EJBRM |
+    
+    Raccomando fondi indicizzati per mitigare, outperform in crisi (Dalbar 2025).
     """
     
-    return current_analysis + biases_analysis + asset_specific + historical_comparison
+    # Comparazione storica
+    historical_comparison = """
+    **Comparazione Storica:**
+    - 2008 Crisi: Panico avversione perdita, senza digital amp. Fondi value vincenti.
+    - 2020 COVID: FOMO rapido; 2025 volatilità prolungata, bias persistenti (F1000Research)<grok-card data-id="5abf83" data-type="citation_card"></grok-card>.
+    - 2000 Dot-com: Overconfidence tech, simile IA 2025 (ScienceDirect).
+    - Bolle storiche: FOMO gregge, paralleli crypto 2021-2025.
+    - 1989 Giappone: Euphoria declino; 2025 emergenti risk aversion (oro India).
+    
+    Bias universali, intensificati da real-time data. Strategie sistematiche mitigano.
+    """
+    
+    return current_analysis + asset_specific + biases_analysis + historical_comparison
 
 def get_web_signals(symbol, df_ind):
     """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
@@ -455,7 +412,7 @@ def train_or_load_model(symbol, interval='1h'):
     model, scaler = train_model(X, y)
     return model, scaler, df_ind
 
-# Mappatura nomi propri, aggiornata con S&P 500
+# Mappatura nomi propri, aggiunto S&P500
 proper_names = {
     'GC=F': 'XAU/USD',
     'EURUSD=X': 'EUR/USD',
@@ -493,12 +450,12 @@ st.markdown("""
 
 # Header
 st.title("📈 Trading Success Predictor AI")
-st.markdown("**Analisi predittiva per operazioni su vari strumenti con Machine Learning**")
+st.markdown("**Analisi predittiva per operazioni su vari strumenti con Machine Learning, inclusa analisi specifica su BTC, Silver e S&P500**")
 
 # Parametri semplificati
 col1, col2 = st.columns([3, 1])
 with col1:
-    symbol = st.text_input("📈 Seleziona Strumento (Ticker)", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)")
+    symbol = st.text_input("📈 Seleziona Strumento (Ticker)", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P500)")
     proper_name = proper_names.get(symbol, symbol)
     st.write(f"Strumento: {proper_name}")
 with col2:
@@ -559,7 +516,7 @@ if session_key in st.session_state:
             st.info("Nessun suggerimento web per questo strumento.")
    
     with col_right:
-        st.markdown("### 📈 Potenziali Asset in Crescita")
+        st.markdown("### 📈 Potenziali Asset in Crescita (Ridotti a 10)")
         st.markdown("Basato su analisi di periodi storici simili al 2025 (es. mid-1990s per tech boom, periodi di incertezza per metalli preziosi).")
         data = [
             {"Nome": "Gold", "Ticker": "GC=F", "Motivazione": "Forte performance in periodi di incertezza economica e inflazione."},
@@ -568,16 +525,10 @@ if session_key in st.session_state:
             {"Nome": "Nvidia", "Ticker": "NVDA", "Motivazione": "Leader in AI, simile al boom tech degli anni '90."},
             {"Nome": "Broadcom", "Ticker": "AVGO", "Motivazione": "Crescita in semiconduttori e tech."},
             {"Nome": "Palantir", "Ticker": "PLTR", "Motivazione": "Focus su data analytics e AI."},
-            {"Nome": "JPMorgan", "Ticker": "JPM", "Motivazione": "Banche stabili in periodi di crescita moderata."},
             {"Nome": "Microsoft", "Ticker": "MSFT", "Motivazione": "Dominio in cloud e AI."},
             {"Nome": "Amazon", "Ticker": "AMZN", "Motivazione": "E-commerce e cloud in espansione."},
             {"Nome": "Tesla", "Ticker": "TSLA", "Motivazione": "Innovazione in EV e energia."},
-            {"Nome": "Copper", "Ticker": "HG=F", "Motivazione": "Domanda industriale in periodi di ripresa."},
-            {"Nome": "Lithium", "Ticker": "LIT", "Motivazione": "Crescita in batterie e EV."},
-            {"Nome": "Uranium", "Ticker": "URA", "Motivazione": "Transizione energetica."},
-            {"Nome": "Oil", "Ticker": "CL=F", "Motivazione": "Potenziale rebound dopo cali."},
-            {"Nome": "Nasdaq-100 ETF", "Ticker": "QQQ", "Motivazione": "Esposizione a tech growth stocks."},
-            {"Nome": "S&P 500", "Ticker": "^GSPC", "Motivazione": "Mercato azionario ampio con opportunità in growth e value."}
+            {"Nome": "Nasdaq-100 ETF", "Ticker": "QQQ", "Motivazione": "Esposizione a tech growth stocks."}
         ]
         growth_df = pd.DataFrame(data)
         st.table(growth_df)
@@ -669,8 +620,8 @@ if session_key in st.session_state:
             for i, factor in enumerate(factors, 1):
                 st.write(f"**{i}.** {factor}")
             
-            # Sezione potenziata: Psicologia dell'investitore
-            st.markdown("### 🧠 Psicologia dell'Investitore: Analisi Approfondita, Storica e Specifica (Aggiornata al 2025)")
+            # Sezione psicologia dell'investitore con analisi specifica
+            st.markdown("### 🧠 Psicologia dell'Investitore: Analisi Attuale, Storica e Specifica per Asset")
             psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
             st.markdown(psych_analysis)
 else:
@@ -683,7 +634,7 @@ with st.expander("ℹ️ Come funziona"):
     - 📊 Indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR)
     - 📈 Setup storici e probabilità di successo
     - 💡 Suggerimenti web con stagionalità, news, sentiment e previsioni (aggiornati dinamicamente)
-    - 🧠 Potenziata: Analisi approfondita della psicologia dell'investitore con comparazioni storiche, bias comportamentali e focus specifici su Bitcoin, Argento e S&P 500, basati su ricerche aggiornate al 2025.
+    - 🧠 Analisi psicologia investitore con bias, comparazioni storiche e focus su BTC, Silver, S&P500 basati su dati Ottobre 2025.
     """)
 
 # Footer
