@@ -567,4 +567,4 @@ st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9em;'>
     ?? <strong>Disclaimer:</strong> Strumento educativo. Non   consiglio finanziario.
 </div>
-""", unsafe_allow_html=True
+""", unsafe_allow_html=True)
