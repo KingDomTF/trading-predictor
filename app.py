@@ -184,55 +184,6 @@ def predict_price(df_ind, steps=5):
     except:
         return None, None
 
-def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
-    """Analisi della psicologia dell'investitore con comparazione storica e integrazione dei bias comportamentali."""
-    latest = df_ind.iloc[-1]
-    trend = 'bullish' if latest['Trend'] == 1 else 'bearish'
-    
-    # Analisi attuale (2025), aggiornata con dati recenti
-    current_analysis = f"""
-    Nel 2025, il mercato è caratterizzato da un trend ribassista prolungato, influenzato da pressioni inflazionistiche, tensioni geopolitiche e volatilità dei tassi di interesse. 
-    La psicologia degli investitori è dominata da ansia elevata, con comportamenti impulsivi come vendite di panico e monitoraggio frequente dei trend di mercato. 
-    Studi recenti, come quello pubblicato su ACR Journal (ottobre 2025), evidenziano come l'intelligenza emotiva medi l'impatto dei bias cognitivi sulle decisioni di investimento, riducendo errori del 20-30% nei casi analizzati.
-    Inoltre, secondo Flexible Plan Investments (ottobre 2025), i bias comportamentali non sono limitati agli investitori retail ma influenzano anche i gestori istituzionali, specialmente in mercati estremi con VIX elevato.
-    Per {symbol}, con un trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazione al ribasso, simile al contesto di volatilità elevata.
-    Fintech e AI, come i robo-advisor, stanno contrastando questi bias con nudge per diversificazione e holding a lungo termine, come discusso in uno studio su ScienceDirect (2025).
-    """
-    
-    # Sezione integrata sui bias comportamentali, aggiornata con dati 2025
-    biases_analysis = """
-    ### Analisi dei Bias Comportamentali negli Investimenti
-    
-    I bias comportamentali sono errori sistematici nel processo decisionale che influenzano le scelte finanziarie. Nel 2025, con mercati volatili e boom dell'IA, questi bias sono amplificati da social media e trading algoritmico, causando perdite medie del 2-3% annuo per investitori retail (studi Morningstar e J.P. Morgan, 2025). Un recente studio su F1000Research (ottobre 2025) ha condotto una meta-analisi su bias che influenzano le decisioni di investimento, confermando il loro impatto persistente.
-    
-    Ecco i bias principali, con esempi aggiornati al 2025:
-    
-    | Bias Cognitivo | Definizione | Esempio negli Investimenti | Impatto nel 2025 | Fonte |
-    |---------------|-------------|----------------------------|------------------|-------|
-    | **Avversione alle Perdite (Loss Aversion)** | Le perdite sono percepite come 2 volte più dolorose dei guadagni. | Mantenere azioni in perdita sperando in un recupero. | In correzioni di mercato post-boom IA, causa deflussi netti da fondi azionari superiori a 200 miliardi di dollari (Charles Schwab, giugno 2025). | Prospect Theory (Kahneman & Tversky); Vanguard. |
-    | **Eccessiva Fiducia (Overconfidence)** | Sovrastima delle proprie capacità predittive. | Trading frequente in asset volatili come cripto. | Amplificato da app di trading, porta a overtrading con perdite in mercati instabili (JPMorgan Podcast, agosto 2025). | Barber & Odean (2000). |
-    | **Effetto Gregge (Herd Mentality)** | Seguire la massa per conformismo. | Acquistare tech durante euforia collettiva. | Social media amplificano flash crash, con afflussi in obbligazionari di 850 miliardi (EPFR Global, 2025). | Analisi EPFR. |
-    | **Bias di Conferma** | Cercare solo informazioni che confermano convinzioni. | Ignorare segnali negativi su asset posseduti. | Echo chamber AI-generati causano bolle informative (Taylor & Francis, 2025). | Finanza comportamentale generale. |
-    | **Bias di Ancoraggio** | Affidarsi alla prima informazione ricevuta. | Rifiutare di vendere fino al prezzo d'acquisto. | Ritardi in riequilibri durante fluttuazioni tassi (Emerald Insight, agosto 2025). | Studi su framing effect. |
-    | **Recency Bias** | Dare troppa importanza agli eventi recenti. | Assumere che trend brevi continuino. | Porta a comprare alto dopo rally IA, vendere basso dopo crash (EJBRM, luglio 2025). | Boston Institute of Analytics. |
-    
-    Come esperto di fondi d'investimento, raccomando fondi indicizzati e ETF per mitigare questi bias attraverso diversificazione passiva e rebalancing automatico, che hanno outperformato strategie attive emotive in crisi passate (studio Dalbar 2025).
-    """
-    
-    # Comparazione storica, arricchita
-    historical_comparison = """
-    **Comparazione con il passato:**
-    - **Crisi finanziaria 2008**: Panico amplificato da avversione alla perdita e gregge, senza amplificazione digitale. Fondi value outperformarono.
-    - **Crollo COVID-19 (2020)**: Reazioni rapide con FOMO; nel 2025, volatilità prolungata con bias persistenti, ma regolatori come SEBI meno efficaci contro disinformazione (F1000Research, settembre 2025).
-    - **Bolla dot-com (2000)**: Eccessiva confidenza in tech, simile al boom IA 2025 (ScienceDirect, 2025).
-    - **Bollicine storiche (Tulip Mania 1630s, South Sea Bubble 1720)**: FOMO e gregge, paralleli a crypto frenzy 2021-2025, amplificati online (post X su psicologia investing, ottobre 2025).
-    - **Bollicina giapponese (1989)**: Euphoria leading a declino; nel 2025, mercati emergenti mostrano risk aversion culturale (es. oro in India).
-    
-    I bias sono universali, ma nel 2025 intensificati da dati real-time. Strategie sistematiche nei fondi mitigano effetti, come in crisi passate.
-    """
-    
-    return current_analysis + biases_analysis + historical_comparison
-
 def get_web_signals(symbol, df_ind):
     """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
     try:
@@ -612,11 +563,6 @@ if session_key in st.session_state:
             st.markdown("### 📊 Fattori Chiave dell'AI")
             for i, factor in enumerate(factors, 1):
                 st.write(f"**{i}.** {factor}")
-            
-            # Nuova sezione: Psicologia dell'investitore
-            st.markdown("### 🧠 Psicologia dell'Investitore: Analisi Attuale e Storica")
-            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
-            st.markdown(psych_analysis)
 else:
     st.warning("Carica i dati per lo strumento selezionato.")
 
@@ -627,7 +573,6 @@ with st.expander("ℹ️ Come funziona"):
     - 📊 Indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR)
     - 📈 Setup storici e probabilità di successo
     - 💡 Suggerimenti web con stagionalità, news, sentiment e previsioni (aggiornati dinamicamente)
-    - 🧠 Nuova: Analisi della psicologia dell'investitore con comparazioni storiche e bias comportamentali basati su finanza comportamentale e studi recenti del 2025.
     """)
 
 # Footer
