@@ -138,7 +138,7 @@ def train_model(X_train, y_train):
     return model, scaler
 
 def predict_success(model, scaler, features):
-    """Predice probabilità di successo."""
+    """Predice probabilit  di successo."""
     features_scaled = scaler.transform(features.reshape(1, -1))
     prob = model.predict_proba(features_scaled)[0][1]
     return prob * 100
@@ -184,57 +184,8 @@ def predict_price(df_ind, steps=5):
     except:
         return None, None
 
-def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
-    """Analisi della psicologia dell'investitore con comparazione storica e integrazione dei bias comportamentali."""
-    latest = df_ind.iloc[-1]
-    trend = 'bullish' if latest['Trend'] == 1 else 'bearish'
-    
-    # Analisi attuale (2025), aggiornata con dati recenti
-    current_analysis = f"""
-    Nel 2025, il mercato è caratterizzato da un trend ribassista prolungato, influenzato da pressioni inflazionistiche, tensioni geopolitiche e volatilità dei tassi di interesse. 
-    La psicologia degli investitori è dominata da ansia elevata, con comportamenti impulsivi come vendite di panico e monitoraggio frequente dei trend di mercato. 
-    Studi recenti, come quello pubblicato su ACR Journal (ottobre 2025), evidenziano come l'intelligenza emotiva medi l'impatto dei bias cognitivi sulle decisioni di investimento, riducendo errori del 20-30% nei casi analizzati.
-    Inoltre, secondo Flexible Plan Investments (ottobre 2025), i bias comportamentali non sono limitati agli investitori retail ma influenzano anche i gestori istituzionali, specialmente in mercati estremi con VIX elevato.
-    Per {symbol}, con un trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazione al ribasso, simile al contesto di volatilità elevata.
-    Fintech e AI, come i robo-advisor, stanno contrastando questi bias con nudge per diversificazione e holding a lungo termine, come discusso in uno studio su ScienceDirect (2025).
-    """
-    
-    # Sezione integrata sui bias comportamentali, aggiornata con dati 2025
-    biases_analysis = """
-    ### Analisi dei Bias Comportamentali negli Investimenti
-    
-    I bias comportamentali sono errori sistematici nel processo decisionale che influenzano le scelte finanziarie. Nel 2025, con mercati volatili e boom dell'IA, questi bias sono amplificati da social media e trading algoritmico, causando perdite medie del 2-3% annuo per investitori retail (studi Morningstar e J.P. Morgan, 2025). Un recente studio su F1000Research (ottobre 2025) ha condotto una meta-analisi su bias che influenzano le decisioni di investimento, confermando il loro impatto persistente.
-    
-    Ecco i bias principali, con esempi aggiornati al 2025:
-    
-    | Bias Cognitivo | Definizione | Esempio negli Investimenti | Impatto nel 2025 | Fonte |
-    |---------------|-------------|----------------------------|------------------|-------|
-    | **Avversione alle Perdite (Loss Aversion)** | Le perdite sono percepite come 2 volte più dolorose dei guadagni. | Mantenere azioni in perdita sperando in un recupero. | In correzioni di mercato post-boom IA, causa deflussi netti da fondi azionari superiori a 200 miliardi di dollari (Charles Schwab, giugno 2025). | Prospect Theory (Kahneman & Tversky); Vanguard. |
-    | **Eccessiva Fiducia (Overconfidence)** | Sovrastima delle proprie capacità predittive. | Trading frequente in asset volatili come cripto. | Amplificato da app di trading, porta a overtrading con perdite in mercati instabili (JPMorgan Podcast, agosto 2025). | Barber & Odean (2000). |
-    | **Effetto Gregge (Herd Mentality)** | Seguire la massa per conformismo. | Acquistare tech durante euforia collettiva. | Social media amplificano flash crash, con afflussi in obbligazionari di 850 miliardi (EPFR Global, 2025). | Analisi EPFR. |
-    | **Bias di Conferma** | Cercare solo informazioni che confermano convinzioni. | Ignorare segnali negativi su asset posseduti. | Echo chamber AI-generati causano bolle informative (Taylor & Francis, 2025). | Finanza comportamentale generale. |
-    | **Bias di Ancoraggio** | Affidarsi alla prima informazione ricevuta. | Rifiutare di vendere fino al prezzo d'acquisto. | Ritardi in riequilibri durante fluttuazioni tassi (Emerald Insight, agosto 2025). | Studi su framing effect. |
-    | **Recency Bias** | Dare troppa importanza agli eventi recenti. | Assumere che trend brevi continuino. | Porta a comprare alto dopo rally IA, vendere basso dopo crash (EJBRM, luglio 2025). | Boston Institute of Analytics. |
-    
-    Come esperto di fondi d'investimento, raccomando fondi indicizzati e ETF per mitigare questi bias attraverso diversificazione passiva e rebalancing automatico, che hanno outperformato strategie attive emotive in crisi passate (studio Dalbar 2025).
-    """
-    
-    # Comparazione storica, arricchita
-    historical_comparison = """
-    **Comparazione con il passato:**
-    - **Crisi finanziaria 2008**: Panico amplificato da avversione alla perdita e gregge, senza amplificazione digitale. Fondi value outperformarono.
-    - **Crollo COVID-19 (2020)**: Reazioni rapide con FOMO; nel 2025, volatilità prolungata con bias persistenti, ma regolatori come SEBI meno efficaci contro disinformazione (F1000Research, settembre 2025).
-    - **Bolla dot-com (2000)**: Eccessiva confidenza in tech, simile al boom IA 2025 (ScienceDirect, 2025).
-    - **Bollicine storiche (Tulip Mania 1630s, South Sea Bubble 1720)**: FOMO e gregge, paralleli a crypto frenzy 2021-2025, amplificati online (post X su psicologia investing, ottobre 2025).
-    - **Bollicina giapponese (1989)**: Euphoria leading a declino; nel 2025, mercati emergenti mostrano risk aversion culturale (es. oro in India).
-    
-    I bias sono universali, ma nel 2025 intensificati da dati real-time. Strategie sistematiche nei fondi mitigano effetti, come in crisi passate.
-    """
-    
-    return current_analysis + biases_analysis + historical_comparison
-
 def get_web_signals(symbol, df_ind):
-    """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
+    """Funzione dinamica per ottenere segnali web aggiornati, pi  precisi."""
     try:
         ticker = yf.Ticker(symbol)
         
@@ -251,10 +202,10 @@ def get_web_signals(symbol, df_ind):
         # Sentiment
         sentiment_label, sentiment_score = get_sentiment(news_summary)
         
-        # Calcolo stagionalità
+        # Calcolo stagionalit 
         hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
         if len(hist_monthly) < 12:
-            seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
+            seasonality_note = 'Dati storici insufficienti per calcolare la stagionalit .'
         else:
             hist_monthly['Return'] = hist_monthly['Close'].pct_change()
             hist_monthly['Month'] = hist_monthly.index.month
@@ -328,7 +279,7 @@ def get_web_signals(symbol, df_ind):
         return []
 
 def suggest_trades(model, scaler, df_ind, main_tf, num_suggestions=5, prob_threshold=65.0):
-    """Suggerisce trade con alta probabilità, più precisi."""
+    """Suggerisce trade con alta probabilit , pi  precisi."""
     latest = df_ind.iloc[-1]
     entry = latest['Close']
     atr = latest['ATR']
@@ -413,7 +364,7 @@ proper_names = {
 # Configurazione pagina
 st.set_page_config(
     page_title="Trading Predictor AI",
-    page_icon="📈",
+    page_icon="?",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -437,29 +388,29 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.title("📈 Trading Success Predictor AI")
+st.title("? Trading Success Predictor AI")
 st.markdown("**Analisi predittiva per operazioni su vari strumenti con Machine Learning**")
 
 # Parametri semplificati
 col1, col2 = st.columns([3, 1])
 with col1:
-    symbol = st.text_input("📈 Seleziona Strumento (Ticker)", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento)")
+    symbol = st.text_input("? Seleziona Strumento (Ticker)", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento)")
     proper_name = proper_names.get(symbol, symbol)
     st.write(f"Strumento: {proper_name}")
 with col2:
-    data_interval = st.selectbox("⏰ Timeframe Dati", ['5m', '15m', '1h'], index=2)
+    data_interval = st.selectbox("? Timeframe Dati", ['5m', '15m', '1h'], index=2)
 main_tf = 60 # Fisso per analisi
-refresh_data = st.button("🔄 Carica/Aggiorna Dati", use_container_width=True)
+refresh_data = st.button("? Carica/Aggiorna Dati", use_container_width=True)
 st.markdown("---")
 
 # Inizializzazione modello
 session_key = f"model_{symbol}_{data_interval}"
 if session_key not in st.session_state or refresh_data:
-    with st.spinner("🧠 Caricamento AI e dati..."):
+    with st.spinner("? Caricamento AI e dati..."):
         model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=data_interval)
         if model is not None:
             st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
-            st.success("✅ Sistema pronto!")
+            st.success("? Sistema pronto!")
         else:
             st.error("Impossibile caricare dati. Prova un altro ticker.")
 
@@ -479,7 +430,7 @@ if session_key in st.session_state:
     col_left, col_right = st.columns([1, 1])
    
     with col_left:
-        st.markdown("### 💡 Suggerimenti Trade (Web)")
+        st.markdown("### ? Suggerimenti Trade (Web)")
         if web_signals_list:
             suggestions_df = pd.DataFrame(web_signals_list)
             suggestions_df = suggestions_df.sort_values(by='Probability', ascending=False)
@@ -492,11 +443,11 @@ if session_key in st.session_state:
                 with col_trade:
                     st.write(f"**{row['Direction'].upper()}** Entry: {row['Entry']:.2f} | SL: {row['SL']:.2f} | TP: {row['TP']:.2f} | Prob: {row['Probability']:.0f}% | Sentiment: {row['Sentiment']}")
                 with col_btn:
-                    if st.button("📊", key=f"analyze_{idx}"):
+                    if st.button("?", key=f"analyze_{idx}"):
                         st.session_state.selected_trade = row
            
-            with st.expander("📅 Stagionalità & 📰 News & 🔮 Previsione"):
-                st.write("**Stagionalità:**", suggestions_df.iloc[0]['Seasonality_Note'])
+            with st.expander("? Stagionalit  & ? News & ? Previsione"):
+                st.write("**Stagionalit :**", suggestions_df.iloc[0]['Seasonality_Note'])
                 st.write("**News:**", suggestions_df.iloc[0]['News_Summary'])
                 st.write("**Sentiment News:**", suggestions_df.iloc[0]['Sentiment'])
                 st.write("**Previsione:**", suggestions_df.iloc[0]['Forecast_Note'])
@@ -504,33 +455,19 @@ if session_key in st.session_state:
             st.info("Nessun suggerimento web per questo strumento.")
    
     with col_right:
-        st.markdown("### 📈 Potenziali Asset in Crescita")
-        st.markdown("Basato su analisi di periodi storici simili al 2025 (es. mid-1990s per tech boom, periodi di incertezza per metalli preziosi).")
-        data = [
-            {"Nome": "Gold", "Ticker": "GC=F", "Motivazione": "Forte performance in periodi di incertezza economica e inflazione."},
-            {"Nome": "Silver", "Ticker": "SI=F", "Motivazione": "Simile all'oro, con potenziale in mercati volatili."},
-            {"Nome": "Bitcoin", "Ticker": "BTC-USD", "Motivazione": "Crescita in periodi di innovazione finanziaria e rischio."},
-            {"Nome": "Nvidia", "Ticker": "NVDA", "Motivazione": "Leader in AI, simile al boom tech degli anni '90."},
-            {"Nome": "Broadcom", "Ticker": "AVGO", "Motivazione": "Crescita in semiconduttori e tech."},
-            {"Nome": "Palantir", "Ticker": "PLTR", "Motivazione": "Focus su data analytics e AI."},
-            {"Nome": "JPMorgan", "Ticker": "JPM", "Motivazione": "Banche stabili in periodi di crescita moderata."},
-            {"Nome": "Microsoft", "Ticker": "MSFT", "Motivazione": "Dominio in cloud e AI."},
-            {"Nome": "Amazon", "Ticker": "AMZN", "Motivazione": "E-commerce e cloud in espansione."},
-            {"Nome": "Tesla", "Ticker": "TSLA", "Motivazione": "Innovazione in EV e energia."},
-            {"Nome": "Copper", "Ticker": "HG=F", "Motivazione": "Domanda industriale in periodi di ripresa."},
-            {"Nome": "Lithium", "Ticker": "LIT", "Motivazione": "Crescita in batterie e EV."},
-            {"Nome": "Uranium", "Ticker": "URA", "Motivazione": "Transizione energetica."},
-            {"Nome": "Oil", "Ticker": "CL=F", "Motivazione": "Potenziale rebound dopo cali."},
-            {"Nome": "Nasdaq-100 ETF", "Ticker": "QQQ", "Motivazione": "Esposizione a tech growth stocks."}
-        ]
-        growth_df = pd.DataFrame(data)
-        st.table(growth_df)
+        st.markdown("### ? Grafici Tecnici")
+        chart_data = df_ind.tail(100)[['Close', 'EMA_20', 'EMA_50']].copy()
+        chart_data.columns = ['Prezzo', 'EMA 20', 'EMA 50']
+        st.line_chart(chart_data, height=250)
+       
+        rsi_data = df_ind.tail(100)[['RSI']].copy()
+        st.line_chart(rsi_data, height=200)
     
     # Analisi del trade selezionato
     if 'selected_trade' in st.session_state:
         trade = st.session_state.selected_trade
        
-        with st.spinner("🔮 Analisi AI in corso..."):
+        with st.spinner("? Analisi AI in corso..."):
             direction = 'long' if trade['Direction'].lower() in ['long', 'buy'] else 'short'
             entry = trade['Entry']
             sl = trade['SL']
@@ -542,7 +479,7 @@ if session_key in st.session_state:
            
             st.markdown("---")
             # Layout: Statistiche correnti
-            st.markdown("### 📊 Statistiche Correnti")
+            st.markdown("### ? Statistiche Correnti")
             latest = df_ind.iloc[-1]
             col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
@@ -552,88 +489,82 @@ if session_key in st.session_state:
             with col3:
                 st.metric("ATR", f"{latest['ATR']:.2f}")
             with col4:
-                trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
+                trend_emoji = "?" if latest['Trend'] == 1 else "?"
                 st.metric("Trend", trend_emoji)
             with col5:
                 if avg_forecast is not None:
                     st.metric("Previsione Prezzo (next 5)", f"{avg_forecast:.2f}")
                 else:
                     st.metric("Previsione Prezzo", "N/A")
-            st.markdown("## 🎯 Risultato Analisi AI")
+            st.markdown("## ? Risultato Analisi AI")
            
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 delta = success_prob - trade['Probability']
-                st.metric("🎲 Probabilità AI", f"{success_prob:.1f}%",
+                st.metric("? Probabilit  AI", f"{success_prob:.1f}%",
                          delta=f"{delta:+.1f}%" if delta != 0 else None,
                          help=f"Web: {trade['Probability']:.0f}%")
             with col2:
                 rr = abs(tp - entry) / abs(entry - sl)
-                st.metric("⚖️ Risk/Reward", f"{rr:.2f}x")
+                st.metric("?? Risk/Reward", f"{rr:.2f}x")
             with col3:
                 risk_pct = abs(entry - sl) / entry * 100
-                st.metric("📉 Risk %", f"{risk_pct:.2f}%")
+                st.metric("? Risk %", f"{risk_pct:.2f}%")
             with col4:
                 reward_pct = abs(tp - entry) / entry * 100
-                st.metric("📈 Reward %", f"{reward_pct:.2f}%")
+                st.metric("? Reward %", f"{reward_pct:.2f}%")
            
             # Interpretazione confronto
-            st.markdown("### 💡 Valutazione")
+            st.markdown("### ? Valutazione")
             col_web, col_ai = st.columns(2)
            
             with col_web:
                 st.write(f"**Analisi Web:** {trade['Probability']:.0f}%")
                 if trade['Probability'] >= 65:
-                    st.success("✅ Setup favorevole")
+                    st.success("? Setup favorevole")
                 elif trade['Probability'] >= 50:
-                    st.warning("⚠️ Setup neutrale")
+                    st.warning("?? Setup neutrale")
                 else:
-                    st.error("❌ Setup sfavorevole")
+                    st.error("? Setup sfavorevole")
            
             with col_ai:
                 st.write(f"**Analisi AI:** {success_prob:.1f}%")
                 if success_prob >= 65:
-                    st.success("✅ Setup favorevole")
+                    st.success("? Setup favorevole")
                 elif success_prob >= 50:
-                    st.warning("⚠️ Setup neutrale")
+                    st.warning("?? Setup neutrale")
                 else:
-                    st.error("❌ Setup sfavorevole")
+                    st.error("? Setup sfavorevole")
            
             # Confronto
             if abs(success_prob - trade['Probability']) > 10:
                 if success_prob > trade['Probability']:
-                    st.info(f"💡 L'AI è più ottimista (+{success_prob - trade['Probability']:.1f}%)")
+                    st.info(f"? L'AI   pi  ottimista (+{success_prob - trade['Probability']:.1f}%)")
                 else:
-                    st.warning(f"⚠️ L'AI è più prudente ({success_prob - trade['Probability']:.1f}%)")
+                    st.warning(f"?? L'AI   pi  prudente ({success_prob - trade['Probability']:.1f}%)")
             else:
-                st.success("✅ Analisi Web e AI sono allineate")
+                st.success("? Analisi Web e AI sono allineate")
            
             # Fattori
-            st.markdown("### 📊 Fattori Chiave dell'AI")
+            st.markdown("### ? Fattori Chiave dell'AI")
             for i, factor in enumerate(factors, 1):
                 st.write(f"**{i}.** {factor}")
-            
-            # Nuova sezione: Psicologia dell'investitore
-            st.markdown("### 🧠 Psicologia dell'Investitore: Analisi Attuale e Storica")
-            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
-            st.markdown(psych_analysis)
 else:
     st.warning("Carica i dati per lo strumento selezionato.")
 
 # Info
-with st.expander("ℹ️ Come funziona"):
+with st.expander("?? Come funziona"):
     st.markdown("""
     **Machine Learning (Random Forest) analizza:**
-    - 📊 Indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR)
-    - 📈 Setup storici e probabilità di successo
-    - 💡 Suggerimenti web con stagionalità, news, sentiment e previsioni (aggiornati dinamicamente)
-    - 🧠 Nuova: Analisi della psicologia dell'investitore con comparazioni storiche e bias comportamentali basati su finanza comportamentale e studi recenti del 2025.
+    - ? Indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR)
+    - ? Setup storici e probabilit  di successo
+    - ? Suggerimenti web con stagionalit , news, sentiment e previsioni (aggiornati dinamicamente)
     """)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9em;'>
-    ⚠️ <strong>Disclaimer:</strong> Strumento educativo. Non è consiglio finanziario.
+    ?? <strong>Disclaimer:</strong> Strumento educativo. Non   consiglio finanziario.
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True
