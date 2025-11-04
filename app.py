@@ -32,10 +32,28 @@ ASSET_CLASSES = {
 
 # Functions from fetch_data.py (updated without FRED)
 def fetch_historical_data(asset, interval='1d', period='10y'):
-    if interval in ['15m', '1h', '4h']:
-        # For intraday, limit period as yfinance max for intraday is 60d for 15m, etc.
-        period = '60d' if interval == '15m' else '730d'  # Adjust based on yf limits
-    return yf.download(asset, period=period, interval=interval, progress=False)
+    original_interval = interval
+    if original_interval == '4h':
+        interval = '1h'
+    if interval in ['15m', '1h']:
+        period = '60d' if interval == '15m' else '730d'
+    try:
+        df = yf.download(asset, period=period, interval=interval, progress=False)
+        if original_interval == '4h':
+            df = df.resample('4H').agg({
+                'Open': 'first',
+                'High': 'max',
+                'Low': 'min',
+                'Close': 'last',
+                'Volume': 'sum',
+                'Adj Close': 'last'  # If present
+            }).dropna()
+        if 'Adj Close' in df.columns:
+            df.drop('Adj Close', axis=1, inplace=True)
+        return df
+    except Exception as e:
+        logging.error(f"Error downloading data for {asset} with interval {interval}: {e}")
+        return pd.DataFrame()  # Return empty DF on error
 
 def fetch_macro_data():
     """
@@ -58,17 +76,21 @@ def fetch_macro_data():
 
     # 2. Federal Funds Rate (approssimato con SOFR o media mobile)
     try:
-        sofr = yf.Ticker("SR3F25=X").history(period="5d")['Close'].mean() / 100  # SOFR futures
+        sofr = yf.Ticker("^SOFR").history(period="5d")['Close'].mean() / 100  # Adjusted ticker if needed
         macro['Federal Funds Rate'] = sofr
     except:
         macro['Federal Funds Rate'] = 0.052  # fallback realistico
 
     # 3. Inflazione CPI (USA) - da CSV pubblico (aggiornato mensilmente)
     try:
-        cpi_url = "https://raw.githubusercontent.com/datasets/cpi/master/data/cpi-us.csv"
+        cpi_url = "https://raw.githubusercontent.com/datasets/cpi-us/master/data/cpi-us.csv"
         cpi_data = pd.read_csv(cpi_url)
-        latest_cpi = cpi_data.iloc[-1]['Value'] / 100
-        macro['Inflation CPI'] = latest_cpi
+        cpi_data['Date'] = pd.to_datetime(cpi_data['Year'].astype(str) + '-' + cpi_data['Month'].astype(str) + '-01')
+        cpi_data = cpi_data.sort_values('Date')
+        latest = cpi_data.iloc[-1]['Value']
+        prev_year = cpi_data.iloc[-13]['Value'] if len(cpi_data) > 12 else latest
+        inflation_rate = (latest / prev_year - 1)
+        macro['Inflation CPI'] = inflation_rate
     except:
         macro['Inflation CPI'] = 0.03
 
@@ -100,67 +122,89 @@ def fetch_fear_greed():
 
 # Functions from preprocessor.py
 def preprocess_data(df):
+    if df.empty:
+        return df
     df = df.dropna()
     df.index = pd.to_datetime(df.index)
     return df
 
 def calculate_technical_indicators(df):
+    if df.empty or len(df) < 2:
+        return df
     df = add_all_ta_features(df, open='Open', high='High', low='Low', close='Close', volume='Volume', fillna=True)
     return df
 
 # Functions from macro_factors.py
 def integrate_macro_factors(tech_data, macro_data):
     for asset, df in tech_data.items():
+        if df.empty:
+            continue
         for key, value in macro_data.items():
             df[key] = value  # Broadcast latest value; in production, align dates
     return tech_data
 
 # Functions from seasonality.py
 def analyze_seasonality(df):
-    period = 365 if len(df) > 365 else len(df) // 2  # Adjust for shorter data
-    decomposition = sm.tsa.seasonal_decompose(df['Close'], model='additive', period=period)
-    df['seasonal'] = decomposition.seasonal
+    if df.empty or len(df) < 2:
+        return df
+    period = min(365, len(df) // 2) if len(df) > 2 else 1
+    try:
+        decomposition = sm.tsa.seasonal_decompose(df['Close'], model='additive', period=period)
+        df['seasonal'] = decomposition.seasonal
+    except:
+        df['seasonal'] = 0
     return df
 
 # Functions from arima_model.py
 def train_arima(series):
+    if len(series) < 2:
+        return None
     model = ARIMA(series, order=(5,1,0))
     return model.fit()
 
 def predict_arima(model, steps):
+    if model is None:
+        return np.array([0] * steps)
     forecast = model.forecast(steps=steps)
     return forecast
 
 # Functions from ensemble_model.py
 def create_features(df):
+    if df.empty:
+        return df
     df['lag1'] = df['Close'].shift(1)
     df['lag7'] = df['Close'].shift(7)
     df = df.dropna()
     return df
 
 def train_xgboost(df):
-    df = create_features(df)
+    if df.empty or len(df) < 10:
+        return None
+    df = create_features(df.copy())  # Copy to avoid modifying original
     X = df.drop('Close', axis=1)
     y = df['Close']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
     model = xgb.XGBRegressor(objective='reg:squarederror')
     model.fit(X_train, y_train)
     return model
 
 def predict_xgboost(model, last_data, steps):
+    if model is None or last_data.empty:
+        return np.array([0] * steps)
     predictions = []
     current = last_data.copy()
     for _ in range(steps):
         pred = model.predict(current)[0]
         predictions.append(pred)
         current['lag1'] = pred
-        # Simplified lag7 update
         if 'lag7' in current.columns:
-            current['lag7'] = current['lag1'].shift(6, fill_value=pred)[-1]
+            current['lag7'] = current['lag1'].shift(6, fill_value=pred)[-1] if len(current['lag1']) > 6 else pred
     return np.array(predictions)
 
 # Functions from lstm_model.py
 def train_lstm(series):
+    if len(series) < 2:
+        return None, None
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(series.reshape(-1,1))
     X = scaled[:-1].reshape(-1, 1, 1)
@@ -173,6 +217,8 @@ def train_lstm(series):
     return model, scaler
 
 def predict_lstm(model, scaler, series, steps):
+    if model is None:
+        return np.array([0] * steps)
     predictions = []
     current = scaler.transform([[series[-1]]])
     for _ in range(steps):
@@ -183,18 +229,24 @@ def predict_lstm(model, scaler, series, steps):
 
 # Functions from prophet_model.py
 def train_prophet(df):
+    if df.empty or len(df) < 2:
+        return None
     df_prophet = df[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
     model = Prophet()
     model.fit(df_prophet)
     return model
 
 def predict_prophet(model, steps):
+    if model is None:
+        return pd.DataFrame({'yhat': [0] * steps})
     future = model.make_future_dataframe(periods=steps)
     forecast = model.predict(future)
     return forecast.iloc[-steps:]
 
 # Functions from helpers.py
 def calculate_risk_metrics(returns):
+    if len(returns) < 2:
+        return {'Sharpe Ratio': 0, 'Max Drawdown': 0, 'VaR 95%': 0}
     metrics = {
         'Sharpe Ratio': np.mean(returns) / np.std(returns) * np.sqrt(252),
         'Max Drawdown': np.min(returns.cumsum() - returns.cumsum().cummax()),
@@ -212,6 +264,8 @@ def minimize_volatility(weights, returns):
     return portfolio_volatility(weights, returns)
 
 def optimize_portfolio(returns_df):
+    if returns_df.empty or returns_df.shape[1] < 1:
+        return pd.Series()
     num_assets = returns_df.shape[1]
     args = (returns_df,)
     constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
@@ -253,14 +307,17 @@ st.title("Financial Predictive Analytics Dashboard")
 def load_data(assets, interval):
     data = {}
     for asset in assets:
-        try:
-            df = fetch_historical_data(asset, interval=interval)
+        df = fetch_historical_data(asset, interval=interval)
+        if not df.empty:
             df['asset'] = asset
             df['date'] = df.index.astype(str)
-            df.to_sql('historical_data', conn, if_exists='append', index=False)
+            try:
+                df.to_sql('historical_data', conn, if_exists='append', index=False)
+            except:
+                pass
             data[asset] = df
-        except Exception as e:
-            logging.error(f"Error fetching data for {asset}: {e}")
+        else:
+            st.warning(f"No data available for {asset} with interval {interval}")
     return data
 
 data = load_data(selected_assets, data_interval)
@@ -272,6 +329,8 @@ fear_greed = fetch_fear_greed()
 # Display Real-time Prices
 st.subheader("Real-time Prices")
 for asset, df in data.items():
+    if df.empty:
+        continue
     latest = df.iloc[-1]
     change = (latest['Close'] - latest['Open']) / latest['Open'] * 100
     st.write(f"{asset}: ${latest['Close']:.2f} ({change:.2f}%)")
@@ -287,9 +346,16 @@ models = ['ARIMA', 'XGBoost', 'LSTM', 'Prophet']
 predictions = {}
 metrics = {}
 for asset, df in seasonal_data.items():
+    if df.empty or len(df) < 10:
+        st.warning(f"Insufficient data for {asset} to train models.")
+        continue
     df['Date'] = df.index  # For Prophet
     train_df = df.iloc[:-int(0.15*len(df))]
     test_df = df.iloc[-int(0.15*len(df)):]
+    
+    # Prepare for XGBoost
+    train_df_prep = create_features(train_df.copy())
+    test_df_prep = create_features(test_df.copy())
     
     # ARIMA
     arima_model = train_arima(train_df['Close'])
@@ -298,8 +364,11 @@ for asset, df in seasonal_data.items():
     
     # XGBoost
     xgb_model = train_xgboost(train_df)
-    last_data = train_df.iloc[-1:].drop('Close', axis=1)
-    xgb_pred = predict_xgboost(xgb_model, last_data, horizon_steps)
+    if xgb_model is not None:
+        last_data_prep = train_df_prep.iloc[-1:].drop('Close', axis=1)
+        xgb_pred = predict_xgboost(xgb_model, last_data_prep, horizon_steps)
+    else:
+        xgb_pred = np.array([0] * horizon_steps)
     predictions[f'{asset}_XGBoost'] = xgb_pred
     
     # LSTM
@@ -317,13 +386,22 @@ for asset, df in seasonal_data.items():
     for model_name, pred in zip(models, [arima_pred[:test_len], xgb_pred[:test_len], lstm_pred[:test_len], prophet_pred['yhat'][:test_len]]):
         if len(pred) < test_len:
             pred = np.pad(pred, (0, test_len - len(pred)), 'constant', constant_values=np.nan)
-        rmse = np.sqrt(mean_squared_error(test_df['Close'], pred))
-        mae = mean_absolute_error(test_df['Close'], pred)
+        # Handle nan in pred
+        valid_mask = ~np.isnan(pred)
+        if np.any(valid_mask):
+            rmse = np.sqrt(mean_squared_error(test_df['Close'][valid_mask], pred[valid_mask]))
+            mae = mean_absolute_error(test_df['Close'][valid_mask], pred[valid_mask])
+        else:
+            rmse = 0
+            mae = 0
         metrics[f'{asset}_{model_name}'] = {'RMSE': rmse, 'MAE': mae}
 
 # Visualization
 st.subheader("Forecast Charts")
 for asset in selected_assets:
+    if asset not in data or data[asset].empty:
+        st.warning(f"No chart for {asset} due to data unavailability.")
+        continue
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=data[asset].index, open=data[asset]['Open'], high=data[asset]['High'], low=data[asset]['Low'], close=data[asset]['Close'], name=asset))
     for model in models:
@@ -337,15 +415,18 @@ for asset in selected_assets:
         else:
             delta = timedelta(days=1)
         future_dates = [data[asset].index[-1] + delta * (i+1) for i in range(horizon_steps)]
-        fig.add_trace(go.Scatter(x=future_dates, y=predictions[f'{asset}_{model}'], name=f'{model} Forecast'))
+        fig.add_trace(go.Scatter(x=future_dates, y=predictions.get(f'{asset}_{model}', [0]*horizon_steps), name=f'{model} Forecast'))
     st.plotly_chart(fig)
 
 # Correlation Heatmap
 st.subheader("Correlation Heatmap")
-closes = pd.DataFrame({asset: df['Close'] for asset, df in data.items()})
-corr = closes.corr()
-fig_corr = px.imshow(corr, text_auto=True)
-st.plotly_chart(fig_corr)
+closes = pd.DataFrame({asset: df['Close'] for asset, df in data.items() if not df.empty})
+if not closes.empty:
+    corr = closes.corr()
+    fig_corr = px.imshow(corr, text_auto=True)
+    st.plotly_chart(fig_corr)
+else:
+    st.write("No data for correlation heatmap.")
 
 # Macro Dashboard
 st.subheader("Macro Indicators")
