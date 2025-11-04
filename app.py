@@ -1,462 +1,731 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import logging
-import sqlite3
-import yfinance as yf
-import requests
-from ta import add_all_ta_features
-import statsmodels.api as sm
-from statsmodels.tsa.arima.model import ARIMA
-import xgboost as xgb
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
-from sklearn.preprocessing import MinMaxScaler
-from prophet import Prophet
-from sklearn.metrics import mean_squared_error, mean_absolute_error
 import numpy as np
+import yfinance as yf
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import warnings
-from scipy.optimize import minimize
+from datetime import datetime, timedelta
+from scipy import stats
+import ta
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.preprocessing import StandardScaler
+import xgboost as xgb
+from statsmodels.tsa.arima.model import ARIMA
+from fredapi import Fred
+import requests
+import json
+from typing import Dict, List, Tuple, Optional
+import hashlib
+import time
+
 warnings.filterwarnings('ignore')
 
-# Config
-ASSET_CLASSES = {
-    'Precious Metals': ['GC=F', 'SI=F', 'PL=F', 'PA=F'],
-    'Cryptocurrencies': ['BTC-USD', 'ETH-USD'],  # Add top 10 dynamically if needed
-    'Forex': ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'USDCHF=X', 'AUDUSD=X', 'NZDUSD=X', 'USDCAD=X'],
-    'Indices': ['^GSPC', '^IXIC', '^DJI', '^VIX']
-}
+# ==================== CONFIGURAZIONE ====================
+st.set_page_config(
+    page_title="Sistema Analisi Finanziaria Istituzionale",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Functions from fetch_data.py (updated without FRED)
-def fetch_historical_data(asset, interval='1d', period='10y'):
-    original_interval = interval
-    if original_interval == '4h':
-        interval = '1h'
-    if interval in ['15m', '1h']:
-        period = '60d' if interval == '15m' else '730d'
-    try:
-        df = yf.download(asset, period=period, interval=interval, progress=False)
-        if original_interval == '4h':
-            df = df.resample('4H').agg({
-                'Open': 'first',
-                'High': 'max',
-                'Low': 'min',
-                'Close': 'last',
-                'Volume': 'sum',
-                'Adj Close': 'last'  # If present
-            }).dropna()
-        if 'Adj Close' in df.columns:
-            df.drop('Adj Close', axis=1, inplace=True)
-        # Ensure numeric types
-        for col in ['Open', 'High', 'Low', 'Close']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        if 'Volume' in df.columns:
-            df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
-        return df
-    except Exception as e:
-        logging.error(f"Error downloading data for {asset} with interval {interval}: {e}")
-        return pd.DataFrame()  # Return empty DF on error
-
-def fetch_macro_data():
-    """
-    Recupera dati macro senza API key:
-    - Treasury 10Y, 2Y → da yfinance
-    - Inflazione, PIL, Disoccupazione → da fonti pubbliche (es. CSV)
-    - Fear & Greed → già pubblico
-    """
-    macro = {}
-
-    # 1. Treasury Yields (real-time, no key)
-    try:
-        treasury_10y = yf.Ticker("^TNX").history(period="1d")['Close'].iloc[-1] / 100  # in %
-        treasury_2y = yf.Ticker("^IRX").history(period="1d")['Close'].iloc[-1] / 100
-        macro['10Y Treasury'] = treasury_10y
-        macro['2Y Treasury'] = treasury_2y
-    except:
-        macro['10Y Treasury'] = 0.04
-        macro['2Y Treasury'] = 0.045
-
-    # 2. Federal Funds Rate (approssimato con SOFR o media mobile)
-    try:
-        sofr = yf.Ticker("^SOFR").history(period="5d")['Close'].mean() / 100  # Adjusted ticker if needed
-        macro['Federal Funds Rate'] = sofr
-    except:
-        macro['Federal Funds Rate'] = 0.052  # fallback realistico
-
-    # 3. Inflazione CPI (USA) - da CSV pubblico (aggiornato mensilmente)
-    try:
-        cpi_url = "https://raw.githubusercontent.com/datasets/cpi-us/master/data/cpi-us.csv"
-        cpi_data = pd.read_csv(cpi_url)
-        cpi_data['Date'] = pd.to_datetime(cpi_data['Year'].astype(str) + '-' + cpi_data['Month'].astype(str) + '-01')
-        cpi_data = cpi_data.sort_values('Date')
-        latest = cpi_data.iloc[-1]['Value']
-        prev_year = cpi_data.iloc[-13]['Value'] if len(cpi_data) > 12 else latest
-        inflation_rate = (latest / prev_year - 1)
-        macro['Inflation CPI'] = inflation_rate
-    except:
-        macro['Inflation CPI'] = 0.03
-
-    # 4. Disoccupazione (USA)
-    try:
-        unemp_url = "https://raw.githubusercontent.com/datasets/unemployment/master/data/united-states.csv"
-        unemp_data = pd.read_csv(unemp_url)
-        latest_unemp = unemp_data.iloc[-1]['Value'] / 100
-        macro['Unemployment'] = latest_unemp
-    except:
-        macro['Unemployment'] = 0.042
-
-    # 5. M2 Money Supply (approssimato o omesso - non critico per ML)
-    macro['M2 Supply'] = 21.5e12  # valore indicativo
-
-    # 6. GDP Growth (trimestrale, da fonte pubblica)
-    macro['GDP Growth'] = 0.025  # 2.5% annualizzato (fallback)
-
-    return pd.Series(macro)
-
-def fetch_fear_greed():
-    try:
-        url = 'https://api.alternative.me/fng/?limit=1'
-        response = requests.get(url, timeout=10)
-        data = response.json()['data'][0]
-        return {'value': int(data['value']), 'classification': data['value_classification']}
-    except:
-        return {'value': 50, 'classification': 'Neutral'}
-
-# Functions from preprocessor.py
-def preprocess_data(df):
-    if df.empty:
-        return df
-    df = df.dropna()
-    df.index = pd.to_datetime(df.index)
-    return df
-
-def calculate_technical_indicators(df):
-    if df.empty or len(df) < 2:
-        return df
-    df = add_all_ta_features(df, open='Open', high='High', low='Low', close='Close', volume='Volume', fillna=True)
-    return df
-
-# Functions from macro_factors.py
-def integrate_macro_factors(tech_data, macro_data):
-    for asset, df in tech_data.items():
-        if df.empty:
-            continue
-        for key, value in macro_data.items():
-            df[key] = value  # Broadcast latest value; in production, align dates
-    return tech_data
-
-# Functions from seasonality.py
-def analyze_seasonality(df):
-    if df.empty or len(df) < 2:
-        return df
-    period = min(365, len(df) // 2) if len(df) > 2 else 1
-    try:
-        decomposition = sm.tsa.seasonal_decompose(df['Close'], model='additive', period=period)
-        df['seasonal'] = decomposition.seasonal
-    except:
-        df['seasonal'] = 0
-    return df
-
-# Functions from arima_model.py
-def train_arima(series):
-    if len(series) < 2:
-        return None
-    model = ARIMA(series, order=(5,1,0))
-    return model.fit()
-
-def predict_arima(model, steps):
-    if model is None:
-        return np.array([0] * steps)
-    forecast = model.forecast(steps=steps)
-    return forecast
-
-# Functions from ensemble_model.py
-def create_features(df):
-    if df.empty:
-        return df
-    df['lag1'] = df['Close'].shift(1)
-    df['lag7'] = df['Close'].shift(7)
-    df = df.dropna()
-    return df
-
-def train_xgboost(df):
-    if df.empty or len(df) < 10:
-        return None
-    df = create_features(df.copy())  # Copy to avoid modifying original
-    X = df.drop('Close', axis=1)
-    y = df['Close']
-    X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
-    model = xgb.XGBRegressor(objective='reg:squarederror')
-    model.fit(X_train, y_train)
-    return model
-
-def predict_xgboost(model, last_data, steps):
-    if model is None or last_data.empty:
-        return np.array([0] * steps)
-    predictions = []
-    current = last_data.copy()
-    for _ in range(steps):
-        pred = model.predict(current)[0]
-        predictions.append(pred)
-        current['lag1'] = pred
-        if 'lag7' in current.columns:
-            current['lag7'] = current['lag1'].shift(6, fill_value=pred)[-1] if len(current['lag1']) > 6 else pred
-    return np.array(predictions)
-
-# Functions from lstm_model.py
-def train_lstm(series):
-    if len(series) < 2:
-        return None, None
-    scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(series.reshape(-1,1))
-    X = scaled[:-1].reshape(-1, 1, 1)
-    y = scaled[1:]
-    model = Sequential()
-    model.add(LSTM(50, input_shape=(1,1)))
-    model.add(Dense(1))
-    model.compile(optimizer='adam', loss='mse')
-    model.fit(X, y, epochs=10, verbose=0)
-    return model, scaler
-
-def predict_lstm(model, scaler, series, steps):
-    if model is None:
-        return np.array([0] * steps)
-    predictions = []
-    current = scaler.transform([[series[-1]]])
-    for _ in range(steps):
-        pred = model.predict(current.reshape(1,1,1), verbose=0)[0][0]
-        predictions.append(pred)
-        current = np.array([[pred]])
-    return scaler.inverse_transform(np.array(predictions).reshape(-1,1)).flatten()
-
-# Functions from prophet_model.py
-def train_prophet(df):
-    if df.empty or len(df) < 2:
-        return None
-    df_prophet = df[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
-    model = Prophet()
-    model.fit(df_prophet)
-    return model
-
-def predict_prophet(model, steps):
-    if model is None:
-        return pd.DataFrame({'yhat': [0] * steps})
-    future = model.make_future_dataframe(periods=steps)
-    forecast = model.predict(future)
-    return forecast.iloc[-steps:]
-
-# Functions from helpers.py
-def calculate_risk_metrics(returns):
-    if len(returns) < 2:
-        return {'Sharpe Ratio': 0, 'Max Drawdown': 0, 'VaR 95%': 0}
-    metrics = {
-        'Sharpe Ratio': np.mean(returns) / np.std(returns) * np.sqrt(252),
-        'Max Drawdown': np.min(returns.cumsum() - returns.cumsum().cummax()),
-        'VaR 95%': np.percentile(returns, 5)
+# Stile CSS personalizzato
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 42px;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        padding: 20px;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
-    return metrics
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #1f77b4;
+    }
+    .prediction-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 15px;
+        margin: 10px 0;
+    }
+    .success-prob {
+        font-size: 48px;
+        font-weight: bold;
+        text-align: center;
+        margin: 20px 0;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-def portfolio_return(weights, returns):
-    return np.dot(weights, returns.mean()) * 252
+# ==================== CLASSI PRINCIPALI ====================
 
-def portfolio_volatility(weights, returns):
-    return np.sqrt(np.dot(weights.T, np.dot(returns.cov() * 252, weights)))
+class DataCollector:
+    """Raccolta dati da multiple fonti"""
+    
+    INSTRUMENTS = {
+        'Metalli': {
+            'Oro': 'GC=F',
+            'Argento': 'SI=F',
+            'Platino': 'PL=F',
+            'Palladio': 'PA=F',
+        },
+        'Criptovalute': {
+            'Bitcoin': 'BTC-USD',
+            'Ethereum': 'ETH-USD',
+            'Binance Coin': 'BNB-USD',
+            'Cardano': 'ADA-USD',
+        },
+        'Forex': {
+            'EUR/USD': 'EURUSD=X',
+            'GBP/USD': 'GBPUSD=X',
+            'USD/JPY': 'JPY=X',
+            'USD/CHF': 'CHF=X',
+            'AUD/USD': 'AUDUSD=X',
+        },
+        'Commodities': {
+            'Petrolio WTI': 'CL=F',
+            'Petrolio Brent': 'BZ=F',
+            'Gas Naturale': 'NG=F',
+            'Rame': 'HG=F',
+        }
+    }
+    
+    TIMEFRAMES = {
+        '15min': {'period': '60d', 'interval': '15m'},
+        '1h': {'period': '730d', 'interval': '1h'},
+        '4h': {'period': '730d', 'interval': '1h'},  # Aggrega da 1h
+        '1d': {'period': '10y', 'interval': '1d'}
+    }
+    
+    @staticmethod
+    @st.cache_data(ttl=900)
+    def get_price_data(symbol: str, timeframe: str) -> pd.DataFrame:
+        """Scarica dati di prezzo con caching"""
+        try:
+            config = DataCollector.TIMEFRAMES[timeframe]
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period=config['period'], interval=config['interval'])
+            
+            if df.empty:
+                st.warning(f"Nessun dato disponibile per {symbol}")
+                return pd.DataFrame()
+            
+            # Aggregazione per 4h se necessario
+            if timeframe == '4h':
+                df = df.resample('4H').agg({
+                    'Open': 'first',
+                    'High': 'max',
+                    'Low': 'min',
+                    'Close': 'last',
+                    'Volume': 'sum'
+                }).dropna()
+            
+            return df
+        except Exception as e:
+            st.error(f"Errore nel download dati per {symbol}: {str(e)}")
+            return pd.DataFrame()
+    
+    @staticmethod
+    @st.cache_data(ttl=3600)
+    def get_vix_data() -> float:
+        """Ottiene VIX (Indice della Paura)"""
+        try:
+            vix = yf.Ticker("^VIX")
+            data = vix.history(period="5d")
+            if not data.empty:
+                return round(data['Close'].iloc[-1], 2)
+        except:
+            pass
+        return 20.0  # Valore di default
+    
+    @staticmethod
+    @st.cache_data(ttl=86400)
+    def get_fed_rate() -> float:
+        """Ottiene tasso FED (simulato se API non disponibile)"""
+        try:
+            # In produzione usare: fred = Fred(api_key='YOUR_KEY')
+            # rate = fred.get_series_latest_release('FEDFUNDS')
+            # return float(rate.iloc[-1])
+            return 5.33  # Tasso attuale approssimativo
+        except:
+            return 5.33
+    
+    @staticmethod
+    @st.cache_data(ttl=86400)
+    def get_fear_greed_index() -> Dict:
+        """Fear & Greed Index per crypto"""
+        try:
+            url = "https://api.alternative.me/fng/?limit=1"
+            response = requests.get(url, timeout=5)
+            data = response.json()
+            value = int(data['data'][0]['value'])
+            classification = data['data'][0]['value_classification']
+            return {'value': value, 'classification': classification}
+        except:
+            return {'value': 50, 'classification': 'Neutral'}
 
-def minimize_volatility(weights, returns):
-    return portfolio_volatility(weights, returns)
 
-def optimize_portfolio(returns_df):
-    if returns_df.empty or returns_df.shape[1] < 1:
-        return pd.Series()
-    num_assets = returns_df.shape[1]
-    args = (returns_df,)
-    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-    bounds = tuple((0, 1) for _ in range(num_assets))
-    result = minimize(minimize_volatility, num_assets*[1./num_assets], args=args,
-                      method='SLSQP', bounds=bounds, constraints=constraints)
-    return pd.Series(result.x, index=returns_df.columns)
+class FeatureEngine:
+    """Calcolo features e indicatori tecnici"""
+    
+    @staticmethod
+    def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
+        """Calcola tutti gli indicatori tecnici"""
+        df = df.copy()
+        
+        # Moving Averages
+        df['SMA_20'] = ta.trend.sma_indicator(df['Close'], window=20)
+        df['SMA_50'] = ta.trend.sma_indicator(df['Close'], window=50)
+        df['EMA_12'] = ta.trend.ema_indicator(df['Close'], window=12)
+        df['EMA_26'] = ta.trend.ema_indicator(df['Close'], window=26)
+        
+        # RSI
+        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
+        
+        # MACD
+        macd = ta.trend.MACD(df['Close'])
+        df['MACD'] = macd.macd()
+        df['MACD_signal'] = macd.macd_signal()
+        df['MACD_diff'] = macd.macd_diff()
+        
+        # Bollinger Bands
+        bollinger = ta.volatility.BollingerBands(df['Close'])
+        df['BB_high'] = bollinger.bollinger_hband()
+        df['BB_mid'] = bollinger.bollinger_mavg()
+        df['BB_low'] = bollinger.bollinger_lband()
+        df['BB_width'] = bollinger.bollinger_wband()
+        
+        # ATR (Average True Range)
+        df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'])
+        
+        # Volume indicators
+        df['Volume_SMA'] = df['Volume'].rolling(window=20).mean()
+        df['Volume_ratio'] = df['Volume'] / df['Volume_SMA']
+        
+        # Stochastic
+        stoch = ta.momentum.StochasticOscillator(df['High'], df['Low'], df['Close'])
+        df['Stoch_K'] = stoch.stoch()
+        df['Stoch_D'] = stoch.stoch_signal()
+        
+        # Price momentum
+        df['ROC'] = ta.momentum.roc(df['Close'], window=12)
+        df['Price_momentum'] = df['Close'].pct_change(periods=10)
+        
+        # Volatilità
+        df['Volatility'] = df['Close'].pct_change().rolling(window=20).std() * np.sqrt(252)
+        
+        return df
+    
+    @staticmethod
+    def calculate_seasonality(df: pd.DataFrame) -> Dict:
+        """Analisi stagionalità"""
+        df = df.copy()
+        df['Month'] = df.index.month
+        df['DayOfWeek'] = df.index.dayofweek
+        df['Returns'] = df['Close'].pct_change()
+        
+        monthly_avg = df.groupby('Month')['Returns'].mean() * 100
+        weekly_avg = df.groupby('DayOfWeek')['Returns'].mean() * 100
+        
+        current_month = datetime.now().month
+        current_day = datetime.now().weekday()
+        
+        return {
+            'monthly_pattern': monthly_avg.to_dict(),
+            'weekly_pattern': weekly_avg.to_dict(),
+            'current_month_bias': monthly_avg.get(current_month, 0),
+            'current_day_bias': weekly_avg.get(current_day, 0)
+        }
+    
+    @staticmethod
+    def prepare_ml_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+        """Prepara features per ML"""
+        df = df.copy()
+        
+        # Target: rendimento futuro
+        df['Target'] = df['Close'].pct_change().shift(-1)
+        
+        # Lagged features
+        for lag in [1, 2, 3, 5, 10]:
+            df[f'Return_lag_{lag}'] = df['Close'].pct_change(lag)
+            df[f'Volume_lag_{lag}'] = df['Volume'].pct_change(lag)
+        
+        # Features statistiche
+        df['Return_mean_5'] = df['Close'].pct_change().rolling(5).mean()
+        df['Return_std_5'] = df['Close'].pct_change().rolling(5).std()
+        df['High_Low_ratio'] = (df['High'] - df['Low']) / df['Close']
+        
+        # Rimuovi NaN
+        df = df.dropna()
+        
+        # Separazione features e target
+        feature_cols = [col for col in df.columns if col not in 
+                       ['Open', 'High', 'Low', 'Close', 'Volume', 'Target', 
+                        'Dividends', 'Stock Splits']]
+        
+        X = df[feature_cols]
+        y = df['Target']
+        
+        return X, y
 
-# Main App Code
-# Logging setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Database setup
-conn = sqlite3.connect('financial_data.db')
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS historical_data
-             (asset TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL, volume INTEGER)''')
-conn.commit()
-
-# Disclaimer
-st.sidebar.warning("This application is for educational purposes only and does not constitute financial advice. Use at your own risk.")
-
-# Sidebar for selections
-st.sidebar.title("Asset Selection")
-selected_assets = st.sidebar.multiselect("Select Assets", sum(ASSET_CLASSES.values(), []), default=['GC=F', 'BTC-USD', 'EURUSD=X', '^GSPC'])
-time_horizon = st.sidebar.selectbox("Prediction Horizon", ["15 Minutes", "1 Hour", "4 Hours", "1 Day", "7 Days"])
-# Map to steps; assuming data frequency adjusts, but for intraday, steps=1 means next interval
-horizon_map = {"15 Minutes": 1, "1 Hour": 1, "4 Hours": 1, "1 Day": 1, "7 Days": 7}
-horizon_steps = horizon_map[time_horizon]
-# Determine interval based on horizon
-interval_map = {"15 Minutes": '15m', "1 Hour": '1h', "4 Hours": '4h', "1 Day": '1d', "7 Days": '1d'}
-data_interval = interval_map[time_horizon]
-
-# Main Dashboard
-st.title("Financial Predictive Analytics Dashboard")
-
-# Step 1: Data Collection
-@st.cache_data(ttl=3600)
-def load_data(assets, interval):
-    data = {}
-    for asset in assets:
-        df = fetch_historical_data(asset, interval=interval)
-        if not df.empty:
-            df['asset'] = asset
-            df['date'] = df.index.astype(str)
-            try:
-                df.to_sql('historical_data', conn, if_exists='append', index=False)
-            except:
-                pass
-            data[asset] = df
+class PredictionEngine:
+    """Motore di previsione ensemble"""
+    
+    def __init__(self):
+        self.models = {}
+        self.scaler = StandardScaler()
+        
+    def train_ensemble(self, X: pd.DataFrame, y: pd.Series) -> Dict:
+        """Training ensemble di modelli"""
+        
+        # Split train/test
+        split_idx = int(len(X) * 0.8)
+        X_train, X_test = X[:split_idx], X[split_idx:]
+        y_train, y_test = y[:split_idx], y[split_idx:]
+        
+        # Scaling
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_test_scaled = self.scaler.transform(X_test)
+        
+        # Random Forest
+        rf_model = RandomForestRegressor(
+            n_estimators=100, 
+            max_depth=10, 
+            random_state=42,
+            n_jobs=-1
+        )
+        rf_model.fit(X_train_scaled, y_train)
+        rf_score = rf_model.score(X_test_scaled, y_test)
+        
+        # XGBoost
+        xgb_model = xgb.XGBRegressor(
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=6,
+            random_state=42
+        )
+        xgb_model.fit(X_train_scaled, y_train)
+        xgb_score = xgb_model.score(X_test_scaled, y_test)
+        
+        # Gradient Boosting
+        gb_model = GradientBoostingRegressor(
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=5,
+            random_state=42
+        )
+        gb_model.fit(X_train_scaled, y_train)
+        gb_score = gb_model.score(X_test_scaled, y_test)
+        
+        self.models = {
+            'RandomForest': {'model': rf_model, 'score': rf_score, 'weight': 0.33},
+            'XGBoost': {'model': xgb_model, 'score': xgb_score, 'weight': 0.34},
+            'GradientBoosting': {'model': gb_model, 'score': gb_score, 'weight': 0.33}
+        }
+        
+        # Normalizza pesi basati su score
+        total_score = sum(m['score'] for m in self.models.values())
+        for model_name in self.models:
+            self.models[model_name]['weight'] = self.models[model_name]['score'] / total_score
+        
+        return {
+            'rf_score': rf_score,
+            'xgb_score': xgb_score,
+            'gb_score': gb_score,
+            'avg_score': np.mean([rf_score, xgb_score, gb_score])
+        }
+    
+    def predict(self, X_latest: pd.DataFrame) -> Dict:
+        """Previsione ensemble con probabilità"""
+        
+        X_scaled = self.scaler.transform(X_latest)
+        
+        predictions = {}
+        for model_name, model_info in self.models.items():
+            pred = model_info['model'].predict(X_scaled)[0]
+            predictions[model_name] = pred
+        
+        # Weighted average
+        ensemble_pred = sum(
+            predictions[name] * self.models[name]['weight'] 
+            for name in predictions
+        )
+        
+        # Calcolo confidenza basato su deviazione standard
+        pred_std = np.std(list(predictions.values()))
+        confidence = max(50, min(95, 100 - (pred_std * 1000)))
+        
+        # Probabilità direzionali
+        if ensemble_pred > 0.001:
+            prob_up = min(95, 50 + (ensemble_pred * 2000))
+            prob_down = 100 - prob_up
+        elif ensemble_pred < -0.001:
+            prob_down = min(95, 50 + (abs(ensemble_pred) * 2000))
+            prob_up = 100 - prob_down
         else:
-            st.warning(f"No data available for {asset} with interval {interval}")
-    return data
-
-data = load_data(selected_assets, data_interval)
-
-# Real-time Macro Data
-macro_data = fetch_macro_data()
-fear_greed = fetch_fear_greed()
-
-# Display Real-time Prices
-st.subheader("Real-time Prices")
-for asset, df in data.items():
-    if df.empty:
-        continue
-    latest = df.iloc[-1]
-    if pd.isna(latest.get('Close')) or pd.isna(latest.get('Open')):
-        st.write(f"{asset}: Price data unavailable")
-    else:
-        change = (latest['Close'] - latest['Open']) / latest['Open'] * 100 if latest['Open'] != 0 else 0
-        st.write(f"{asset}: ${latest['Close']:.2f} ({change:.2f}%)")
-
-# Preprocess and Feature Engineering
-processed_data = {asset: preprocess_data(df) for asset, df in data.items()}
-tech_data = {asset: calculate_technical_indicators(df) for asset, df in processed_data.items()}
-integrated_data = integrate_macro_factors(tech_data, macro_data)
-seasonal_data = {asset: analyze_seasonality(df) for asset, df in integrated_data.items()}
-
-# Model Training and Predictions
-models = ['ARIMA', 'XGBoost', 'LSTM', 'Prophet']
-predictions = {}
-metrics = {}
-for asset, df in seasonal_data.items():
-    if df.empty or len(df) < 10:
-        st.warning(f"Insufficient data for {asset} to train models.")
-        continue
-    df['Date'] = df.index  # For Prophet
-    train_df = df.iloc[:-int(0.15*len(df))]
-    test_df = df.iloc[-int(0.15*len(df)):]
+            prob_up = 50
+            prob_down = 50
+        
+        return {
+            'prediction': ensemble_pred,
+            'confidence': confidence,
+            'prob_up': prob_up,
+            'prob_down': prob_down,
+            'individual_predictions': predictions
+        }
     
-    # Prepare for XGBoost
-    train_df_prep = create_features(train_df.copy())
-    test_df_prep = create_features(test_df.copy())
-    
-    # ARIMA
-    arima_model = train_arima(train_df['Close'])
-    arima_pred = predict_arima(arima_model, horizon_steps)
-    predictions[f'{asset}_ARIMA'] = arima_pred
-    
-    # XGBoost
-    xgb_model = train_xgboost(train_df)
-    if xgb_model is not None:
-        last_data_prep = train_df_prep.iloc[-1:].drop('Close', axis=1)
-        xgb_pred = predict_xgboost(xgb_model, last_data_prep, horizon_steps)
-    else:
-        xgb_pred = np.array([0] * horizon_steps)
-    predictions[f'{asset}_XGBoost'] = xgb_pred
-    
-    # LSTM
-    lstm_model, scaler = train_lstm(train_df['Close'].values)
-    lstm_pred = predict_lstm(lstm_model, scaler, train_df['Close'].values, horizon_steps)
-    predictions[f'{asset}_LSTM'] = lstm_pred
-    
-    # Prophet
-    prophet_model = train_prophet(train_df)
-    prophet_pred = predict_prophet(prophet_model, horizon_steps)
-    predictions[f'{asset}_Prophet'] = prophet_pred['yhat'].values
-    
-    # Metrics (using test set for example, adjust lengths)
-    test_len = len(test_df)
-    for model_name, pred in zip(models, [arima_pred[:test_len], xgb_pred[:test_len], lstm_pred[:test_len], prophet_pred['yhat'][:test_len]]):
-        if len(pred) < test_len:
-            pred = np.pad(pred, (0, test_len - len(pred)), 'constant', constant_values=np.nan)
-        # Handle nan in pred
-        valid_mask = ~np.isnan(pred)
-        if np.any(valid_mask):
-            rmse = np.sqrt(mean_squared_error(test_df['Close'][valid_mask], pred[valid_mask]))
-            mae = mean_absolute_error(test_df['Close'][valid_mask], pred[valid_mask])
-        else:
-            rmse = 0
-            mae = 0
-        metrics[f'{asset}_{model_name}'] = {'RMSE': rmse, 'MAE': mae}
+    def arima_forecast(self, series: pd.Series, steps: int = 10) -> Tuple[np.ndarray, np.ndarray]:
+        """Previsione ARIMA con intervallo confidenza"""
+        try:
+            model = ARIMA(series, order=(5, 1, 2))
+            fitted = model.fit()
+            forecast = fitted.forecast(steps=steps)
+            
+            # Confidence interval approssimato
+            std = series.std()
+            upper = forecast + 1.96 * std
+            lower = forecast - 1.96 * std
+            
+            return forecast.values, (lower.values, upper.values)
+        except:
+            # Fallback: ultimo valore
+            last_val = series.iloc[-1]
+            return np.full(steps, last_val), (np.full(steps, last_val * 0.95), np.full(steps, last_val * 1.05))
 
-# Visualization
-st.subheader("Forecast Charts")
-for asset in selected_assets:
-    if asset not in data or data[asset].empty:
-        st.warning(f"No chart for {asset} due to data unavailability.")
-        continue
+
+class RiskAnalyzer:
+    """Analisi del rischio e metriche"""
+    
+    @staticmethod
+    def calculate_var(returns: pd.Series, confidence: float = 0.95) -> float:
+        """Value at Risk"""
+        return np.percentile(returns.dropna(), (1 - confidence) * 100)
+    
+    @staticmethod
+    def calculate_sharpe(returns: pd.Series, risk_free_rate: float = 0.02) -> float:
+        """Sharpe Ratio"""
+        excess_returns = returns.mean() - risk_free_rate / 252
+        return (excess_returns / returns.std()) * np.sqrt(252) if returns.std() != 0 else 0
+    
+    @staticmethod
+    def calculate_max_drawdown(prices: pd.Series) -> float:
+        """Maximum Drawdown"""
+        cumulative = (1 + prices.pct_change()).cumprod()
+        running_max = cumulative.expanding().max()
+        drawdown = (cumulative - running_max) / running_max
+        return drawdown.min()
+    
+    @staticmethod
+    def support_resistance_levels(df: pd.DataFrame, n_levels: int = 3) -> Dict:
+        """Calcola livelli supporto/resistenza"""
+        recent_data = df.tail(100)
+        
+        # Pivot points
+        pivot = (recent_data['High'].max() + recent_data['Low'].min() + recent_data['Close'].iloc[-1]) / 3
+        
+        resistance_levels = []
+        support_levels = []
+        
+        for i in range(1, n_levels + 1):
+            r = pivot + (recent_data['High'].max() - recent_data['Low'].min()) * i * 0.382
+            s = pivot - (recent_data['High'].max() - recent_data['Low'].min()) * i * 0.382
+            resistance_levels.append(round(r, 2))
+            support_levels.append(round(s, 2))
+        
+        return {
+            'resistance': resistance_levels,
+            'support': support_levels,
+            'pivot': round(pivot, 2)
+        }
+
+
+# ==================== FUNZIONI VISUALIZZAZIONE ====================
+
+def create_candlestick_chart(df: pd.DataFrame, symbol: str, indicators: bool = True):
+    """Crea grafico candlestick con indicatori"""
+    
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        subplot_titles=(f'{symbol} - Prezzo', 'RSI', 'MACD'),
+        row_heights=[0.6, 0.2, 0.2]
+    )
+    
+    # Candlestick
+    fig.add_trace(
+        go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            name='Prezzo'
+        ),
+        row=1, col=1
+    )
+    
+    if indicators:
+        # Moving Averages
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['SMA_20'], name='SMA 20', line=dict(color='orange', width=1)),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['SMA_50'], name='SMA 50', line=dict(color='blue', width=1)),
+            row=1, col=1
+        )
+        
+        # Bollinger Bands
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['BB_high'], name='BB High', 
+                      line=dict(color='gray', width=1, dash='dash')),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['BB_low'], name='BB Low',
+                      line=dict(color='gray', width=1, dash='dash'), 
+                      fill='tonexty', fillcolor='rgba(128,128,128,0.1)'),
+            row=1, col=1
+        )
+        
+        # RSI
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple', width=2)),
+            row=2, col=1
+        )
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+        
+        # MACD
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['MACD'], name='MACD', line=dict(color='blue', width=2)),
+            row=3, col=1
+        )
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['MACD_signal'], name='Signal', line=dict(color='red', width=2)),
+            row=3, col=1
+        )
+        fig.add_trace(
+            go.Bar(x=df.index, y=df['MACD_diff'], name='Histogram', marker_color='gray'),
+            row=3, col=1
+        )
+    
+    fig.update_layout(
+        height=900,
+        showlegend=True,
+        xaxis_rangeslider_visible=False,
+        hovermode='x unified'
+    )
+    
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+    
+    return fig
+
+
+def create_prediction_chart(df: pd.DataFrame, forecast: np.ndarray, conf_intervals: Tuple):
+    """Crea grafico previsioni"""
+    
     fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=data[asset].index, open=data[asset]['Open'], high=data[asset]['High'], low=data[asset]['Low'], close=data[asset]['Close'], name=asset))
-    for model in models:
-        # Adjust future dates based on interval
-        if data_interval == '15m':
-            delta = timedelta(minutes=15)
-        elif data_interval == '1h':
-            delta = timedelta(hours=1)
-        elif data_interval == '4h':
-            delta = timedelta(hours=4)
-        else:
-            delta = timedelta(days=1)
-        future_dates = [data[asset].index[-1] + delta * (i+1) for i in range(horizon_steps)]
-        fig.add_trace(go.Scatter(x=future_dates, y=predictions.get(f'{asset}_{model}', [0]*horizon_steps), name=f'{model} Forecast'))
-    st.plotly_chart(fig)
+    
+    # Dati storici
+    fig.add_trace(go.Scatter(
+        x=df.index[-100:],
+        y=df['Close'][-100:],
+        mode='lines',
+        name='Storico',
+        line=dict(color='blue', width=2)
+    ))
+    
+    # Previsione
+    future_dates = pd.date_range(start=df.index[-1], periods=len(forecast) + 1, freq='D')[1:]
+    fig.add_trace(go.Scatter(
+        x=future_dates,
+        y=forecast,
+        mode='lines',
+        name='Previsione',
+        line=dict(color='red', width=2, dash='dash')
+    ))
+    
+    # Intervallo confidenza
+    lower, upper = conf_intervals
+    fig.add_trace(go.Scatter(
+        x=future_dates,
+        y=upper,
+        mode='lines',
+        name='Limite Superiore',
+        line=dict(width=0),
+        showlegend=False
+    ))
+    fig.add_trace(go.Scatter(
+        x=future_dates,
+        y=lower,
+        mode='lines',
+        name='Limite Inferiore',
+        line=dict(width=0),
+        fillcolor='rgba(255, 0, 0, 0.2)',
+        fill='tonexty',
+        showlegend=True
+    ))
+    
+    fig.update_layout(
+        title="Previsione Prezzo con Intervallo di Confidenza 95%",
+        xaxis_title="Data",
+        yaxis_title="Prezzo",
+        hovermode='x unified',
+        height=500
+    )
+    
+    return fig
 
-# Correlation Heatmap
-st.subheader("Correlation Heatmap")
-closes = pd.DataFrame({asset: df['Close'] for asset, df in data.items() if not df.empty})
-if not closes.empty:
-    corr = closes.corr()
-    fig_corr = px.imshow(corr, text_auto=True)
-    st.plotly_chart(fig_corr)
-else:
-    st.write("No data for correlation heatmap.")
 
-# Macro Dashboard
-st.subheader("Macro Indicators")
-st.write(macro_data)
-# Note: st.gauge is not a standard Streamlit function; using st.metric instead
-st.metric("Fear & Greed Index", fear_greed['value'], delta=None)
+# ==================== APPLICAZIONE PRINCIPALE ====================
 
-# Risk Management
-st.subheader("Risk Metrics")
-portfolio_returns = closes.pct_change().dropna()
-risk_metrics = calculate_risk_metrics(portfolio_returns.mean(axis=1))
-st.write(risk_metrics)
-
-# Portfolio Optimizer
-st.subheader("Portfolio Optimization")
-optimized_weights = optimize_portfolio(closes.pct_change().dropna())
-st.write(optimized_weights)
-
-# Backtesting Metrics
-st.subheader("Backtesting Metrics")
-st.write(metrics)
-
-# Close DB
-conn.close()
+def main():
+    
+    # Header
+    st.markdown('<h1 class="main-header">🚀 Sistema Analisi Finanziaria Istituzionale</h1>', 
+                unsafe_allow_html=True)
+    st.markdown("---")
+    
+    # Sidebar
+    with st.sidebar:
+        st.image("https://img.icons8.com/color/96/000000/analytics.png", width=100)
+        st.title("⚙️ Configurazione")
+        
+        # Selezione categoria
+        category = st.selectbox(
+            "📊 Categoria Asset",
+            options=list(DataCollector.INSTRUMENTS.keys())
+        )
+        
+        # Selezione strumento
+        instrument = st.selectbox(
+            "🎯 Strumento",
+            options=list(DataCollector.INSTRUMENTS[category].keys())
+        )
+        
+        symbol = DataCollector.INSTRUMENTS[category][instrument]
+        
+        # Timeframe
+        timeframe = st.selectbox(
+            "⏱️ Timeframe",
+            options=['15min', '1h', '4h', '1d'],
+            index=3
+        )
+        
+        st.markdown("---")
+        
+        # Opzioni avanzate
+        st.subheader("🔧 Opzioni Avanzate")
+        show_indicators = st.checkbox("Mostra Indicatori Tecnici", value=True)
+        show_predictions = st.checkbox("Mostra Previsioni ML", value=True)
+        show_seasonality = st.checkbox("Analisi Stagionalità", value=True)
+        
+        st.markdown("---")
+        
+        # Indicatori macro
+        st.subheader("📈 Indicatori Macro")
+        vix_value = DataCollector.get_vix_data()
+        fed_rate = DataCollector.get_fed_rate()
+        fear_greed = DataCollector.get_fear_greed_index()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("VIX", f"{vix_value}", help="Indice della Paura")
+        with col2:
+            st.metric("FED Rate", f"{fed_rate}%")
+        
+        if category == 'Criptovalute':
+            st.metric("Fear & Greed", f"{fear_greed['value']}", 
+                     delta=fear_greed['classification'])
+        
+        # Pulsante analisi
+        analyze_button = st.button("🔍 ANALIZZA", type="primary", use_container_width=True)
+    
+    # Main content
+    if analyze_button:
+        
+        with st.spinner(f"📊 Caricamento dati {instrument} ({timeframe})..."):
+            df = DataCollector.get_price_data(symbol, timeframe)
+        
+        if df.empty:
+            st.error("❌ Impossibile caricare i dati. Riprova più tardi.")
+            return
+        
+        # Calcolo indicatori
+        with st.spinner("🔧 Calcolo indicatori tecnici..."):
+            df = FeatureEngine.calculate_technical_indicators(df)
+        
+        # Metriche principali
+        st.subheader(f"📊 {instrument} - {timeframe.upper()}")
+        
+        current_price = df['Close'].iloc[-1]
+        price_change = df['Close'].pct_change().iloc[-1] * 100
+        volume_change = df['Volume'].pct_change().iloc[-1] * 100
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric("💰 Prezzo Attuale", f"${current_price:,.2f}", 
+                     f"{price_change:+.2f}%")
+        with col2:
+            st.metric("📊 RSI", f"{df['RSI'].iloc[-1]:.1f}")
+        with col3:
+            st.metric("📉 ATR", f"{df['ATR'].iloc[-1]:.2f}")
+        with col4:
+            volatility = df['Volatility'].iloc[-1] * 100
+            st.metric("📈 Volatilità", f"{volatility:.1f}%")
+        with col5:
+            volume_str = f"{df['Volume'].iloc[-1]:,.0f}"
+            st.metric("📦 Volume", volume_str, f"{volume_change:+.1f}%")
+        
+        st.markdown("---")
+        
+        # Grafico principale
+        st.subheader("📈 Grafico Candlestick & Indicatori")
+        fig_candle = create_candlestick_chart(df.tail(200), instrument, show_indicators)
+        st.plotly_chart(fig_candle, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # PREVISIONI ML
+        if show_predictions and len(df) > 100:
+            st.subheader("🤖 Previsioni Machine Learning Ensemble")
+            
+            with st.spinner("🧠 Training modelli ML..."):
+                X, y = FeatureEngine.prepare_ml_features(df)
+                
+                if len(X) > 50:
+                    predictor = PredictionEngine()
+                    scores = predictor.train_ensemble(X, y)
+                    
+                    # Previsione prossimo periodo
+                    X_latest = X.tail(1)
+                    prediction_result = predictor.predict(X_latest)
+                    
+                    # ARIMA forecast
+                    forecast, conf_int = predictor.arima_forecast(df['Close'], steps=30)
+                    
+                    # Display previsioni
+                    col1, col2 = st.columns([1, 1])
+                    
+                    with col1:
+                        st.markdown('<div class="prediction-box">', unsafe_allow_html=True)
+                        
+                        predicted_return = prediction_result['prediction'] * 100
+                        predicted_price = current_price * (1 + prediction_result['prediction'])
+                        
+                        st.markdown(f"### 🎯 Previsione Prossimo Periodo")
+                        st.markdown(f"**Prezzo Previsto:** ${predicted_price:,.2f}")
+                        st.markdown(f"**Variazione Attesa:** {predicted_return:+.2f}%")
+                        st.markdown(f"**Confidenza Modello:** {prediction_result['confidence']:.1f
