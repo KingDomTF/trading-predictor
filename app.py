@@ -1,914 +1,317 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.preprocessing import RobustScaler
-from sklearn.model_selection import TimeSeriesSplit
-import yfinance as yf
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import logging
+import sqlite3
+import yfinance as yf
+from fredapi import Fred
+import requests
+from ta import add_all_ta_features
+import statsmodels.api as sm
+from statsmodels.tsa.arima.model import ARIMA
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from sklearn.preprocessing import MinMaxScaler
+from prophet import Prophet
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+import numpy as np
 import warnings
+from scipy.optimize import minimize
 warnings.filterwarnings('ignore')
 
-# ==================== QUANTUM CORE ENGINE ====================
-class QuantumEngine:
-    """Core analytics engine - Oracle/Aladdin inspired"""
-    
-    ASSET_PROFILES = {
-        'BTC-USD': {'vol': 1.8, 'mom': 0.85, 'liq': 0.9, 'class': 'Crypto'},
-        'ETH-USD': {'vol': 1.9, 'mom': 0.85, 'liq': 0.85, 'class': 'Crypto'},
-        'GC=F': {'vol': 0.6, 'mom': 0.5, 'liq': 0.95, 'class': 'Commodity'},
-        'SI=F': {'vol': 0.9, 'mom': 0.6, 'liq': 0.85, 'class': 'Commodity'},
-        '^GSPC': {'vol': 0.5, 'mom': 0.7, 'liq': 1.0, 'class': 'Index'},
-        'SPY': {'vol': 0.5, 'mom': 0.7, 'liq': 1.0, 'class': 'ETF'},
-        'QQQ': {'vol': 0.7, 'mom': 0.8, 'liq': 1.0, 'class': 'ETF'},
-        'NVDA': {'vol': 1.2, 'mom': 0.9, 'liq': 0.95, 'class': 'Tech'},
-        'TSLA': {'vol': 1.5, 'mom': 0.9, 'liq': 0.9, 'class': 'Tech'},
-        'MSFT': {'vol': 0.8, 'mom': 0.75, 'liq': 1.0, 'class': 'Tech'},
-        'AVGO': {'vol': 1.0, 'mom': 0.8, 'liq': 0.9, 'class': 'Tech'},
-        'TSM': {'vol': 1.1, 'mom': 0.85, 'liq': 0.9, 'class': 'Semi'},
-        'PLTR': {'vol': 1.4, 'mom': 0.85, 'liq': 0.8, 'class': 'Software'},
+# Config
+ASSET_CLASSES = {
+    'Precious Metals': ['GC=F', 'SI=F', 'PL=F', 'PA=F'],
+    'Cryptocurrencies': ['BTC-USD', 'ETH-USD'],  # Add top 10 dynamically if needed
+    'Forex': ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'USDCHF=X', 'AUDUSD=X', 'NZDUSD=X', 'USDCAD=X'],
+    'Indices': ['^GSPC', '^IXIC', '^DJI', '^VIX']
+}
+
+API_KEYS = {
+    'FRED': 'your_fred_api_key_here',  # Replace with your actual key
+    # Add others as needed
+}
+
+fred = Fred(api_key=API_KEYS['FRED'])
+
+# Functions from fetch_data.py
+def fetch_historical_data(asset):
+    return yf.download(asset, period='10y', progress=False)
+
+def fetch_macro_data():
+    data = {
+        'Federal Funds Rate': fred.get_series('FEDFUNDS'),
+        '10Y Treasury': fred.get_series('DGS10'),
+        'Inflation CPI': fred.get_series('CPIAUCSL'),
+        'Unemployment': fred.get_series('UNRATE'),
+        'M2 Supply': fred.get_series('M2SL'),
+        'GDP Growth': fred.get_series('A191RL1Q225SBEA')
     }
-    
-    @staticmethod
-    def compute_indicators(df, symbol):
-        """Ultra-efficient indicator computation with error handling"""
+    return pd.DataFrame(data).iloc[-1]
+
+def fetch_fear_greed():
+    url = 'https://api.alternative.me/fng/?limit=1'
+    response = requests.get(url)
+    return response.json()['data'][0]
+
+# Functions from preprocessor.py
+def preprocess_data(df):
+    df = df.dropna()
+    df.index = pd.to_datetime(df.index)
+    return df
+
+def calculate_technical_indicators(df):
+    df = add_all_ta_features(df, open='Open', high='High', low='Low', close='Close', volume='Volume', fillna=True)
+    return df
+
+# Functions from macro_factors.py
+def integrate_macro_factors(tech_data, macro_data):
+    for asset, df in tech_data.items():
+        for key, value in macro_data.items():
+            df[key] = value  # Broadcast latest value; in production, align dates
+    return tech_data
+
+# Functions from seasonality.py
+def analyze_seasonality(df):
+    decomposition = sm.tsa.seasonal_decompose(df['Close'], model='additive', period=365)
+    df['seasonal'] = decomposition.seasonal
+    return df
+
+# Functions from arima_model.py
+def train_arima(series):
+    model = ARIMA(series, order=(5,1,0))
+    return model.fit()
+
+def predict_arima(model, steps):
+    forecast = model.forecast(steps=steps)
+    return forecast
+
+# Functions from ensemble_model.py
+def create_features(df):
+    df['lag1'] = df['Close'].shift(1)
+    df['lag7'] = df['Close'].shift(7)
+    df = df.dropna()
+    return df
+
+def train_xgboost(df):
+    df = create_features(df)
+    X = df.drop('Close', axis=1)
+    y = df['Close']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    model = xgb.XGBRegressor(objective='reg:squarederror')
+    model.fit(X_train, y_train)
+    return model
+
+def predict_xgboost(model, last_data, steps):
+    predictions = []
+    current = last_data.copy()
+    for _ in range(steps):
+        pred = model.predict(current)[0]
+        predictions.append(pred)
+        current['lag1'] = pred
+        # Simplified lag7 update
+        if 'lag7' in current.columns:
+            current['lag7'] = current['lag1'].shift(6, fill_value=pred)[-1]
+    return np.array(predictions)
+
+# Functions from lstm_model.py
+def train_lstm(series):
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(series.reshape(-1,1))
+    X = scaled[:-1].reshape(-1, 1, 1)
+    y = scaled[1:]
+    model = Sequential()
+    model.add(LSTM(50, input_shape=(1,1)))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mse')
+    model.fit(X, y, epochs=10, verbose=0)
+    return model, scaler
+
+def predict_lstm(model, scaler, series, steps):
+    predictions = []
+    current = scaler.transform([[series[-1]]])
+    for _ in range(steps):
+        pred = model.predict(current.reshape(1,1,1), verbose=0)[0][0]
+        predictions.append(pred)
+        current = np.array([[pred]])
+    return scaler.inverse_transform(np.array(predictions).reshape(-1,1)).flatten()
+
+# Functions from prophet_model.py
+def train_prophet(df):
+    df_prophet = df[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
+    model = Prophet()
+    model.fit(df_prophet)
+    return model
+
+def predict_prophet(model, steps):
+    future = model.make_future_dataframe(periods=steps)
+    forecast = model.predict(future)
+    return forecast.iloc[-steps:]
+
+# Functions from helpers.py
+def calculate_risk_metrics(returns):
+    metrics = {
+        'Sharpe Ratio': np.mean(returns) / np.std(returns) * np.sqrt(252),
+        'Max Drawdown': np.min(returns.cumsum() - returns.cumsum().cummax()),
+        'VaR 95%': np.percentile(returns, 5)
+    }
+    return metrics
+
+def portfolio_return(weights, returns):
+    return np.dot(weights, returns.mean()) * 252
+
+def portfolio_volatility(weights, returns):
+    return np.sqrt(np.dot(weights.T, np.dot(returns.cov() * 252, weights)))
+
+def minimize_volatility(weights, returns):
+    return portfolio_volatility(weights, returns)
+
+def optimize_portfolio(returns_df):
+    num_assets = returns_df.shape[1]
+    args = (returns_df,)
+    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    bounds = tuple((0, 1) for _ in range(num_assets))
+    result = minimize(minimize_volatility, num_assets*[1./num_assets], args=args,
+                      method='SLSQP', bounds=bounds, constraints=constraints)
+    return pd.Series(result.x, index=returns_df.columns)
+
+# Main App Code
+# Logging setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Database setup
+conn = sqlite3.connect('financial_data.db')
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS historical_data
+             (asset TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL, volume INTEGER)''')
+conn.commit()
+
+# Disclaimer
+st.sidebar.warning("This application is for educational purposes only and does not constitute financial advice. Use at your own risk.")
+
+# Sidebar for selections
+st.sidebar.title("Asset Selection")
+selected_assets = st.sidebar.multiselect("Select Assets", sum(ASSET_CLASSES.values(), []), default=['GC=F', 'BTC-USD', 'EURUSD=X', '^GSPC'])
+time_horizon = st.sidebar.selectbox("Prediction Horizon", ["1 Day", "7 Days", "30 Days", "90 Days"])
+horizon_days = {"1 Day": 1, "7 Days": 7, "30 Days": 30, "90 Days": 90}[time_horizon]
+
+# Main Dashboard
+st.title("Financial Predictive Analytics Dashboard")
+
+# Step 1: Data Collection
+@st.cache_data(ttl=3600)
+def load_data(assets):
+    data = {}
+    for asset in assets:
         try:
-            d = df.copy()
-            profile = QuantumEngine.ASSET_PROFILES.get(symbol, {'vol': 1.0, 'mom': 0.6, 'liq': 0.8, 'class': 'Other'})
-            
-            # Vectorized EMAs
-            for span in [9, 21, 50, 200]:
-                d[f'ema{span}'] = d['Close'].ewm(span=span, adjust=False).mean()
-            
-            # RSI optimized
-            delta = d['Close'].diff()
-            gain = delta.clip(lower=0).rolling(14).mean()
-            loss = -delta.clip(upper=0).rolling(14).mean()
-            rs = gain / (loss + 1e-10)
-            d['rsi'] = 100 - (100 / (1 + rs))
-            
-            # MACD
-            exp1 = d['Close'].ewm(span=12, adjust=False).mean()
-            exp2 = d['Close'].ewm(span=26, adjust=False).mean()
-            d['macd'] = exp1 - exp2
-            d['macd_sig'] = d['macd'].ewm(span=9, adjust=False).mean()
-            d['macd_hist'] = d['macd'] - d['macd_sig']
-            
-            # Bollinger
-            d['bb_mid'] = d['Close'].rolling(20).mean()
-            bb_std = d['Close'].rolling(20).std()
-            d['bb_up'] = d['bb_mid'] + 2 * bb_std
-            d['bb_low'] = d['bb_mid'] - 2 * bb_std
-            d['bb_width'] = (d['bb_up'] - d['bb_low']) / (d['bb_mid'] + 1e-10)
-            
-            # ATR normalized
-            hl = d['High'] - d['Low']
-            hc = (d['High'] - d['Close'].shift()).abs()
-            lc = (d['Low'] - d['Close'].shift()).abs()
-            tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
-            d['atr'] = tr.rolling(14).mean()
-            d['atr_pct'] = (d['atr'] / (d['Close'] + 1e-10) * 100) * profile['vol']
-            
-            # Volume intelligence
-            d['vol_ma'] = d['Volume'].rolling(20).mean()
-            d['vol_ratio'] = d['Volume'] / (d['vol_ma'] + 1e-10)
-            d['obv'] = (np.sign(d['Close'].diff()) * d['Volume']).fillna(0).cumsum()
-            
-            # ADX for trend strength
-            plus_dm = d['High'].diff().clip(lower=0)
-            minus_dm = (-d['Low'].diff()).clip(lower=0)
-            atr14 = tr.rolling(14).mean()
-            plus_di = 100 * (plus_dm.rolling(14).mean() / (atr14 + 1e-10))
-            minus_di = 100 * (minus_dm.rolling(14).mean() / (atr14 + 1e-10))
-            dx = (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-10) * 100
-            d['adx'] = dx.rolling(14).mean()
-            
-            # Momentum suite
-            d['mom'] = d['Close'].pct_change(10) * 100
-            d['roc'] = d['Close'].pct_change(20) * 100
-            
-            # Trend composite score
-            d['trend'] = (
-                (d['Close'] > d['ema9']).astype(float) * 0.4 +
-                (d['Close'] > d['ema21']).astype(float) * 0.3 +
-                (d['Close'] > d['ema50']).astype(float) * 0.2 +
-                (d['macd'] > d['macd_sig']).astype(float) * 0.1
-            )
-            
-            # Regime detection
-            d['regime'] = 0
-            mask_strong_bull = (d['adx'] > 25) & (d['trend'] > 0.6)
-            mask_strong_bear = (d['adx'] > 25) & (d['trend'] < 0.4)
-            mask_weak_bull = (d['trend'] > 0.6)
-            mask_weak_bear = (d['trend'] < 0.4)
-            
-            d.loc[mask_strong_bull, 'regime'] = 2
-            d.loc[mask_strong_bear, 'regime'] = -2
-            d.loc[mask_weak_bull & ~mask_strong_bull, 'regime'] = 1
-            d.loc[mask_weak_bear & ~mask_strong_bear, 'regime'] = -1
-            
-            return d.dropna()
+            df = fetch_historical_data(asset)
+            df['asset'] = asset
+            df['date'] = df.index.astype(str)
+            df.to_sql('historical_data', conn, if_exists='append', index=False)
+            data[asset] = df
         except Exception as e:
-            st.error(f"Error in compute_indicators: {str(e)}")
-            return None
-    
-    @staticmethod
-    def generate_features(df, entry, sl, tp, direction, symbol):
-        """Feature vector for ML"""
-        try:
-            row = df.iloc[-1]
-            profile = QuantumEngine.ASSET_PROFILES.get(symbol, {'vol': 1.0, 'mom': 0.6})
-            
-            rr = abs(tp - entry) / (abs(entry - sl) + 1e-10)
-            risk_pct = abs(entry - sl) / entry * 100
-            reward_pct = abs(tp - entry) / entry * 100
-            
-            return np.array([
-                risk_pct, reward_pct, rr,
-                1 if direction == 'long' else 0,
-                row['rsi'], float(row['rsi'] > 70), float(row['rsi'] < 30),
-                row['macd'], row['macd_sig'], row['macd_hist'],
-                row['atr_pct'], row['bb_width'],
-                (row['ema9'] - row['ema21']) / row['Close'] * 100,
-                (row['ema21'] - row['ema50']) / row['Close'] * 100,
-                row['trend'], row['adx'], float(row['regime']),
-                row['vol_ratio'], row['mom'], row['roc'],
-                profile['vol'], profile['mom']
-            ], dtype=np.float32)
-        except Exception as e:
-            st.error(f"Error in generate_features: {str(e)}")
-            return None
-    
-    @staticmethod
-    def simulate_trades(df, symbol, n=1000):
-        """Generate training dataset with improved error handling"""
-        try:
-            X, y = [], []
-            profile = QuantumEngine.ASSET_PROFILES.get(symbol, {'vol': 1.0})
-            
-            for _ in range(n):
-                idx = np.random.randint(100, len(df) - 100)
-                row = df.iloc[idx]
-                
-                # Safe signal calculation with explicit boolean conversion
-                rsi_val = float(row['rsi'])
-                macd_val = float(row['macd'])
-                macd_sig_val = float(row['macd_sig'])
-                
-                rsi_signal = (1 if rsi_val < 40 else 0) - (1 if rsi_val > 60 else 0)
-                macd_signal = (1 if macd_val > macd_sig_val else 0) - (1 if macd_val < macd_sig_val else 0)
-                
-                signal = rsi_signal + macd_signal + np.random.randn() * 0.3
-                direction = 'long' if signal > 0 else 'short'
-                
-                entry = float(row['Close'])
-                atr = float(row['atr'])
-                
-                sl_mult = np.random.uniform(0.8, 2.0) * profile['vol']
-                tp_mult = np.random.uniform(1.5, 4.0) * profile['vol']
-                
-                sl = entry - atr * sl_mult if direction == 'long' else entry + atr * sl_mult
-                tp = entry + atr * tp_mult if direction == 'long' else entry - atr * tp_mult
-                
-                features = QuantumEngine.generate_features(df.iloc[:idx+1], entry, sl, tp, direction, symbol)
-                
-                if features is None:
-                    continue
-                
-                # Outcome simulation
-                future = df.iloc[idx+1:idx+101]['Close'].values
-                if len(future) > 0:
-                    if direction == 'long':
-                        hit_tp = np.any(future >= tp)
-                        hit_sl = np.any(future <= sl)
-                        tp_idx = np.where(future >= tp)[0][0] if hit_tp else 999
-                        sl_idx = np.where(future <= sl)[0][0] if hit_sl else 999
-                    else:
-                        hit_tp = np.any(future <= tp)
-                        hit_sl = np.any(future >= sl)
-                        tp_idx = np.where(future <= tp)[0][0] if hit_tp else 999
-                        sl_idx = np.where(future >= sl)[0][0] if hit_sl else 999
-                    
-                    success = 1 if tp_idx < sl_idx else 0
-                    X.append(features)
-                    y.append(success)
-            
-            return np.array(X), np.array(y)
-        except Exception as e:
-            st.error(f"Error in simulate_trades: {str(e)}")
-            return None, None
-    
-    @staticmethod
-    def train_ensemble(X, y):
-        """Train dual-model ensemble with validation"""
-        try:
-            if len(X) == 0 or len(y) == 0:
-                return None, None
-            
-            scaler = RobustScaler()
-            X_scaled = scaler.fit_transform(X)
-            
-            rf = RandomForestClassifier(
-                n_estimators=200, max_depth=15, min_samples_split=10,
-                max_features='sqrt', random_state=42, n_jobs=-1
-            )
-            
-            gb = GradientBoostingClassifier(
-                n_estimators=150, max_depth=10, learning_rate=0.08,
-                subsample=0.8, random_state=42
-            )
-            
-            # Time series cross-validation
-            tscv = TimeSeriesSplit(n_splits=5)
-            rf_scores, gb_scores = [], []
-            
-            for train_idx, val_idx in tscv.split(X_scaled):
-                rf.fit(X_scaled[train_idx], y[train_idx])
-                gb.fit(X_scaled[train_idx], y[train_idx])
-                rf_scores.append(rf.score(X_scaled[val_idx], y[val_idx]))
-                gb_scores.append(gb.score(X_scaled[val_idx], y[val_idx]))
-            
-            # Final fit
-            rf.fit(X_scaled, y)
-            gb.fit(X_scaled, y)
-            
-            return {
-                'rf': rf, 'gb': gb,
-                'rf_acc': np.mean(rf_scores),
-                'gb_acc': np.mean(gb_scores),
-                'ensemble_acc': np.mean(rf_scores) * 0.55 + np.mean(gb_scores) * 0.45
-            }, scaler
-        except Exception as e:
-            st.error(f"Error in train_ensemble: {str(e)}")
-            return None, None
-    
-    @staticmethod
-    def predict(models, scaler, features):
-        """Ensemble prediction"""
-        try:
-            X_scaled = scaler.transform(features.reshape(1, -1))
-            rf_prob = models['rf'].predict_proba(X_scaled)[0][1]
-            gb_prob = models['gb'].predict_proba(X_scaled)[0][1]
-            return (rf_prob * 0.55 + gb_prob * 0.45) * 100
-        except:
-            return 50.0
+            logging.error(f"Error fetching data for {asset}: {e}")
+    return data
 
-# ==================== RISK ANALYTICS ====================
-class RiskEngine:
-    """Risk management module"""
-    
-    @staticmethod
-    def calculate_var(returns, confidence=0.95):
-        """Value at Risk"""
-        return np.percentile(returns, (1 - confidence) * 100)
-    
-    @staticmethod
-    def sharpe_ratio(returns, risk_free=0.02):
-        """Annualized Sharpe"""
-        excess = returns - risk_free / 252
-        std = returns.std()
-        if std < 1e-10:
-            return 0
-        return np.sqrt(252) * excess.mean() / std
-    
-    @staticmethod
-    def max_drawdown(prices):
-        """Maximum drawdown"""
-        cummax = np.maximum.accumulate(prices)
-        dd = (prices - cummax) / cummax
-        return dd.min()
-    
-    @staticmethod
-    def kelly_criterion(win_rate, avg_win, avg_loss):
-        """Optimal position sizing"""
-        if avg_loss == 0 or avg_win == 0:
-            return 0
-        return max(0, (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win)
-    
-    @staticmethod
-    def position_score(prob, rr, volatility):
-        """Position quality score 0-100"""
-        base = (prob - 50) * 2
-        rr_bonus = min(20, rr * 5)
-        vol_penalty = max(-20, -volatility * 2)
-        return max(0, min(100, base + rr_bonus + vol_penalty))
+data = load_data(selected_assets)
 
-# ==================== MARKET INTELLIGENCE ====================
-class MarketIntel:
-    """Real-time market data and analysis"""
-    
-    @staticmethod
-    def fetch_data(symbol, interval, period):
-        """Optimized data retrieval"""
-        try:
-            data = yf.download(symbol, period=period, interval=interval, progress=False, timeout=10)
-            if data.empty:
-                return None
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.droplevel(1)
-            return data[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
-        except Exception as e:
-            st.error(f"Error fetching data: {str(e)}")
-            return None
-    
-    @staticmethod
-    def get_signals(symbol, df):
-        """Generate trading signals with error handling"""
-        try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period='1d')
-            if hist.empty:
-                return []
-            
-            current = float(hist['Close'].iloc[-1])
-            latest = df.iloc[-1]
-            atr = float(latest['atr'])
-            
-            # News sentiment
-            try:
-                news = ticker.news
-                news_text = ' | '.join([n.get('title', '') for n in news[:5] if isinstance(n, dict)]) if news else ''
-            except:
-                news_text = ''
-            
-            sentiment_score = MarketIntel._sentiment_score(news_text, symbol)
-            
-            # Signal generation
-            signals = []
-            
-            # Long setup
-            long_score = 0
-            rsi_val = float(latest['rsi'])
-            if rsi_val < 35: long_score += 25
-            elif rsi_val < 45: long_score += 15
-            if float(latest['regime']) >= 1: long_score += 20
-            if float(latest['macd']) > float(latest['macd_sig']): long_score += 15
-            if float(latest['adx']) > 25: long_score += 15
-            if sentiment_score > 0: long_score += 10
-            
-            long_prob = min(90, max(50, 50 + long_score * 0.6))
-            
-            signals.append({
-                'dir': 'LONG',
-                'entry': round(current, 2),
-                'sl': round(current - atr * 1.3, 2),
-                'tp': round(current + atr * 2.8, 2),
-                'prob': long_prob,
-                'score': long_score,
-                'sentiment': 'Positive' if sentiment_score > 1 else 'Neutral' if sentiment_score >= -1 else 'Negative'
-            })
-            
-            # Short setup
-            short_score = 0
-            if rsi_val > 65: short_score += 25
-            elif rsi_val > 55: short_score += 15
-            if float(latest['regime']) <= -1: short_score += 20
-            if float(latest['macd']) < float(latest['macd_sig']): short_score += 15
-            if float(latest['adx']) > 25: short_score += 15
-            if sentiment_score < 0: short_score += 10
-            
-            short_prob = min(90, max(50, 50 + short_score * 0.6))
-            
-            signals.append({
-                'dir': 'SHORT',
-                'entry': round(current, 2),
-                'sl': round(current + atr * 1.3, 2),
-                'tp': round(current - atr * 2.8, 2),
-                'prob': short_prob,
-                'score': short_score,
-                'sentiment': 'Positive' if sentiment_score > 1 else 'Neutral' if sentiment_score >= -1 else 'Negative'
-            })
-            
-            return sorted(signals, key=lambda x: x['prob'], reverse=True)
-        except Exception as e:
-            st.error(f"Error generating signals: {str(e)}")
-            return []
-    
-    @staticmethod
-    def _sentiment_score(text, symbol):
-        """Advanced sentiment scoring"""
-        pos = {'rally': 2, 'surge': 2, 'bullish': 2, 'soar': 2, 'breakout': 2, 
-               'gain': 1, 'rise': 1, 'up': 1, 'strong': 1, 'positive': 1}
-        neg = {'crash': 2, 'plunge': 2, 'bearish': 2, 'tumble': 2, 'collapse': 2,
-               'loss': 1, 'fall': 1, 'down': 1, 'weak': 1, 'negative': 1}
-        
-        text = text.lower()
-        score = sum(v for k, v in pos.items() if k in text) - sum(v for k, v in neg.items() if k in text)
-        
-        if 'crypto' in symbol.lower() or 'btc' in symbol.lower():
-            if 'adoption' in text: score += 1
-            if 'regulation' in text or 'ban' in text: score -= 1
-        
-        return score
+# Real-time Macro Data
+macro_data = fetch_macro_data()
+fear_greed = fetch_fear_greed()
 
-# ==================== PORTFOLIO UNIVERSE ====================
-QUANTUM_UNIVERSE = [
-    {'name': 'Gold', 'ticker': 'GC=F', 'score': 94, 'class': 'Safe Haven', 
-     'thesis': 'Fed pivot catalyst, CB buying, geopolitical hedge', 'risk': 'Low', 'horizon': '6-18M'},
-    {'name': 'Bitcoin', 'ticker': 'BTC-USD', 'score': 89, 'class': 'Digital Asset',
-     'thesis': 'ETF inflows sustained, halving supply shock, institutional adoption', 'risk': 'High', 'horizon': '12-36M'},
-    {'name': 'Nvidia', 'ticker': 'NVDA', 'score': 92, 'class': 'Semiconductor',
-     'thesis': 'AI infrastructure buildout, data center dominance, 80% GPU market share', 'risk': 'Medium', 'horizon': '12-24M'},
-    {'name': 'Microsoft', 'ticker': 'MSFT', 'score': 88, 'class': 'Mega-Cap Tech',
-     'thesis': 'Azure AI growth, enterprise moat, Copilot monetization', 'risk': 'Low', 'horizon': '12-36M'},
-    {'name': 'Silver', 'ticker': 'SI=F', 'score': 86, 'class': 'Industrial Metal',
-     'thesis': 'Solar demand surge, EV components, gold ratio reversion', 'risk': 'Medium', 'horizon': '12-24M'},
-    {'name': 'S&P 500', 'ticker': '^GSPC', 'score': 82, 'class': 'Equity Index',
-     'thesis': 'Earnings growth resilient, soft landing scenario, buyback support', 'risk': 'Medium', 'horizon': '12-36M'},
-    {'name': 'Taiwan Semi', 'ticker': 'TSM', 'score': 90, 'class': 'Semiconductor',
-     'thesis': 'AI chip monopoly, 3nm leadership, pricing power intact', 'risk': 'Medium', 'horizon': '12-24M'},
-    {'name': 'Broadcom', 'ticker': 'AVGO', 'score': 87, 'class': 'Semiconductor',
-     'thesis': 'Custom AI silicon, networking growth, M&A execution', 'risk': 'Medium', 'horizon': '12-24M'},
-    {'name': 'Palantir', 'ticker': 'PLTR', 'score': 83, 'class': 'Software',
-     'thesis': 'AIP platform traction, gov contracts stable, commercial breakout', 'risk': 'High', 'horizon': '18-36M'},
-    {'name': 'Nasdaq-100', 'ticker': 'QQQ', 'score': 85, 'class': 'Tech Index',
-     'thesis': 'AI theme exposure, rate cut beneficiary, innovation premium', 'risk': 'Medium', 'horizon': '12-24M'},
-]
+# Display Real-time Prices
+st.subheader("Real-time Prices")
+for asset, df in data.items():
+    latest = df.iloc[-1]
+    change = (latest['Close'] - latest['Open']) / latest['Open'] * 100
+    st.write(f"{asset}: ${latest['Close']:.2f} ({change:.2f}%)")
 
-# ==================== STREAMLIT APPLICATION ====================
-st.set_page_config(page_title="Quantum Trading Intelligence", page_icon="⚛️", layout="wide")
+# Preprocess and Feature Engineering
+processed_data = {asset: preprocess_data(df) for asset, df in data.items()}
+tech_data = {asset: calculate_technical_indicators(df) for asset, df in processed_data.items()}
+integrated_data = integrate_macro_factors(tech_data, macro_data)
+seasonal_data = {asset: analyze_seasonality(df) for asset, df in integrated_data.items()}
 
-st.markdown("""
-<style>
-    .main .block-container {padding-top: 1rem; max-width: 1600px;}
-    .stMetric {background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); 
-               color: white; padding: 18px; border-radius: 12px; 
-               box-shadow: 0 8px 16px rgba(0,0,0,0.15);}
-    .stMetric label, .stMetric [data-testid="stMetricValue"] {color: white !important;}
-    section[data-testid="stSidebar"] {display: none;}
-    .signal-card {background: #f8fafc; padding: 20px; border-radius: 10px; 
-                  border-left: 5px solid #3b82f6; margin: 12px 0; 
-                  box-shadow: 0 4px 6px rgba(0,0,0,0.05);}
-    .high-conf {border-left-color: #10b981 !important;}
-    .med-conf {border-left-color: #f59e0b !important;}
-    .low-conf {border-left-color: #ef4444 !important;}
-    .quantum-header {background: linear-gradient(90deg, #1e3a8a, #3b82f6, #1e3a8a);
-                     padding: 25px; border-radius: 15px; margin-bottom: 20px; color: white;}
-</style>
-""", unsafe_allow_html=True)
+# Model Training and Predictions
+models = ['ARIMA', 'XGBoost', 'LSTM', 'Prophet']
+predictions = {}
+metrics = {}
+for asset, df in seasonal_data.items():
+    df['Date'] = df.index  # For Prophet
+    train_df = df.iloc[:-int(0.15*len(df))]
+    test_df = df.iloc[-int(0.15*len(df)):]
+    
+    # ARIMA
+    arima_model = train_arima(train_df['Close'])
+    arima_pred = predict_arima(arima_model, horizon_days)
+    predictions[f'{asset}_ARIMA'] = arima_pred
+    
+    # XGBoost
+    xgb_model = train_xgboost(train_df)
+    last_data = train_df.iloc[-1:].drop('Close', axis=1)
+    xgb_pred = predict_xgboost(xgb_model, last_data, horizon_days)
+    predictions[f'{asset}_XGBoost'] = xgb_pred
+    
+    # LSTM
+    lstm_model, scaler = train_lstm(train_df['Close'].values)
+    lstm_pred = predict_lstm(lstm_model, scaler, train_df['Close'].values, horizon_days)
+    predictions[f'{asset}_LSTM'] = lstm_pred
+    
+    # Prophet
+    prophet_model = train_prophet(train_df)
+    prophet_pred = predict_prophet(prophet_model, horizon_days)
+    predictions[f'{asset}_Prophet'] = prophet_pred['yhat'].values
+    
+    # Metrics (using test set for example, adjust lengths)
+    test_len = len(test_df)
+    for model_name, pred in zip(models, [arima_pred[:test_len], xgb_pred[:test_len], lstm_pred[:test_len], prophet_pred['yhat'][:test_len]]):
+        if len(pred) < test_len:
+            pred = np.pad(pred, (0, test_len - len(pred)), 'constant', constant_values=np.nan)
+        rmse = np.sqrt(mean_squared_error(test_df['Close'], pred, squared=False))
+        mae = mean_absolute_error(test_df['Close'], pred)
+        metrics[f'{asset}_{model_name}'] = {'RMSE': rmse, 'MAE': mae}
 
-# Header
-st.markdown("""
-<div class="quantum-header">
-    <h1>⚛️ QUANTUM TRADING INTELLIGENCE</h1>
-    <p style='font-size: 1.1em; margin: 0;'>Institutional-Grade Analytics Engine | Powered by ML Ensemble</p>
-</div>
-""", unsafe_allow_html=True)
+# Visualization
+st.subheader("Forecast Charts")
+for asset in selected_assets:
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=data[asset].index, open=data[asset]['Open'], high=data[asset]['High'], low=data[asset]['Low'], close=data[asset]['Close'], name=asset))
+    for model in models:
+        future_dates = pd.date_range(start=data[asset].index[-1] + timedelta(days=1), periods=horizon_days)
+        fig.add_trace(go.Scatter(x=future_dates, y=predictions[f'{asset}_{model}'], name=f'{model} Forecast'))
+    st.plotly_chart(fig)
 
-# Input section
-col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-with col1:
-    symbol = st.text_input("🎯 Asset Ticker", value="BTC-USD", help="BTC-USD, GC=F, NVDA, ^GSPC")
-with col2:
-    interval = st.selectbox("⏱️ Timeframe", ['5m', '15m', '1h', '1d'], index=2)
-with col3:
-    st.markdown("##")
-    refresh = st.button("🔄 REFRESH", use_container_width=True, type="primary")
-with col4:
-    st.markdown("##")
-    asset_class = QuantumEngine.ASSET_PROFILES.get(symbol, {}).get('class', 'Unknown')
-    st.markdown(f"**Class:** {asset_class}")
+# Correlation Heatmap
+st.subheader("Correlation Heatmap")
+closes = pd.DataFrame({asset: df['Close'] for asset, df in data.items()})
+corr = closes.corr()
+fig_corr = px.imshow(corr, text_auto=True)
+st.plotly_chart(fig_corr)
 
-st.markdown("---")
+# Macro Dashboard
+st.subheader("Macro Indicators")
+st.write(macro_data)
+# Note: st.gauge is not a standard Streamlit function; using st.metric instead
+st.metric("Fear & Greed Index", fear_greed['value'], delta=None)
 
-# Model training/caching
-@st.cache_resource(ttl=7200, show_spinner=False)
-def get_quantum_model(sym, intv):
-    """Load and train quantum model"""
-    try:
-        period_map = {'5m': '60d', '15m': '60d', '1h': '730d', '1d': '5y'}
-        
-        # Fetch data
-        data = MarketIntel.fetch_data(sym, intv, period_map.get(intv, '730d'))
-        if data is None or len(data) < 200:
-            return None, None, None, None
-        
-        # Compute indicators
-        df = QuantumEngine.compute_indicators(data, sym)
-        if df is None or len(df) < 100:
-            return None, None, None, None
-        
-        # Simulate trades
-        X, y = QuantumEngine.simulate_trades(df, sym, n=1000)
-        if X is None or y is None or len(X) == 0:
-            return None, None, None, None
-        
-        # Train ensemble
-        models, scaler = QuantumEngine.train_ensemble(X, y)
-        if models is None or scaler is None:
-            return None, None, None, None
-        
-        return models, scaler, df, models['ensemble_acc']
-    except Exception as e:
-        st.error(f"Error in model training: {str(e)}")
-        return None, None, None, None
+# Risk Management
+st.subheader("Risk Metrics")
+portfolio_returns = closes.pct_change().dropna()
+risk_metrics = calculate_risk_metrics(portfolio_returns.mean(axis=1))
+st.write(risk_metrics)
 
-# Load model
-session_key = f"quantum_{symbol}_{interval}"
-if session_key not in st.session_state or refresh:
-    with st.spinner("⚛️ Initializing Quantum Engine..."):
-        result = get_quantum_model(symbol, interval)
-        
-        if result[0] is None:
-            st.error("❌ Unable to initialize. Please check ticker and try again.")
-            st.info("💡 Tip: Try popular tickers like BTC-USD, GC=F, NVDA, or ^GSPC")
-            st.stop()
-        
-        models, scaler, df, acc = result
-        st.session_state[session_key] = {'models': models, 'scaler': scaler, 'df': df, 'acc': acc}
-        st.success(f"✅ Quantum Engine Online | Accuracy: {acc:.2%}")
+# Portfolio Optimizer
+st.subheader("Portfolio Optimization")
+optimized_weights = optimize_portfolio(closes.pct_change().dropna())
+st.write(optimized_weights)
 
-state = st.session_state[session_key]
-models, scaler, df, acc = state['models'], state['scaler'], state['df'], state['acc']
+# Backtesting Metrics
+st.subheader("Backtesting Metrics")
+st.write(metrics)
 
-# Generate signals
-signals = MarketIntel.get_signals(symbol, df)
-
-# Main layout
-col_left, col_right = st.columns([1.3, 1])
-
-with col_left:
-    st.markdown("### 🎯 ALPHA SIGNALS")
-    
-    if signals:
-        for i, sig in enumerate(signals[:2]):
-            conf_class = 'high-conf' if sig['prob'] >= 72 else 'med-conf' if sig['prob'] >= 62 else 'low-conf'
-            rr = abs(sig['tp'] - sig['entry']) / (abs(sig['entry'] - sig['sl']) + 1e-10)
-            risk = abs(sig['entry'] - sig['sl']) / sig['entry'] * 100
-            
-            st.markdown(f"""
-            <div class="signal-card {conf_class}">
-                <h3>🎲 {sig['dir']} SETUP #{i+1}</h3>
-                <p><b>Entry:</b> ${sig['entry']:.2f} | <b>Stop:</b> ${sig['sl']:.2f} | <b>Target:</b> ${sig['tp']:.2f}</p>
-                <p><b>Market Prob:</b> {sig['prob']:.1f}% | <b>Tech Score:</b> {sig['score']}/100 | <b>R/R:</b> {rr:.2f}x</p>
-                <p><b>Risk:</b> {risk:.2f}% | <b>Sentiment:</b> {sig['sentiment']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button(f"⚛️ QUANTUM ANALYZE", key=f"analyze_{i}", use_container_width=True):
-                st.session_state.selected_signal = sig
-    else:
-        st.info("⏳ No signals available. Try refreshing or select a different asset.")
-
-with col_right:
-    st.markdown("### 🏆 QUANTUM UNIVERSE")
-    st.markdown("**Top 10 Institutional Picks**")
-    
-    for asset in QUANTUM_UNIVERSE:
-        color = '🟢' if asset['score'] >= 88 else '🟡' if asset['score'] >= 84 else '🟠'
-        st.markdown(f"""
-        **{color} {asset['name']}** ({asset['ticker']}) | Score: {asset['score']}/100
-        - 📊 {asset['class']} | ⚠️ {asset['risk']} Risk | ⏰ {asset['horizon']}
-        - 💡 {asset['thesis']}
-        """)
-    
-    st.markdown("---")
-    st.markdown("*Scores: Fundamentals + Technicals + 2025 Catalysts*")
-
-# Market dashboard
-st.markdown("---")
-st.markdown("### 📊 MARKET INTELLIGENCE")
-
-latest = df.iloc[-1]
-returns = df['Close'].pct_change().dropna()
-
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-with col1:
-    st.metric("💰 Price", f"${float(latest['Close']):.2f}")
-with col2:
-    rsi_val = float(latest['rsi'])
-    st.metric("📈 RSI", f"{rsi_val:.0f}", delta=f"{rsi_val-50:+.0f}")
-with col3:
-    adx_val = float(latest['adx'])
-    st.metric("⚡ ADX", f"{adx_val:.0f}", help="Trend strength")
-with col4:
-    regime_map = {2: "🔥 Strong Bull", 1: "📈 Weak Bull", 0: "➡️ Neutral", -1: "📉 Weak Bear", -2: "❄️ Strong Bear"}
-    regime_val = int(latest['regime'])
-    st.metric("🎯 Regime", regime_map.get(regime_val, "➡️ Neutral"))
-with col5:
-    atr_pct_val = float(latest['atr_pct'])
-    st.metric("💥 Vol %", f"{atr_pct_val:.2f}%")
-with col6:
-    sharpe = RiskEngine.sharpe_ratio(returns)
-    st.metric("📊 Sharpe", f"{sharpe:.2f}")
-
-# Risk metrics
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    var_95 = RiskEngine.calculate_var(returns, 0.95)
-    st.metric("📉 VaR 95%", f"{var_95*100:.2f}%")
-with col2:
-    max_dd = RiskEngine.max_drawdown(df['Close'].values)
-    st.metric("🌊 Max DD", f"{max_dd*100:.2f}%")
-with col3:
-    volatility = returns.std() * np.sqrt(252) * 100
-    st.metric("📈 Vol (Ann.)", f"{volatility:.1f}%")
-with col4:
-    st.metric("🎓 Model Acc", f"{acc:.2%}")
-
-# Quantum analysis section
-if 'selected_signal' in st.session_state:
-    sig = st.session_state.selected_signal
-    
-    st.markdown("---")
-    st.markdown("## ⚛️ QUANTUM ANALYSIS ENGINE")
-    
-    with st.spinner("🔬 Running quantum computation..."):
-        direction = 'long' if sig['dir'] == 'LONG' else 'short'
-        features = QuantumEngine.generate_features(df, sig['entry'], sig['sl'], sig['tp'], direction, symbol)
-        
-        if features is not None:
-            quantum_prob = QuantumEngine.predict(models, scaler, features)
-            
-            # Position scoring
-            rr = abs(sig['tp'] - sig['entry']) / (abs(sig['entry'] - sig['sl']) + 1e-10)
-            pos_score = RiskEngine.position_score(quantum_prob, rr, float(latest['atr_pct']))
-            
-            # Kelly criterion
-            kelly = RiskEngine.kelly_criterion(quantum_prob/100, abs(sig['tp']-sig['entry']), abs(sig['entry']-sig['sl']))
-            optimal_size = max(0, min(0.25, kelly)) * 100
-            
-            # Results display
-            col1, col2, col3, col4, col5 = st.columns(5)
-            
-            with col1:
-                delta = quantum_prob - sig['prob']
-                st.metric("⚛️ Quantum Prob", f"{quantum_prob:.1f}%", 
-                         delta=f"{delta:+.1f}% vs Market",
-                         delta_color="normal")
-            
-            with col2:
-                risk_pct = abs(sig['entry'] - sig['sl']) / sig['entry'] * 100
-                st.metric("⚠️ Risk", f"{risk_pct:.2f}%")
-            
-            with col3:
-                reward_pct = abs(sig['tp'] - sig['entry']) / sig['entry'] * 100
-                st.metric("🎯 Reward", f"{reward_pct:.2f}%")
-            
-            with col4:
-                st.metric("⚖️ Risk/Reward", f"{rr:.2f}x")
-            
-            with col5:
-                st.metric("💎 Position Score", f"{pos_score:.0f}/100")
-            
-            st.markdown("---")
-            
-            # Decision matrix
-            col_market, col_quantum, col_consensus = st.columns(3)
-            
-            with col_market:
-                st.markdown("#### 📡 MARKET SIGNAL")
-                if sig['prob'] >= 72:
-                    st.success(f"✅ **STRONG**\n\n{sig['prob']:.1f}% confidence")
-                elif sig['prob'] >= 62:
-                    st.warning(f"⚠️ **MODERATE**\n\n{sig['prob']:.1f}% confidence")
-                else:
-                    st.error(f"❌ **WEAK**\n\n{sig['prob']:.1f}% confidence")
-            
-            with col_quantum:
-                st.markdown("#### ⚛️ QUANTUM ENGINE")
-                if quantum_prob >= 72:
-                    st.success(f"✅ **STRONG**\n\n{quantum_prob:.1f}% confidence")
-                elif quantum_prob >= 62:
-                    st.warning(f"⚠️ **MODERATE**\n\n{quantum_prob:.1f}% confidence")
-                else:
-                    st.error(f"❌ **WEAK**\n\n{quantum_prob:.1f}% confidence")
-            
-            with col_consensus:
-                st.markdown("#### 🎯 CONSENSUS")
-                avg_prob = (sig['prob'] + quantum_prob) / 2
-                aligned = abs(sig['prob'] - quantum_prob) <= 12
-                
-                if avg_prob >= 70 and aligned:
-                    st.success(f"🔥 **HIGH CONVICTION**\n\n{avg_prob:.1f}% (aligned)")
-                elif avg_prob >= 60:
-                    st.warning(f"⚠️ **MEDIUM CONVICTION**\n\n{avg_prob:.1f}%")
-                else:
-                    st.error(f"❌ **LOW CONVICTION**\n\n{avg_prob:.1f}%")
-                
-                if not aligned:
-                    st.info(f"⚡ Divergence: {abs(delta):.1f}%")
-            
-            # Position sizing recommendation
-            st.markdown("---")
-            st.markdown("### 💼 POSITION MANAGEMENT")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("📊 Kelly %", f"{kelly*100:.1f}%", help="Optimal position size")
-            with col2:
-                st.metric("✅ Recommended", f"{optimal_size:.1f}%", help="Conservative sizing")
-            with col3:
-                exp_value = (quantum_prob/100 * reward_pct) - ((100-quantum_prob)/100 * risk_pct)
-                st.metric("💰 Expected Value", f"{exp_value:+.2f}%")
-            with col4:
-                max_loss = optimal_size * risk_pct / 100
-                st.metric("📉 Max Portfolio Loss", f"{max_loss:.2f}%")
-            
-            # Feature importance
-            st.markdown("---")
-            st.markdown("### 🔬 QUANTUM FACTORS")
-            
-            feature_names = [
-                'Risk %', 'Reward %', 'R/R Ratio', 'Direction',
-                'RSI', 'RSI>70', 'RSI<30', 'MACD', 'MACD Signal', 'MACD Hist',
-                'ATR %', 'BB Width', 'EMA 9-21', 'EMA 21-50',
-                'Trend Score', 'ADX', 'Regime', 'Volume Ratio',
-                'Momentum', 'ROC', 'Volatility Profile', 'Momentum Profile'
-            ]
-            
-            importances = models['rf'].feature_importances_
-            top_indices = np.argsort(importances)[-8:][::-1]
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**🎯 Top Drivers**")
-                for idx in top_indices[:4]:
-                    if idx < len(feature_names):
-                        st.markdown(f"- **{feature_names[idx]}**: {features[idx]:.2f} (weight: {importances[idx]:.1%})")
-            
-            with col2:
-                st.markdown("**📊 Supporting Factors**")
-                for idx in top_indices[4:8]:
-                    if idx < len(feature_names):
-                        st.markdown(f"- **{feature_names[idx]}**: {features[idx]:.2f} (weight: {importances[idx]:.1%})")
-            
-            # Risk analysis
-            st.markdown("---")
-            st.markdown("### 🛡️ RISK ASSESSMENT")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**⚠️ Risk Factors**")
-                risk_factors = []
-                if atr_pct_val > 3:
-                    risk_factors.append(f"🔴 High volatility ({atr_pct_val:.2f}%)")
-                if adx_val < 20:
-                    risk_factors.append(f"🟡 Weak trend (ADX {adx_val:.0f})")
-                if float(latest['vol_ratio']) < 0.7:
-                    risk_factors.append(f"🟡 Low volume ({float(latest['vol_ratio']):.2f}x)")
-                if abs(rsi_val - 50) < 10:
-                    risk_factors.append(f"🟡 Neutral momentum (RSI {rsi_val:.0f})")
-                
-                if risk_factors:
-                    for rf in risk_factors:
-                        st.markdown(f"- {rf}")
-                else:
-                    st.success("✅ No major risk flags detected")
-            
-            with col2:
-                st.markdown("**✅ Positive Factors**")
-                pos_factors = []
-                if rr > 2:
-                    pos_factors.append(f"🟢 Strong R/R ratio ({rr:.2f}x)")
-                if quantum_prob > 70:
-                    pos_factors.append(f"🟢 High AI confidence ({quantum_prob:.1f}%)")
-                if adx_val > 30:
-                    pos_factors.append(f"🟢 Strong trend (ADX {adx_val:.0f})")
-                if float(latest['vol_ratio']) > 1.3:
-                    pos_factors.append(f"🟢 Volume surge ({float(latest['vol_ratio']):.2f}x)")
-                if pos_score > 75:
-                    pos_factors.append(f"🟢 Excellent position quality ({pos_score:.0f}/100)")
-                
-                if pos_factors:
-                    for pf in pos_factors:
-                        st.markdown(f"- {pf}")
-                else:
-                    st.warning("⚠️ Limited positive catalysts")
-            
-            # Executive summary
-            st.markdown("---")
-            st.markdown("### 📋 EXECUTIVE SUMMARY")
-            
-            if avg_prob >= 70 and pos_score >= 70:
-                st.success(f"""
-                **🎯 TRADE RECOMMENDATION: FAVORABLE**
-                
-                The Quantum Engine analysis indicates a **high-probability setup** with strong risk/reward characteristics.
-                
-                **Key Metrics:**
-                - Consensus Probability: {avg_prob:.1f}%
-                - Position Quality Score: {pos_score:.0f}/100
-                - Risk/Reward: {rr:.2f}x
-                - Recommended Size: {optimal_size:.1f}% of portfolio
-                
-                **Action:** Consider execution with disciplined risk management. Use {optimal_size:.1f}% position sizing and maintain strict stop-loss at ${sig['sl']:.2f}.
-                """)
-            elif avg_prob >= 60:
-                st.warning(f"""
-                **⚠️ TRADE RECOMMENDATION: NEUTRAL**
-                
-                The setup shows **moderate potential** but requires careful consideration.
-                
-                **Key Metrics:**
-                - Consensus Probability: {avg_prob:.1f}%
-                - Position Quality Score: {pos_score:.0f}/100
-                - Risk/Reward: {rr:.2f}x
-                - Recommended Size: {optimal_size:.1f}% of portfolio
-                
-                **Action:** Proceed with caution. Consider reduced position size ({optimal_size*0.5:.1f}%) or wait for stronger confirmation.
-                """)
-            else:
-                st.error(f"""
-                **❌ TRADE RECOMMENDATION: UNFAVORABLE**
-                
-                The analysis suggests **limited edge** in this setup.
-                
-                **Key Metrics:**
-                - Consensus Probability: {avg_prob:.1f}%
-                - Position Quality Score: {pos_score:.0f}/100
-                - Risk/Reward: {rr:.2f}x
-                
-                **Action:** Consider passing on this opportunity or waiting for better market conditions.
-                """)
-        else:
-            st.error("⚠️ Unable to generate quantum analysis. Please try refreshing.")
-
-# Info section
-st.markdown("---")
-with st.expander("ℹ️ QUANTUM ENGINE METHODOLOGY"):
-    st.markdown("""
-    ### 🧠 System Architecture
-    
-    **Quantum Trading Intelligence** is an institutional-grade analytics platform inspired by Bloomberg's Aladdin and Oracle's financial systems.
-    
-    #### Core Components:
-    
-    1. **Quantum Engine**
-       - Dual-model ensemble (Random Forest 55% + Gradient Boosting 45%)
-       - 22 advanced features including regime detection, ADX, momentum suite
-       - Time-series cross-validation for robustness
-       - Asset-specific volatility and momentum profiles
-    
-    2. **Risk Analytics**
-       - Value at Risk (VaR) calculation
-       - Sharpe ratio and maximum drawdown
-       - Kelly criterion for optimal position sizing
-       - Position quality scoring (0-100)
-    
-    3. **Market Intelligence**
-       - Real-time data integration via yfinance
-       - Multi-factor signal generation
-       - Advanced sentiment analysis
-       - Regime classification system
-    
-    #### Model Performance:
-    - Training Dataset: 1,000 simulated historical trades
-    - Validation: 5-fold time-series cross-validation
-    - Typical Accuracy: 65-75% (varies by asset class)
-    - Update Frequency: 2-hour cache refresh
-    
-    #### Risk Management Framework:
-    - **Kelly Criterion**: Mathematical optimal sizing (capped at 25%)
-    - **Position Score**: Holistic quality metric combining probability, R/R, and volatility
-    - **Expected Value**: Risk-adjusted return estimation
-    - **Max Portfolio Loss**: Conservative portfolio impact calculation
-    
-    #### Asset Universe:
-    Top 10 institutional picks selected based on:
-    - Fundamental catalysts (2025 macro themes)
-    - Technical momentum and trend strength
-    - Risk-adjusted return potential
-    - Liquidity and market depth
-    
-    ### 📊 Interpretation Guide:
-    
-    | Metric | Excellent | Good | Fair | Poor |
-    |--------|-----------|------|------|------|
-    | Quantum Prob | >75% | 68-75% | 60-68% | <60% |
-    | Position Score | >80 | 70-80 | 60-70 | <60 |
-    | Risk/Reward | >3.0x | 2.0-3.0x | 1.5-2.0x | <1.5x |
-    | Sharpe Ratio | >2.0 | 1.0-2.0 | 0.5-1.0 | <0.5 |
-    | ADX (Trend) | >30 | 25-30 | 20-25 | <20 |
-    
-    ### ⚠️ DISCLAIMER
-    
-    This system is designed for **educational and analytical purposes only**. It is NOT financial advice.
-    
-    - Past performance does not guarantee future results
-    - All investments carry risk, including total loss of capital
-    - Machine learning models can fail in unprecedented market conditions
-    - Always conduct independent research and consult licensed professionals
-    - Never risk more than you can afford to lose
-    
-    **Quantum Trading Intelligence** provides analytical tools to support decision-making, but ultimate responsibility rests with the user.
-    """)
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #64748b; padding: 20px;'>
-    <p style='font-size: 1.1em; margin: 0;'>
-        <b>⚛️ QUANTUM TRADING INTELLIGENCE</b>
-    </p>
-    <p style='font-size: 0.9em; margin: 5px 0;'>
-        Institutional-Grade Analytics | ML Ensemble Engine | Real-Time Risk Management
-    </p>
-    <p style='font-size: 0.8em; margin: 5px 0; color: #94a3b8;'>
-        Inspired by Bloomberg Aladdin & Oracle Financial Systems Architecture
-    </p>
-</div>
-""", unsafe_allow_html=True)
+# Close DB
+conn.close()
