@@ -50,6 +50,12 @@ def fetch_historical_data(asset, interval='1d', period='10y'):
             }).dropna()
         if 'Adj Close' in df.columns:
             df.drop('Adj Close', axis=1, inplace=True)
+        # Ensure numeric types
+        for col in ['Open', 'High', 'Low', 'Close']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        if 'Volume' in df.columns:
+            df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
         return df
     except Exception as e:
         logging.error(f"Error downloading data for {asset} with interval {interval}: {e}")
@@ -332,8 +338,11 @@ for asset, df in data.items():
     if df.empty:
         continue
     latest = df.iloc[-1]
-    change = (latest['Close'] - latest['Open']) / latest['Open'] * 100
-    st.write(f"{asset}: ${latest['Close']:.2f} ({change:.2f}%)")
+    if pd.isna(latest.get('Close')) or pd.isna(latest.get('Open')):
+        st.write(f"{asset}: Price data unavailable")
+    else:
+        change = (latest['Close'] - latest['Open']) / latest['Open'] * 100 if latest['Open'] != 0 else 0
+        st.write(f"{asset}: ${latest['Close']:.2f} ({change:.2f}%)")
 
 # Preprocess and Feature Engineering
 processed_data = {asset: preprocess_data(df) for asset, df in data.items()}
