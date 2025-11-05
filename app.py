@@ -728,4 +728,431 @@ def main():
                         st.markdown(f"### 🎯 Previsione Prossimo Periodo")
                         st.markdown(f"**Prezzo Previsto:** ${predicted_price:,.2f}")
                         st.markdown(f"**Variazione Attesa:** {predicted_return:+.2f}%")
-                        st.markdown(f"**Confidenza Modello:** {prediction_result['confidence']:.1f
+                        st.markdown(f"**Confidenza Modello:** {prediction_result['confidence']:.1f}%")
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Probabilità direzionali
+                        st.markdown("#### 📊 Probabilità Movimento")
+                        prob_up = prediction_result['prob_up']
+                        prob_down = prediction_result['prob_down']
+                        
+                        st.markdown(f"""
+                        <div class="success-prob" style="color: {'#00ff00' if prob_up > prob_down else '#ff4444'};">
+                            {prob_up:.1f}% ⬆️ RIALZO
+                        </div>
+                        <div class="success-prob" style="color: {'#ff4444' if prob_down > prob_up else '#00ff00'}; font-size: 32px;">
+                            {prob_down:.1f}% ⬇️ RIBASSO
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown("#### 🎯 Performance Modelli")
+                        
+                        model_perf = pd.DataFrame({
+                            'Modello': ['Random Forest', 'XGBoost', 'Gradient Boosting'],
+                            'Score R²': [
+                                scores['rf_score'],
+                                scores['xgb_score'],
+                                scores['gb_score']
+                            ],
+                            'Previsione %': [
+                                prediction_result['individual_predictions']['RandomForest'] * 100,
+                                prediction_result['individual_predictions']['XGBoost'] * 100,
+                                prediction_result['individual_predictions']['GradientBoosting'] * 100
+                            ]
+                        })
+                        
+                        st.dataframe(
+                            model_perf.style.format({
+                                'Score R²': '{:.3f}',
+                                'Previsione %': '{:+.2f}%'
+                            }).background_gradient(subset=['Score R²'], cmap='RdYlGn'),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        
+                        st.metric("📈 Score Medio Ensemble", f"{scores['avg_score']:.3f}")
+                    
+                    # Grafico previsione ARIMA
+                    st.markdown("#### 📉 Proiezione Prezzo (30 periodi - ARIMA)")
+                    fig_forecast = create_prediction_chart(df, forecast, conf_int)
+                    st.plotly_chart(fig_forecast, use_container_width=True)
+                    
+                    # Target prices
+                    st.markdown("#### 🎯 Livelli Target")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    target_1d = forecast[0] if len(forecast) > 0 else current_price
+                    target_1w = forecast[6] if len(forecast) > 6 else current_price
+                    target_1m = forecast[-1] if len(forecast) > 0 else current_price
+                    
+                    with col1:
+                        change_1d = ((target_1d - current_price) / current_price) * 100
+                        st.metric("1 Periodo", f"${target_1d:,.2f}", f"{change_1d:+.2f}%")
+                    with col2:
+                        change_1w = ((target_1w - current_price) / current_price) * 100
+                        st.metric("7 Periodi", f"${target_1w:,.2f}", f"{change_1w:+.2f}%")
+                    with col3:
+                        change_1m = ((target_1m - current_price) / current_price) * 100
+                        st.metric("30 Periodi", f"${target_1m:,.2f}", f"{change_1m:+.2f}%")
+        
+        st.markdown("---")
+        
+        # ANALISI RISCHIO
+        st.subheader("⚠️ Analisi del Rischio")
+        
+        returns = df['Close'].pct_change().dropna()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            var_95 = RiskAnalyzer.calculate_var(returns, 0.95) * 100
+            st.metric("📉 VaR 95%", f"{var_95:.2f}%", 
+                     help="Value at Risk: perdita massima attesa con 95% confidenza")
+        
+        with col2:
+            sharpe = RiskAnalyzer.calculate_sharpe(returns)
+            st.metric("📊 Sharpe Ratio", f"{sharpe:.2f}",
+                     help="Rendimento aggiustato per rischio")
+        
+        with col3:
+            max_dd = RiskAnalyzer.calculate_max_drawdown(df['Close']) * 100
+            st.metric("📉 Max Drawdown", f"{max_dd:.2f}%",
+                     help="Massima perdita dal picco")
+        
+        with col4:
+            win_rate = (returns > 0).sum() / len(returns) * 100
+            st.metric("✅ Win Rate", f"{win_rate:.1f}%",
+                     help="Percentuale periodi positivi")
+        
+        # Supporti e Resistenze
+        levels = RiskAnalyzer.support_resistance_levels(df)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 🔴 Livelli di Resistenza")
+            for i, level in enumerate(levels['resistance'], 1):
+                distance = ((level - current_price) / current_price) * 100
+                st.markdown(f"**R{i}:** ${level:,.2f} ({distance:+.2f}%)")
+        
+        with col2:
+            st.markdown("#### 🟢 Livelli di Supporto")
+            st.markdown(f"**Pivot:** ${levels['pivot']:,.2f}")
+            for i, level in enumerate(levels['support'], 1):
+                distance = ((level - current_price) / current_price) * 100
+                st.markdown(f"**S{i}:** ${level:,.2f} ({distance:+.2f}%)")
+        
+        st.markdown("---")
+        
+        # ANALISI STAGIONALITÀ
+        if show_seasonality:
+            st.subheader("🗓️ Analisi Stagionalità")
+            
+            seasonality = FeatureEngine.calculate_seasonality(df)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📅 Pattern Mensile")
+                monthly_df = pd.DataFrame({
+                    'Mese': ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 
+                            'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'],
+                    'Rendimento Medio %': [seasonality['monthly_pattern'].get(i, 0) 
+                                          for i in range(1, 13)]
+                })
+                
+                fig_monthly = go.Figure(data=[
+                    go.Bar(
+                        x=monthly_df['Mese'],
+                        y=monthly_df['Rendimento Medio %'],
+                        marker_color=['green' if x > 0 else 'red' 
+                                     for x in monthly_df['Rendimento Medio %']]
+                    )
+                ])
+                fig_monthly.update_layout(
+                    title="Performance Storica per Mese",
+                    yaxis_title="Rendimento %",
+                    height=400
+                )
+                st.plotly_chart(fig_monthly, use_container_width=True)
+                
+                current_month_bias = seasonality['current_month_bias']
+                st.metric("🎯 Bias Mese Corrente", f"{current_month_bias:+.3f}%")
+            
+            with col2:
+                st.markdown("#### 📊 Pattern Settimanale")
+                weekly_df = pd.DataFrame({
+                    'Giorno': ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì'],
+                    'Rendimento Medio %': [seasonality['weekly_pattern'].get(i, 0) 
+                                          for i in range(5)]
+                })
+                
+                fig_weekly = go.Figure(data=[
+                    go.Bar(
+                        x=weekly_df['Giorno'],
+                        y=weekly_df['Rendimento Medio %'],
+                        marker_color=['green' if x > 0 else 'red' 
+                                     for x in weekly_df['Rendimento Medio %']]
+                    )
+                ])
+                fig_weekly.update_layout(
+                    title="Performance Storica per Giorno",
+                    yaxis_title="Rendimento %",
+                    height=400
+                )
+                st.plotly_chart(fig_weekly, use_container_width=True)
+                
+                current_day_bias = seasonality['current_day_bias']
+                st.metric("🎯 Bias Giorno Corrente", f"{current_day_bias:+.3f}%")
+        
+        st.markdown("---")
+        
+        # ANALISI CORRELAZIONI
+        st.subheader("🔗 Matrice Correlazioni Indicatori")
+        
+        corr_cols = ['Close', 'RSI', 'MACD', 'ATR', 'Volume', 'Volatility', 'BB_width']
+        corr_matrix = df[corr_cols].corr()
+        
+        fig_corr = go.Figure(data=go.Heatmap(
+            z=corr_matrix,
+            x=corr_cols,
+            y=corr_cols,
+            colorscale='RdBu',
+            zmid=0,
+            text=corr_matrix.round(2),
+            texttemplate='%{text}',
+            textfont={"size": 10},
+            colorbar=dict(title="Correlazione")
+        ))
+        
+        fig_corr.update_layout(
+            title="Mappa di Correlazione tra Indicatori",
+            height=500
+        )
+        st.plotly_chart(fig_corr, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # SEGNALI DI TRADING
+        st.subheader("🚦 Segnali di Trading")
+        
+        current_rsi = df['RSI'].iloc[-1]
+        current_macd = df['MACD'].iloc[-1]
+        current_macd_signal = df['MACD_signal'].iloc[-1]
+        price_vs_sma20 = ((current_price - df['SMA_20'].iloc[-1]) / df['SMA_20'].iloc[-1]) * 100
+        price_vs_sma50 = ((current_price - df['SMA_50'].iloc[-1]) / df['SMA_50'].iloc[-1]) * 100
+        
+        signals = []
+        
+        # RSI Signals
+        if current_rsi < 30:
+            signals.append(("🟢 RSI Oversold", "ACQUISTO", "RSI < 30 indica ipervenduto"))
+        elif current_rsi > 70:
+            signals.append(("🔴 RSI Overbought", "VENDITA", "RSI > 70 indica ipercomprato"))
+        else:
+            signals.append(("🟡 RSI Neutrale", "NEUTRALE", f"RSI = {current_rsi:.1f}"))
+        
+        # MACD Signals
+        if current_macd > current_macd_signal and df['MACD'].iloc[-2] <= df['MACD_signal'].iloc[-2]:
+            signals.append(("🟢 MACD Bullish Cross", "ACQUISTO", "MACD incrocia al rialzo la signal line"))
+        elif current_macd < current_macd_signal and df['MACD'].iloc[-2] >= df['MACD_signal'].iloc[-2]:
+            signals.append(("🔴 MACD Bearish Cross", "VENDITA", "MACD incrocia al ribasso la signal line"))
+        else:
+            signals.append(("🟡 MACD Neutrale", "NEUTRALE", "Nessun incrocio recente"))
+        
+        # Moving Average Signals
+        if price_vs_sma20 > 2 and price_vs_sma50 > 2:
+            signals.append(("🟢 Trend Rialzista", "ACQUISTO", "Prezzo > SMA20 e SMA50"))
+        elif price_vs_sma20 < -2 and price_vs_sma50 < -2:
+            signals.append(("🔴 Trend Ribassista", "VENDITA", "Prezzo < SMA20 e SMA50"))
+        else:
+            signals.append(("🟡 Trend Laterale", "NEUTRALE", "Prezzo vicino alle medie"))
+        
+        # Bollinger Bands Signal
+        if current_price < df['BB_low'].iloc[-1]:
+            signals.append(("🟢 Sotto Bollinger Inf.", "ACQUISTO", "Possibile rimbalzo"))
+        elif current_price > df['BB_high'].iloc[-1]:
+            signals.append(("🔴 Sopra Bollinger Sup.", "VENDITA", "Possibile ritracciamento"))
+        
+        # Volume Signal
+        if df['Volume_ratio'].iloc[-1] > 1.5:
+            signals.append(("⚡ Volume Elevato", "ATTENZIONE", "Volume 50% sopra media"))
+        
+        # Display signals
+        for signal, action, description in signals:
+            color = "green" if "ACQUISTO" in action else "red" if "VENDITA" in action else "orange"
+            st.markdown(f"""
+            <div style="background-color: rgba(0,0,0,0.05); padding: 15px; 
+                        border-left: 5px solid {color}; margin: 10px 0; border-radius: 5px;">
+                <strong>{signal}</strong> - <span style="color: {color};">{action}</span><br>
+                <small>{description}</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # FATTORI DOMINANTI
+        st.subheader("🎯 Fattori Dominanti del Prezzo")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📊 Top Indicatori Tecnici")
+            technical_factors = {
+                'RSI': abs(50 - current_rsi) / 50 * 100,
+                'MACD Momentum': abs(current_macd - current_macd_signal) * 100,
+                'Volatilità': volatility * 10,
+                'Volume Anomaly': abs(df['Volume_ratio'].iloc[-1] - 1) * 100,
+                'BB Position': abs((current_price - df['BB_mid'].iloc[-1]) / df['BB_mid'].iloc[-1]) * 1000
+            }
+            
+            tech_df = pd.DataFrame({
+                'Fattore': list(technical_factors.keys()),
+                'Peso %': list(technical_factors.values())
+            }).sort_values('Peso %', ascending=False)
+            
+            tech_df['Peso %'] = tech_df['Peso %'] / tech_df['Peso %'].sum() * 100
+            
+            fig_tech = go.Figure(data=[
+                go.Bar(x=tech_df['Peso %'], y=tech_df['Fattore'], orientation='h',
+                      marker_color='steelblue')
+            ])
+            fig_tech.update_layout(
+                xaxis_title="Impatto %",
+                height=300,
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+            st.plotly_chart(fig_tech, use_container_width=True)
+        
+        with col2:
+            st.markdown("#### 🌍 Fattori Macroeconomici")
+            
+            # Calcolo impatto macro
+            vix_impact = (vix_value / 40) * 100  # Normalizzato su 40
+            fed_impact = (fed_rate / 10) * 100  # Normalizzato su 10%
+            
+            macro_factors = {
+                'VIX (Paura Mercato)': vix_impact,
+                'Tassi FED': fed_impact,
+                'Sentiment Globale': 50 + (np.random.randn() * 10)  # Simulato
+            }
+            
+            if category == 'Criptovalute':
+                macro_factors['Fear & Greed Index'] = fear_greed['value']
+            
+            macro_df = pd.DataFrame({
+                'Fattore': list(macro_factors.keys()),
+                'Livello': list(macro_factors.values())
+            })
+            
+            fig_macro = go.Figure(data=[
+                go.Bar(x=macro_df['Livello'], y=macro_df['Fattore'], orientation='h',
+                      marker_color='coral')
+            ])
+            fig_macro.update_layout(
+                xaxis_title="Livello",
+                height=300,
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+            st.plotly_chart(fig_macro, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # RACCOMANDAZIONE FINALE
+        st.subheader("🎯 Raccomandazione Algoritmica Finale")
+        
+        # Calcolo score complessivo
+        buy_score = 0
+        sell_score = 0
+        
+        # RSI
+        if current_rsi < 40:
+            buy_score += 2
+        elif current_rsi > 60:
+            sell_score += 2
+        
+        # MACD
+        if current_macd > current_macd_signal:
+            buy_score += 1.5
+        else:
+            sell_score += 1.5
+        
+        # Trend
+        if price_vs_sma20 > 0 and price_vs_sma50 > 0:
+            buy_score += 2
+        elif price_vs_sma20 < 0 and price_vs_sma50 < 0:
+            sell_score += 2
+        
+        # ML Prediction
+        if show_predictions and 'prediction_result' in locals():
+            if prediction_result['prediction'] > 0.005:
+                buy_score += 3
+            elif prediction_result['prediction'] < -0.005:
+                sell_score += 3
+        
+        # Volatilità
+        if volatility < 30:
+            buy_score += 1
+        elif volatility > 60:
+            sell_score += 1
+        
+        total_score = buy_score + sell_score
+        buy_percentage = (buy_score / total_score * 100) if total_score > 0 else 50
+        sell_percentage = (sell_score / total_score * 100) if total_score > 0 else 50
+        
+        if buy_percentage > 60:
+            recommendation = "🟢 ACQUISTO FORTE"
+            rec_color = "green"
+            rec_desc = "I fattori tecnici e quantitativi suggeriscono una opportunità di acquisto"
+        elif buy_percentage > 50:
+            recommendation = "🟢 ACQUISTO MODERATO"
+            rec_color = "lightgreen"
+            rec_desc = "Segnali positivi prevalenti, ma con cautela"
+        elif sell_percentage > 60:
+            recommendation = "🔴 VENDITA FORTE"
+            rec_color = "red"
+            rec_desc = "I fattori suggeriscono pressione ribassista"
+        elif sell_percentage > 50:
+            recommendation = "🔴 VENDITA MODERATA"
+            rec_color = "orange"
+            rec_desc = "Segnali negativi prevalenti"
+        else:
+            recommendation = "🟡 NEUTRALE / ATTENDI"
+            rec_color = "gray"
+            rec_desc = "Segnali contrastanti, meglio attendere conferme"
+        
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, {rec_color}, {'darkgreen' if 'ACQUISTO' in recommendation else 'darkred' if 'VENDITA' in recommendation else 'darkgray'}); 
+                    color: white; padding: 30px; border-radius: 15px; text-align: center;">
+            <h2>{recommendation}</h2>
+            <p style="font-size: 18px;">{rec_desc}</p>
+            <h3>Score Algoritmo: {buy_percentage:.1f}% Bullish / {sell_percentage:.1f}% Bearish</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # DISCLAIMER
+        st.warning("""
+        ⚠️ **DISCLAIMER IMPORTANTE**: 
+        Questo sistema fornisce analisi quantitative e previsioni basate su modelli statistici e machine learning. 
+        Le previsioni NON costituiscono consulenza finanziaria. I mercati finanziari sono imprevedibili e ogni 
+        investimento comporta rischi. Consultare sempre un consulente finanziario professionista prima di operare.
+        """)
+        
+        # Footer info
+        st.markdown("---")
+        st.info(f"""
+        📊 **Statistiche Analisi**:
+        - Dati analizzati: {len(df):,} periodi
+        - Range temporale: {df.index[0].strftime('%Y-%m-%d %H:%M')} → {df.index[-1].strftime('%Y-%m-%d %H:%M')}
+        - Indicatori calcolati: 25+
+        - Modelli ML utilizzati: 3 (RF, XGB, GB)
+        - Ultimo aggiornamento: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        """)
+
+
+if __name__ == "__main__":
+    main()
