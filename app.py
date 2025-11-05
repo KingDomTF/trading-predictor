@@ -107,7 +107,6 @@ df = ticker.history(period=config['period'], interval=config['interval'])
 if df.empty:
 st.warning(f"Nessun dato disponibile per {symbol}")
 return pd.DataFrame()
-Aggregazione per 4h se necessario
 if timeframe == '4h':
 df = df.resample('4H').agg({
 'Open': 'first',
