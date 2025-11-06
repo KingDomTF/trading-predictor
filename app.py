@@ -223,7 +223,7 @@ def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
         Nel 2025, l'oro ha visto un ritorno al ruolo di safe-haven tradizionale in un contesto di incertezza economica prolungata e inflazione persistente. Con banche centrali che continuano ad accumulare (oltre 1,000 tonnellate acquistate nel 2024, secondo World Gold Council), il mercato riflette sia domanda istituzionale che retail FOMO. Bias chiave:
         
         - **Safe-Haven Bias**: In periodi di stress (crisi geopolitiche, inflazione), investitori mostrano flight-to-quality verso oro, amplificando movimenti al rialzo (F1000Research, 2025).
-        - **Loss Aversion**: Tendenza a mantenere posizioni in oro durante cali, aspettando recuperi storici (simile al pattern 2011-2015).
+        - **Loss Aversion**: Tendenza a mantenere posizione in oro durante cali, aspettando recuperi storici (simile al pattern 2011-2015).
         - **Herding e FOMO**: Rally dell'oro nel 2024-2025 (target $3,000+ secondo alcuni analisti) ha creato herding, con retail che entra tardi (Ainvest, Ottobre 2025).
         - **Recency Bias**: Focus su performance recente (oro +15% YTD 2025) porta a sovrastimare continuazione trend.
         - **Confirmation Bias**: Investitori bullish cercano solo news positive (domanda banche centrali), ignorando segnali di correzione.
@@ -235,6 +235,30 @@ def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
         - **COVID Rally 2020**: Spike rapido a $2,070; nel 2025, rally più graduale ma sostenuto da fundamentals (debito sovrano, dedollarizzazione).
         
         **Previsione Comportamentale**: La psicologia attuale suggerisce che emotional attachment all'oro come "store of value" può amplificare volatilità. Investitori dovrebbero bilanciare allocazioni (5-15% portafoglio secondo strategist) e evitare concentrazioni eccessive dovute a fear-driven decisions. ETF come GLD e IAU offrono esposizione liquida, riducendo bias emotivi rispetto a possesso fisico.
+        
+        ### Analisi dei Bias Comportamentali negli Investimenti
+        
+        I bias comportamentali sono errori sistematici nel processo decisionale che influenzano le scelte finanziarie. Nel 2025, con mercati volatili e boom dell'IA, questi bias sono amplificati da social media e trading algoritmico, causando perdite medie del 2-3% annuo per investitori retail (studi Morningstar e J.P. Morgan, 2025). Un recente studio su F1000Research (ottobre 2025) ha condotto una meta-analisi su bias che influenzano le decisioni di investimento, confermando il loro impatto persistente.
+        
+        Ecco i bias principali, con esempi aggiornati al 2025:
+        
+        | Bias Cognitivo | Definizione | Esempio negli Investimenti | Impatto nel 2025 | Fonte |
+        |---------------|-------------|----------------------------|------------------|-------|
+        | **Avversione alle Perdite (Loss Aversion)** | Le perdite sono percepite come 2 volte più dolorose dei guadagni. | Mantenere azioni in perdita sperando in un recupero. | In correzioni di mercato post-boom IA, causa deflussi netti da fondi azionari superiori a 200 miliardi di dollari (Charles Schwab, giugno 2025). | Prospect Theory (Kahneman & Tversky); Vanguard. |
+        | **Eccessiva Fiducia (Overconfidence)** | Sovrastima delle proprie capacità predittive. | Trading frequente in asset volatili come cripto. | Amplificato da app di trading, porta a overtrading con perdite in mercati instabili (JPMorgan Podcast, agosto 2025). | Barber & Odean (2000). |
+        | **Effetto Gregge (Herd Mentality)** | Seguire la massa per conformismo. | Acquistare tech durante euforia collettiva. | Social media amplificano flash crash, con afflussi in obbligazionari di 850 miliardi (EPFR Global, 2025). | Analisi EPFR. |
+        | **Bias di Conferma** | Cercare solo informazioni che confermano convinzioni. | Ignorare segnali negativi su asset posseduti. | Echo chamber AI-generati causano bolle informative (Taylor & Francis, 2025). | Finanza comportamentale generale. |
+        | **Bias di Ancoraggio** | Affidarsi alla prima informazione ricevuta. | Rifiutare di vendere fino al prezzo d'acquisto. | Ritardi in riequilibri durante fluttuazioni tassi (Emerald Insight, agosto 2025). | Studi su framing effect. |
+        | **Recency Bias** | Dare troppa importanza agli eventi recenti. | Assumere che trend brevi continuino. | Porta a comprare alto dopo rally IA, vendere basso dopo crash (EJBRM, luglio 2025). | Boston Institute of Analytics. |
+        
+        Come esperto di fondi d'investimento, raccomando fondi indicizzati e ETF per mitigare questi bias attraverso diversificazione passiva e rebalancing automatico, che hanno outperformato strategie attive emotive in crisi passate (studio Dalbar 2025).
+        
+        Nel 2025, il mercato è caratterizzato da un trend ribassista prolungato, influenzato da pressioni inflazionistiche, tensioni geopolitiche e volatilità dei tassi di interesse. 
+        La psicologia degli investitori è dominata da ansia elevata, con comportamenti impulsivi come vendite di panico e monitoraggio frequente dei trend di mercato. 
+        Studi recenti, come quello pubblicato su ACR Journal (ottobre 2025), evidenziano come l'intelligenza emotiva medi l'impatto dei bias cognitivi sulle decisioni di investimento, riducendo errori del 20-30% nei casi analizzati.
+        Inoltre, secondo Flexible Plan Investments (ottobre 2025), i bias comportamentali non sono limitati agli investitori retail ma influenzano anche i gestori istituzionali, specialmente in mercati estremi con VIX elevato.
+        Per {symbol}, con un trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazione al ribasso, simile al contesto di volatilità elevata.
+        Fintech e AI, come i robo-advisor, stanno contrastando questi bias con nudge per diversificazione e holding a lungo termine, come discusso in uno studio su ScienceDirect (2025).
         """
     elif symbol == 'BTC-USD':
         asset_specific = """
@@ -817,143 +841,4 @@ if session_key in st.session_state:
             st.markdown("---")
             
             # Statistiche correnti con layout migliorato
-            st.markdown("### 📊 Dashboard Statistiche Real-Time")
-            latest = df_ind.iloc[-1]
-            
-            col1, col2, col3, col4, col5 = st.columns(5)
-            with col1:
-                st.metric("💵 Prezzo Attuale", f"${latest['Close']:.2f}")
-            with col2:
-                rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
-                st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
-            with col3:
-                st.metric("📏 ATR", f"{latest['ATR']:.2f}")
-            with col4:
-                trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
-                trend_text = "Bullish" if latest['Trend'] == 1 else "Bearish"
-                st.metric(f"{trend_emoji} Trend", trend_text)
-            with col5:
-                if avg_forecast is not None:
-                    forecast_change = ((avg_forecast - latest['Close']) / latest['Close']) * 100
-                    st.metric("🔮 Previsione", f"${avg_forecast:.2f}", f"{forecast_change:+.1f}%")
-                else:
-                    st.metric("🔮 Previsione", "N/A")
-            
-            st.markdown("---")
-            st.markdown("## 🎯 Risultati Analisi AI Avanzata")
            
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                delta = success_prob - trade['Probability']
-                st.metric("🎲 Probabilità AI", f"{success_prob:.1f}%",
-                         delta=f"{delta:+.1f}%" if delta != 0 else None,
-                         help=f"Analisi Web: {trade['Probability']:.0f}%")
-            with col2:
-                rr = abs(tp - entry) / abs(entry - sl)
-                rr_emoji = "🟢" if rr >= 2 else "🟡" if rr >= 1.5 else "🔴"
-                st.metric(f"{rr_emoji} Risk/Reward", f"{rr:.2f}x")
-            with col3:
-                risk_pct = abs(entry - sl) / entry * 100
-                st.metric("📉 Rischio %", f"{risk_pct:.2f}%")
-            with col4:
-                reward_pct = abs(tp - entry) / entry * 100
-                st.metric("📈 Reward %", f"{reward_pct:.2f}%")
-           
-            st.markdown("---")
-            
-            # Valutazione comparativa migliorata
-            st.markdown("### 💡 Valutazione Comparativa")
-            col_web, col_ai, col_final = st.columns(3)
-           
-            with col_web:
-                st.markdown("#### 🌐 Analisi Web")
-                st.markdown(f"**Probabilità:** {trade['Probability']:.0f}%")
-                if trade['Probability'] >= 65:
-                    st.success("✅ Setup favorevole")
-                elif trade['Probability'] >= 50:
-                    st.warning("⚠️ Setup neutrale")
-                else:
-                    st.error("❌ Setup sfavorevole")
-           
-            with col_ai:
-                st.markdown("#### 🤖 Analisi AI")
-                st.markdown(f"**Probabilità:** {success_prob:.1f}%")
-                if success_prob >= 65:
-                    st.success("✅ Setup favorevole")
-                elif success_prob >= 50:
-                    st.warning("⚠️ Setup neutrale")
-                else:
-                    st.error("❌ Setup sfavorevole")
-            
-            with col_final:
-                st.markdown("#### 🎯 Verdetto Finale")
-                avg_prob = (success_prob + trade['Probability']) / 2
-                st.markdown(f"**Prob. Media:** {avg_prob:.1f}%")
-                if abs(success_prob - trade['Probability']) > 10:
-                    if success_prob > trade['Probability']:
-                        st.info(f"💡 AI più ottimista (+{success_prob - trade['Probability']:.1f}%)")
-                    else:
-                        st.warning(f"⚠️ AI più prudente ({success_prob - trade['Probability']:.1f}%)")
-                else:
-                    st.success("✅ Analisi convergenti!")
-           
-            st.markdown("---")
-            
-            # Fattori chiave con styling migliorato
-            st.markdown("### 🔍 Fattori Chiave dell'Analisi AI")
-            st.markdown("*I 5 fattori più influenti nella predizione*")
-            
-            for i, factor in enumerate(factors, 1):
-                emoji = ["🥇", "🥈", "🥉", "🏅", "🎖️"][i-1]
-                st.markdown(f"{emoji} **{i}.** {factor}")
-            
-            st.markdown("---")
-            
-            # Sezione psicologia potenziata
-            st.markdown("### 🧠 Analisi Psicologica dell'Investitore")
-            st.markdown("*Approfondimento comportamentale con focus su " + proper_name + "*")
-            
-            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
-            st.markdown(psych_analysis)
-else:
-    st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
-
-# Info con styling migliorato
-with st.expander("ℹ️ Come Funziona Questo Sistema"):
-    st.markdown("""
-    ### 🤖 Tecnologia AI Avanzata
-    
-    **Machine Learning (Random Forest) analizza:**
-    - 📊 **14 Indicatori Tecnici**: RSI, MACD, EMA, Bollinger Bands, ATR, Volume, Trend
-    - 📈 **500+ Setup Storici**: Simulazioni basate su dati reali per training del modello
-    - 🌐 **Segnali Web Real-Time**: News, sentiment, stagionalità e previsioni dinamiche
-    - 🧠 **Psicologia Comportamentale**: Analisi approfondita dei bias cognitivi con focus specifico su Gold, Silver, Bitcoin e S&P 500
-    - 📚 **Comparazioni Storiche**: Pattern da crisi del 2008, COVID-19, Dot-Com, e altre bolle storiche
-    
-    ### 🎯 Caratteristiche Uniche
-    - ✅ **Analisi Dual-Mode**: Confronto tra predizioni AI e analisi web
-    - ✅ **Risk Management**: Calcolo automatico di Risk/Reward ratio
-    - ✅ **Sentiment Analysis**: Analisi keyword-based su news recenti
-    - ✅ **Forecasting**: Previsioni prezzi basate su EMA
-    - ✅ **Asset Screening**: Lista curata di asset con potenziale per il 2025
-    
-    ### 📖 Fonti e Metodologia
-    Basato su ricerche aggiornate a Ottobre 2025 da:
-    - F1000Research, ACR Journal, ScienceDirect
-    - Flexible Plan Investments, Morningstar, J.P. Morgan
-    - World Gold Council, EPFR Global, Dalbar Studies
-    """)
-
-# Footer elegante
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; margin-top: 2rem;'>
-    <p style='color: #4a5568; font-size: 0.95rem; margin: 0;'>
-        ⚠️ <strong>Disclaimer Importante:</strong> Questo è uno strumento educativo e di ricerca. Non costituisce consiglio finanziario.<br>
-        Consulta sempre un professionista qualificato prima di prendere decisioni di investimento.
-    </p>
-    <p style='color: #718096; font-size: 0.85rem; margin-top: 0.5rem;'>
-        Sviluppato con ❤️ utilizzando Machine Learning • © 2025
-    </p>
-</div>
-""", unsafe_allow_html=True)
