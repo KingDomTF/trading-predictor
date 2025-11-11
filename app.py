@@ -58,73 +58,121 @@ def get_gold_fundamental_factors():
     """Recupera fattori fondamentali che influenzano il prezzo dell'oro."""
     factors = {}
     
+    st.info("🔄 Recupero dati di mercato in tempo reale...")
+    
     try:
-        # DXY (Dollar Index)
-        dxy = yf.Ticker("DX-Y.NYB")
-        dxy_hist = dxy.history(period="5d")
-        if not dxy_hist.empty:
-            factors['dxy_current'] = dxy_hist['Close'].iloc[-1]
-            factors['dxy_change'] = ((dxy_hist['Close'].iloc[-1] - dxy_hist['Close'].iloc[0]) / dxy_hist['Close'].iloc[0]) * 100
-        else:
-            factors['dxy_current'] = 104.5
-            factors['dxy_change'] = 0.2
+        # DXY (Dollar Index) - provo diversi ticker
+        dxy_tickers = ["DX-Y.NYB", "DX=F", "USDOLLAR"]
+        dxy_current = None
+        
+        for ticker_symbol in dxy_tickers:
+            try:
+                dxy = yf.Ticker(ticker_symbol)
+                dxy_hist = dxy.history(period="5d", interval="1d")
+                if not dxy_hist.empty and len(dxy_hist) > 0:
+                    factors['dxy_current'] = float(dxy_hist['Close'].iloc[-1])
+                    if len(dxy_hist) > 1:
+                        factors['dxy_change'] = ((dxy_hist['Close'].iloc[-1] - dxy_hist['Close'].iloc[0]) / dxy_hist['Close'].iloc[0]) * 100
+                    else:
+                        factors['dxy_change'] = 0.0
+                    st.success(f"✅ Dollar Index recuperato: ${factors['dxy_current']:.2f}")
+                    break
+            except:
+                continue
+        
+        if 'dxy_current' not in factors:
+            factors['dxy_current'] = 106.2
+            factors['dxy_change'] = -0.3
+            st.warning("⚠️ Dollar Index: uso valore stimato")
         
         # Tassi interesse USA (10Y Treasury)
-        tnx = yf.Ticker("^TNX")
-        tnx_hist = tnx.history(period="5d")
-        if not tnx_hist.empty:
-            factors['yield_10y'] = tnx_hist['Close'].iloc[-1]
-        else:
-            factors['yield_10y'] = 4.35
+        try:
+            tnx = yf.Ticker("^TNX")
+            tnx_hist = tnx.history(period="5d", interval="1d")
+            if not tnx_hist.empty and len(tnx_hist) > 0:
+                factors['yield_10y'] = float(tnx_hist['Close'].iloc[-1])
+                st.success(f"✅ Treasury 10Y: {factors['yield_10y']:.2f}%")
+            else:
+                factors['yield_10y'] = 4.42
+                st.warning("⚠️ Treasury 10Y: uso valore stimato")
+        except:
+            factors['yield_10y'] = 4.42
+            st.warning("⚠️ Treasury 10Y: uso valore stimato")
         
         # VIX (Volatilità/Fear)
-        vix = yf.Ticker("^VIX")
-        vix_hist = vix.history(period="5d")
-        if not vix_hist.empty:
-            factors['vix'] = vix_hist['Close'].iloc[-1]
-        else:
-            factors['vix'] = 18.5
+        try:
+            vix = yf.Ticker("^VIX")
+            vix_hist = vix.history(period="5d", interval="1d")
+            if not vix_hist.empty and len(vix_hist) > 0:
+                factors['vix'] = float(vix_hist['Close'].iloc[-1])
+                st.success(f"✅ VIX: {factors['vix']:.2f}")
+            else:
+                factors['vix'] = 16.8
+                st.warning("⚠️ VIX: uso valore stimato")
+        except:
+            factors['vix'] = 16.8
+            st.warning("⚠️ VIX: uso valore stimato")
         
         # S&P 500 (Risk-on/Risk-off)
-        spx = yf.Ticker("^GSPC")
-        spx_hist = spx.history(period="20d")
-        if not spx_hist.empty:
-            factors['spx_momentum'] = ((spx_hist['Close'].iloc[-1] - spx_hist['Close'].iloc[0]) / spx_hist['Close'].iloc[0]) * 100
-        else:
-            factors['spx_momentum'] = 2.5
-        
-        # Silver (correlazione metalli preziosi)
-        silver = yf.Ticker("SI=F")
-        silver_hist = silver.history(period="20d")
-        gold = yf.Ticker("GC=F")
-        gold_hist = gold.history(period="20d")
-        if not silver_hist.empty and not gold_hist.empty:
-            factors['gold_silver_ratio'] = gold_hist['Close'].iloc[-1] / silver_hist['Close'].iloc[-1]
-        else:
-            factors['gold_silver_ratio'] = 85.0
-        
-        # Inflazione stimata (usando TIPS spread come proxy)
         try:
-            tips = yf.Ticker("^FVX")
-            tips_hist = tips.history(period="5d")
-            if not tips_hist.empty:
-                factors['inflation_expectations'] = factors['yield_10y'] - tips_hist['Close'].iloc[-1]
+            spx = yf.Ticker("^GSPC")
+            spx_hist = spx.history(period="20d", interval="1d")
+            if not spx_hist.empty and len(spx_hist) > 1:
+                factors['spx_momentum'] = ((spx_hist['Close'].iloc[-1] - spx_hist['Close'].iloc[0]) / spx_hist['Close'].iloc[0]) * 100
+                st.success(f"✅ S&P 500 Momentum: {factors['spx_momentum']:+.2f}%")
             else:
-                factors['inflation_expectations'] = 2.3
+                factors['spx_momentum'] = 1.8
+                st.warning("⚠️ S&P 500: uso valore stimato")
         except:
-            factors['inflation_expectations'] = 2.3
+            factors['spx_momentum'] = 1.8
+            st.warning("⚠️ S&P 500: uso valore stimato")
+        
+        # Silver e Gold (correlazione metalli preziosi)
+        try:
+            silver = yf.Ticker("SI=F")
+            silver_hist = silver.history(period="5d", interval="1d")
+            gold = yf.Ticker("GC=F")
+            gold_hist = gold.history(period="5d", interval="1d")
+            
+            if not silver_hist.empty and not gold_hist.empty and len(silver_hist) > 0 and len(gold_hist) > 0:
+                silver_price = float(silver_hist['Close'].iloc[-1])
+                gold_price = float(gold_hist['Close'].iloc[-1])
+                factors['gold_silver_ratio'] = gold_price / silver_price
+                st.success(f"✅ Gold/Silver Ratio: {factors['gold_silver_ratio']:.2f} (Gold: ${gold_price:.2f}, Silver: ${silver_price:.2f})")
+            else:
+                factors['gold_silver_ratio'] = 88.5
+                st.warning("⚠️ Gold/Silver Ratio: uso valore stimato")
+        except:
+            factors['gold_silver_ratio'] = 88.5
+            st.warning("⚠️ Gold/Silver Ratio: uso valore stimato")
+        
+        # Inflazione stimata (usando differenza tra 10Y e 5Y come proxy)
+        try:
+            fvx = yf.Ticker("^FVX")
+            fvx_hist = fvx.history(period="5d", interval="1d")
+            if not fvx_hist.empty and len(fvx_hist) > 0:
+                yield_5y = float(fvx_hist['Close'].iloc[-1])
+                factors['inflation_expectations'] = max(0.5, factors['yield_10y'] - yield_5y + 2.0)
+                st.success(f"✅ Inflazione Attesa: {factors['inflation_expectations']:.2f}%")
+            else:
+                factors['inflation_expectations'] = 2.5
+                st.warning("⚠️ Inflazione: uso valore stimato")
+        except:
+            factors['inflation_expectations'] = 2.5
+            st.warning("⚠️ Inflazione: uso valore stimato")
         
     except Exception as e:
-        st.warning(f"Alcuni dati di mercato non disponibili, uso valori stimati: {e}")
+        st.error(f"❌ Errore nel recupero dati: {str(e)}")
         factors = {
-            'dxy_current': 104.5,
-            'dxy_change': 0.2,
-            'yield_10y': 4.35,
-            'vix': 18.5,
-            'spx_momentum': 2.5,
-            'gold_silver_ratio': 85.0,
-            'inflation_expectations': 2.3
+            'dxy_current': 106.2,
+            'dxy_change': -0.3,
+            'yield_10y': 4.42,
+            'vix': 16.8,
+            'spx_momentum': 1.8,
+            'gold_silver_ratio': 88.5,
+            'inflation_expectations': 2.5
         }
+        st.warning("⚠️ Uso valori stimati per tutti i parametri")
     
     # Fattori geopolitici (score 0-10, basato su analisi qualitativa 2025)
     factors['geopolitical_risk'] = 7.5  # Medio Oriente, Ucraina, tensioni USA-Cina
@@ -134,6 +182,8 @@ def get_gold_fundamental_factors():
     
     # Sentiment retail (0-10)
     factors['retail_sentiment'] = 6.8
+    
+    st.success("✅ Recupero dati completato!")
     
     return factors
 
@@ -499,28 +549,59 @@ def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
 def get_web_signals(symbol, df_ind):
     """Funzione dinamica per ottenere segnali web aggiornati."""
     try:
+        st.info(f"🔄 Recupero dati di mercato per {symbol}...")
+        
         ticker = yf.Ticker(symbol)
         
-        hist = ticker.history(period='1d')
-        if hist.empty:
-            return []
-        current_price = hist['Close'].iloc[-1]
+        # Recupero prezzo più recente con retry multipli
+        hist = None
+        for period in ['1d', '5d', '1mo']:
+            try:
+                hist = ticker.history(period=period, interval='1d')
+                if not hist.empty and len(hist) > 0:
+                    break
+            except:
+                continue
         
-        news = ticker.news
-        news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente disponibile.'
+        if hist is None or hist.empty:
+            st.error(f"❌ Impossibile recuperare dati per {symbol}")
+            return []
+        
+        current_price = float(hist['Close'].iloc[-1])
+        st.success(f"✅ Prezzo attuale {symbol}: ${current_price:.2f}")
+        
+        # News recenti
+        try:
+            news = ticker.news
+            if news and isinstance(news, list) and len(news) > 0:
+                news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)])
+                st.success(f"✅ {len(news)} news recuperate")
+            else:
+                news_summary = 'Nessuna news recente disponibile.'
+                st.warning("⚠️ Nessuna news disponibile")
+        except:
+            news_summary = 'Nessuna news recente disponibile.'
+            st.warning("⚠️ Errore nel recupero news")
         
         sentiment_label, sentiment_score = get_sentiment(news_summary)
         
-        hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
-        if len(hist_monthly) < 12:
+        # Calcolo stagionalità
+        try:
+            hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
+            if len(hist_monthly) >= 12:
+                hist_monthly['Return'] = hist_monthly['Close'].pct_change()
+                hist_monthly['Month'] = hist_monthly.index.month
+                monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
+                current_month = datetime.datetime.now().month
+                avg_current = monthly_returns.get(current_month, 0) * 100
+                seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%.'
+                st.success("✅ Analisi stagionalità completata")
+            else:
+                seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
+                st.warning("⚠️ Dati stagionalità limitati")
+        except:
             seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
-        else:
-            hist_monthly['Return'] = hist_monthly['Close'].pct_change()
-            hist_monthly['Month'] = hist_monthly.index.month
-            monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
-            current_month = datetime.datetime.now().month
-            avg_current = monthly_returns.get(current_month, 0) * 100
-            seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%.'
+            st.warning("⚠️ Errore nel calcolo stagionalità")
         
         _, forecast_series = predict_price(df_ind, steps=5)
         forecast_note = f'Previsione media per i prossimi 5 periodi: {forecast_series.mean():.2f}' if forecast_series is not None else 'Previsione non disponibile.'
@@ -578,9 +659,11 @@ def get_web_signals(symbol, df_ind):
                 'Forecast_Note': forecast_note
             })
         
+        st.success(f"✅ {len(suggestions)} suggerimenti generati")
         return suggestions
+        
     except Exception as e:
-        st.error(f"Errore nel recupero dati web: {e}")
+        st.error(f"❌ Errore nel recupero dati web: {str(e)}")
         return []
 
 @st.cache_data
