@@ -1238,15 +1238,91 @@ if session_key in st.session_state:
             st.markdown("---")
             
             st.markdown("### 🔍 Fattori Chiave dell'Analisi AI")
-            factors_md = "\n".join([f"- {f}" for f in factors_list])
-            st.markdown(factors_md)
-
-            st.markdown("### 🧠 Psicologia dell'Investitore")
-            psychology = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
-            st.markdown(psychology, unsafe_allow_html=True)
-
+            
+            for i, factor in enumerate(factors_list, 1):
+                emoji = ["🥇", "🥈", "🥉", "🏅", "🎖️"][i-1]
+                st.markdown(f"{emoji} **{i}.** {factor}")
+            
             st.markdown("---")
+            
+            st.markdown("### 🧠 Analisi Psicologica dell'Investitore")
+            st.markdown("*Approfondimento comportamentale con focus su " + proper_name + "*")
+            
+            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
+            st.markdown(psych_analysis)
+else:
+    st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
 
-            if st.button("🔙 Torna ai Suggerimenti"):
-                del st.session_state.selected_trade
-                st.rerun()
+with st.expander("ℹ️ Come Funziona Questo Sistema"):
+    st.markdown("""
+    ### 🤖 Tecnologia AI Avanzata
+    
+    **Machine Learning (Random Forest) analizza:**
+    - 📊 **14 Indicatori Tecnici**: RSI, MACD, EMA, Bollinger Bands, ATR, Volume, Trend
+    - 📈 **500+ Setup Storici**: Simulazioni basate su dati reali per training del modello
+    - 🌐 **Segnali Web Real-Time**: News, sentiment, stagionalità e previsioni dinamiche
+    - 🧠 **Psicologia Comportamentale**: Analisi approfondita dei bias cognitivi
+    - 📚 **Comparazioni Storiche**: Pattern da crisi del 2008, COVID-19, Dot-Com
+    
+    ### 🥇 Analisi Speciale ORO (GC=F)
+    
+    **Fattori Fondamentali Analizzati:**
+    - 💵 **Dollar Index (DXY)**: Correlazione inversa con oro
+    - 📊 **Tassi di Interesse**: 10Y Treasury yields e tassi reali
+    - 📉 **VIX (Volatilità)**: Indicatore di fear/safe-haven demand
+    - 📈 **S&P 500**: Risk-on vs Risk-off sentiment
+    - 🥈 **Gold/Silver Ratio**: Indicatore di valore relativo
+    - 💹 **Aspettative Inflazione**: TIPS spread come proxy
+    - 🌍 **Rischio Geopolitico**: Score qualitativo 0-10
+    - 🏦 **Domanda Banche Centrali**: Tonnellate acquistate annualmente
+    - 😊 **Sentiment Retail**: Indicatore 0-10
+    
+    **Periodi Storici di Riferimento:**
+    - **1971-1980**: Bull Market Post-Bretton Woods (+2,329%)
+    - **2001-2011**: Post Dot-Com e Crisi 2008 (+653%)
+    - **2015-2020**: Consolidamento e COVID Rally (+97%)
+    - **2022-2025**: Era Inflazione Post-COVID (in corso)
+    
+    **Metodologia di Previsione (4 Metodi Combinati):**
+    1. **Proiezione Storica**: Basata sul periodo più simile
+    2. **Modello Fondamentale**: 9 fattori macro ponderati
+    3. **Analisi Tecnica**: Volatilità e momentum
+    4. **Gold/Silver Ratio**: Valore relativo metalli preziosi
+    
+    **Confidence Score**: Calcolato da similarità storica (60%) + fattori fondamentali (40%)
+    
+    ### 🎯 Caratteristiche Uniche
+    - ✅ **Analisi Dual-Mode**: Confronto tra predizioni AI e analisi web
+    - ✅ **Risk Management**: Calcolo automatico di Risk/Reward ratio
+    - ✅ **Multi-Timeframe**: Previsioni 3M, 6M, 12M con range di confidenza
+    - ✅ **Comparazione Storica**: Identifica automaticamente periodo più simile
+    - ✅ **Real-Time Data**: Integrazione con yfinance per dati aggiornati
+    
+    ### 📖 Disclaimer Importante
+    
+    Le previsioni sono basate su modelli quantitativi e analisi storica. I mercati finanziari sono influenzati da 
+    innumerevoli variabili imprevedibili. Questa analisi non costituisce consiglio finanziario. 
+    
+    **Fattori di rischio:**
+    - Eventi geopolitici imprevisti (guerre, sanzioni, crisi)
+    - Cambiamenti improvvisi politica monetaria Fed/BCE
+    - Shock economici globali (recessione, crisi bancarie)
+    - Scoperte tecnologiche che cambiano domanda/offerta
+    - Sentimento di mercato irrazionale (panic selling, FOMO)
+    
+    Consulta sempre un consulente finanziario professionista prima di investire.
+    """)
+
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%); border-radius: 12px; margin-top: 2rem;'>
+    <p style='color: #8B4513; font-size: 0.95rem; margin: 0;'>
+        ⚠️ <strong>Disclaimer Importante:</strong> Questo è uno strumento educativo e di ricerca. Non costituisce consiglio finanziario.<br>
+        Le previsioni sono basate su modelli quantitativi e analisi storica. I risultati passati non garantiscono performance future.<br>
+        Consulta sempre un professionista qualificato prima di prendere decisioni di investimento.
+    </p>
+    <p style='color: #A0826D; font-size: 0.85rem; margin-top: 0.5rem;'>
+        🥇 Sviluppato con Machine Learning e analisi multi-fattoriale • © 2025
+    </p>
+</div>
+""", unsafe_allow_html=True)
