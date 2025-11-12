@@ -220,47 +220,46 @@ def generate_scalping_features(df_ind: pd.DataFrame, entry: float, spread: float
     bb_position = (latest["Close"] - latest["BB_lower"]) / bb_den if bb_den > 0 else 0.5
     bb_squeeze = 1 if latest["BB_width"] < prev_win["BB_width"].mean() else 0
 
-    features = {
-        # Price action
-        "close": latest["Close"],
-        "ema_5": latest["EMA_5"],
-        "ema_10": latest["EMA_10"],
-        "ema_20": latest["EMA_20"],
-        "ema_cross_5_10": 1 if latest["EMA_5"] > latest["EMA_10"] else 0,
-        "ema_cross_10_20": 1 if latest["EMA_10"] > latest["EMA_20"] else 0,
-        # Momentum
-        "rsi_7": latest["RSI_7"],
-        "rsi_14": latest["RSI"],
-        "rsi_oversold": 1 if latest["RSI_7"] < 30 else 0,
-        "rsi_overbought": 1 if latest["RSI_7"] > 70 else 0,
-        # MACD
-        "macd": latest["MACD"],
-        "macd_signal": latest["MACD_signal"],
-        "macd_histogram": latest["MACD_histogram"],
-        "macd_bullish": 1 if latest["MACD_histogram"] > 0 else 0,
-        # Bollinger
-        "bb_position": bb_position,
-        "bb_width": latest["BB_width"],
-        "bb_squeeze": bb_squeeze,
-        # Volatilità e spread
-        "atr": latest["ATR"],
-        "atr_pct": latest["ATR_pct"],
-        "spread_to_atr": (spread / latest["ATR"]) if latest["ATR"] and latest["ATR"] > 0 else 0.0,
-        # Volume
-        "volume_ratio": latest["Volume_ratio"],
-        "volume_surge": 1 if latest["Volume_ratio"] > 1.5 else 0,
-        # Velocity / acceleration
-        "price_velocity": latest["Price_Velocity"],
-        "price_acceleration": latest["Price_Acceleration"],
-        # Trend
-        "trend_micro": latest["Trend_micro"],
-        # Support/Resistance
-        "distance_to_pivot": (latest["Close"] - latest["Pivot"]) / latest["Close"] * 100,
-        "distance_to_r1": (latest["R1"] - latest["Close"]) / latest["Close"] * 100,
-        "distance_to_s1": (latest["Close"] - latest["S1"]) / latest["Close"] * 100,
-        # EMA squeeze
-        "ema_squeeze": latest["EMA_squeeze"],
-        # Candlestick
-        "body_size": latest["body"] / latest["Close"] * 100 if latest["Close"] else 0,
-        "upper_shadow_ratio": (latest["upper_shadow"] / latest["body"]) if latest["body"] > 0 else 0,
-        "lower_shadow_ratio": (latest["lower_shadow_]()
+   features = {
+    "close": latest["Close"],
+    "ema_5": latest["EMA_5"],
+    "ema_10": latest["EMA_10"],
+    "ema_20": latest["EMA_20"],
+    "ema_cross_5_10": 1 if latest["EMA_5"] > latest["EMA_10"] else 0,
+    "ema_cross_10_20": 1 if latest["EMA_10"] > latest["EMA_20"] else 0,
+
+    "rsi_7": latest["RSI_7"],
+    "rsi_14": latest["RSI"],
+    "rsi_oversold": 1 if latest["RSI_7"] < 30 else 0,
+    "rsi_overbought": 1 if latest["RSI_7"] > 70 else 0,
+
+    "macd": latest["MACD"],
+    "macd_signal": latest["MACD_signal"],
+    "macd_histogram": latest["MACD_histogram"],
+    "macd_bullish": 1 if latest["MACD_histogram"] > 0 else 0,
+
+    "bb_position": bb_position,
+    "bb_width": latest["BB_width"],
+    "bb_squeeze": bb_squeeze,
+
+    "atr": latest["ATR"],
+    "atr_pct": latest["ATR_pct"],
+    "spread_to_atr": (spread / latest["ATR"]) if latest["ATR"] and latest["ATR"] > 0 else 0.0,
+
+    "volume_ratio": latest["Volume_ratio"],
+    "volume_surge": 1 if latest["Volume_ratio"] > 1.5 else 0,
+
+    "price_velocity": latest["Price_Velocity"],
+    "price_acceleration": latest["Price_Acceleration"],
+    "trend_micro": latest["Trend_micro"],
+
+    "distance_to_pivot": (latest["Close"] - latest["Pivot"]) / latest["Close"] * 100,
+    "distance_to_r1": (latest["R1"] - latest["Close"]) / latest["Close"] * 100,
+    "distance_to_s1": (latest["Close"] - latest["S1"]) / latest["Close"] * 100,
+
+    "ema_squeeze": latest["EMA_squeeze"],
+
+    "body_size": latest["body"] / latest["Close"] * 100 if latest["Close"] else 0,
+    "upper_shadow_ratio": (latest["upper_shadow"] / latest["body"]) if latest["body"] > 0 else 0,
+    "lower_shadow_ratio": (latest["lower_shadow"] / latest["body"]) if latest["body"] > 0 else 0,
+}
