@@ -53,10 +53,11 @@ def get_mt_realtime_price(symbol):
             tick = mt5.symbol_info_tick(mt5_symbol)
             
             if tick is not None:
+                last_val = tick.last if (tick.last is not None and tick.last != 0) else (tick.bid + tick.ask) / 2
                 return {
                     'bid': tick.bid,
                     'ask': tick.ask,
-                    'last': tick.last,
+                    'last': last_val,
                     'spread': tick.ask - tick.bid,
                     'time': datetime.datetime.fromtimestamp(tick.time)
                 }
@@ -90,7 +91,7 @@ def get_realtime_price(symbol):
             timestamp = data.index[-1]
             
             # Calcola spread stimato (0.01% per forex, 0.05% per commodities)
-            spread_pct = 0.0005 if '=X' in symbol else 0.0001
+            spread_pct = 0.0001 if '=X' in symbol else 0.0005
             spread = last_price * spread_pct
             
             bid = last_price - spread / 2
@@ -103,7 +104,7 @@ def get_realtime_price(symbol):
         if not data.empty:
             last_price = data['Close'].iloc[-1]
             timestamp = data.index[-1]
-            spread_pct = 0.0005 if '=X' in symbol else 0.0001
+            spread_pct = 0.0001 if '=X' in symbol else 0.0005
             spread = last_price * spread_pct
             bid = last_price - spread / 2
             ask = last_price + spread / 2
@@ -157,7 +158,7 @@ def calculate_scalping_indicators(df):
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)  # FIX: serve una Series per usare .rolling
+    true_range = ranges.max(axis=1)
     df['ATR'] = true_range.rolling(7).mean()
     df['ATR_pct'] = (df['ATR'] / df['Close']) * 100
     
@@ -258,14 +259,7 @@ def simulate_scalping_trades(df_ind, n_trades=1000):
     y_list = []
     
     for _ in range(n_trades):
-        # FIX: protezione indici quando i dati sono pochi
-        n = len(df_ind)
-        start = 100 if n > 140 else 20
-        end = n - 20  # serve spazio per guardare 20 barre avanti
-        if end <= start:
-            continue
-        idx = np.random.randint(start, end)
-        
+        idx = np.random.randint(100, len(df_ind) - 20)
         row = df_ind.iloc[idx]
         
         # Spread realistico (0.5-2 pips per forex, più alto per commodities)
@@ -421,7 +415,7 @@ def calculate_technical_indicators(df):
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)  # FIX: Series, non ndarray
+    true_range = ranges.max(axis=1)
     df['ATR'] = true_range.rolling(14).mean()
     
     df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
