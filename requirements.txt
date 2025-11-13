@@ -5,3 +5,7 @@ pandas
 numpy
 ta
 scikit-learn
+xgboost
+statsmodels
+plotly
+requests
