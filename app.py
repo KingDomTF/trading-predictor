@@ -354,7 +354,7 @@ def simulate_scalping_trades(df_ind, n_trades=2000):
             (latest['Close'] < latest['BB_10_lower_2']) +
             (latest['EMA_3'] > latest['EMA_5']) +
             (latest['MACD_fast'] > latest['MACD_fast_signal']) +
-            (latest['Williams_R'] < -80')
+            (latest['Williams_R'] < -80)
         )
         
         # Segnali bearish
