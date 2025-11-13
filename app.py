@@ -697,4 +697,4 @@ if symbol:
     
     # Auto-refresh
     time.sleep(refresh_seconds)
-    st.experimental_rerun()
+    st.rerun()
