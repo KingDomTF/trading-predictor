@@ -221,7 +221,8 @@ def generate_proposals(main_symbols, live_prices, hist_data, backtest_period_yea
     
     for symbol in main_symbols:
         asset_data = hist_data.loc[:, (slice(None), symbol)].droplevel(1, axis=1)
-        backtest_start = dt.date.today() - dt.timedelta(days=365 * backtest_period_years)
+        backtest_start_date = dt.date.today() - dt.timedelta(days=365 * backtest_period_years)
+        backtest_start = pd.to_datetime(backtest_start_date)
         backtest_data = asset_data[asset_data.index >= backtest_start]
         
         if backtest_data.empty or len(backtest_data) < 20:
@@ -380,6 +381,7 @@ if not hist_data.empty:
     
     if timeframe == '1d':
         st.header("Analisi Stagionalità (Rendimenti Medi Mensili)")
+        returns = returns.copy()
         returns['month'] = returns.index.month
         monthly = returns.groupby('month').mean()[main_symbols]
         st.bar_chart(monthly)
