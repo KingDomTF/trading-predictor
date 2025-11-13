@@ -135,7 +135,7 @@ def define_strategies():
     
     def ml_strategy(data):
         df = add_all_ta_features(data, open="Open", high="High", low="Low", close="Close", volume="Volume", fillna=True)
-        features = df.drop(['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close'], axis=1)
+        features = df.drop(['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close'], axis=1, errors='ignore')
         target = (df['Close'].shift(-1) > df['Close']).astype(int)
         
         train_features, test_features, train_target, test_target = train_test_split(
@@ -209,7 +209,7 @@ def generate_proposals(symbols, live_prices, hist_data, backtest_period_years=3)
 # Main app
 st.title("Financial Analysis Dashboard")
 
-symbols = ['GC=F', 'SI=F', '^GSPC', 'BTC-USD']
+default_symbols = ['GC=F', 'SI=F', '^GSPC', 'BTC-USD']
 asset_names = {'GC=F': 'Gold', 'SI=F': 'Silver', '^GSPC': 'US500', 'BTC-USD': 'Bitcoin'}
 
 with st.sidebar:
@@ -217,6 +217,15 @@ with st.sidebar:
     hist_years = st.slider("Historical Years", 1, 10, 5)
     current_days = st.slider("Current Period Days", 10, 90, 30)
     backtest_years = st.slider("Backtest Years", 1, 5, 3)
+    additional_symbols = st.text_input("Additional Symbols (comma-separated, e.g., 'AAPL,GOOGL')")
+    
+    if additional_symbols:
+        extra_symbols = [sym.strip() for sym in additional_symbols.split(',') if sym.strip()]
+        symbols = default_symbols + extra_symbols
+        for sym in extra_symbols:
+            asset_names[sym] = sym  # Use symbol as name for additional
+    else:
+        symbols = default_symbols
 
 live_prices = fetch_live_prices(symbols)
 hist_data = fetch_historical_data(symbols, hist_years)
@@ -225,10 +234,14 @@ if not hist_data.empty:
     comparisons, correlations, closes = calculate_metrics(hist_data, current_days)
     
     st.header("Live Prices")
-    cols = st.columns(4)
-    for i, symbol in enumerate(symbols):
-        with cols[i]:
-            st.metric(asset_names[symbol], f"${live_prices[symbol]:.2f}" if not np.isnan(live_prices[symbol]) else "N/A")
+    num_cols = 4
+    for i in range(0, len(symbols), num_cols):
+        cols = st.columns(num_cols)
+        for j in range(num_cols):
+            if i + j < len(symbols):
+                symbol = symbols[i + j]
+                with cols[j]:
+                    st.metric(asset_names.get(symbol, symbol), f"${live_prices[symbol]:.2f}" if not np.isnan(live_prices[symbol]) else "N/A")
     
     st.header("Price Charts")
     st.line_chart(closes)
@@ -237,7 +250,7 @@ if not hist_data.empty:
     st.dataframe(comparisons.style.format("{:.2%}"))
     
     st.header("Correlations")
-    st.dataframe(correlations.style.background_gradient(cmap='coolwarm'))
+    st.dataframe(correlations)
     
     st.header("Trading Proposals")
     proposals_df = generate_proposals(symbols, live_prices, hist_data, backtest_years)
