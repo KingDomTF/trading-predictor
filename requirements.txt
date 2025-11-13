@@ -1,22 +1,7 @@
-# ==================== CORE FRAMEWORK ====================
-streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-# ==================== DATA COLLECTION ====================
-yfinance>=0.2.28
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-websockets>=12.0
-# ==================== MACHINE LEARNING ====================
-scikit-learn>=1.3.0
-xgboost>=1.7.0
-# ==================== TIME SERIES ====================
-statsmodels>=0.14.0
-prophet>=1.1.0
-# ==================== TECHNICAL ANALYSIS ====================
-ta>=0.11.0
-# ==================== VISUALIZATION ====================
-plotly>=5.17.0
-# ==================== NUMERICAL & STATISTICAL ====================
-scipy>=1.11.0
-nltk>=3.8.1
+# requirements.txt
+streamlit>=1.20.0
+yfinance
+pandas
+numpy
+ta
+scikit-learn
