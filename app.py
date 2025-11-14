@@ -932,4 +932,43 @@ def main():
     with col_ml1:
         st.metric("Prob. successo stimata", f"{prob_success:.1f}%")
     with col_ml2:
-        st.metric("R/R del setup mostrato", f"{rr_ratio_curren
+        st.metric("R/R del setup mostrato", f"{rr_ratio_current:.2f}x")
+    with col_ml3:
+        st.metric("SL distanza %", f"{features_current[0]:.2f}%")
+
+    st.markdown("### 🔍 Fattori Chiave secondo il Modello")
+    factors = get_dominant_factors(model, features_current)
+    if factors:
+        factors_df = pd.DataFrame(factors)
+        st.dataframe(factors_df, hide_index=True, use_container_width=True)
+    else:
+        st.caption("Impossibile calcolare i fattori dominanti.")
+
+    st.markdown("### 🧠 Nota di Psicologia del Trading")
+    st.markdown(get_investor_psychology(prob_success, rr_ratio_current))
+
+    # ======================================================
+    #                       FOOTER
+    # ======================================================
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style='text-align: center; padding: 1.5rem;
+                    background: linear-gradient(90deg, #e0f7fa 0%, #c3cfe2 100%);
+                    border-radius: 12px; margin-top: 1rem;'>
+            <p style='color: #4a5568; font-size: 0.95rem; margin: 0;'>
+                ⚠️ <strong>Disclaimer Importante:</strong> questo strumento ha scopo puramente
+                didattico e sperimentale. Non costituisce in alcun modo consiglio finanziario.<br/>
+                Valuta sempre in autonomia i rischi e consulta, se necessario, un professionista qualificato.
+            </p>
+            <p style='color: #718096; font-size: 0.85rem; margin-top: 0.5rem;'>
+                Costruito in stile "Aladdin / Oracol" • Machine Learning + News + Analogies • © 2025
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+if __name__ == "__main__":
+    main()
