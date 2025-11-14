@@ -13,9 +13,35 @@ warnings.filterwarnings("ignore")
 #               FUNZIONI DI ANALISI TECNICA
 # =========================================================
 
+def _ensure_series(df: pd.DataFrame, col: str):
+    """Garantisce che df[col] sia una Series (non DataFrame con colonne duplicate)."""
+    if col not in df.columns:
+        return None
+    s = df[col]
+    if isinstance(s, pd.DataFrame):
+        # se ci sono colonne duplicate, prendo la prima
+        return s.iloc[:, 0]
+    return s
+
+
 def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Calcola indicatori tecnici classici su un DataFrame OHLCV."""
+    """Calcola indicatori tecnici classici su un DataFrame OHLCV (robusto a colonne duplicate)."""
     df = df.copy()
+
+    # Normalizzo le colonne base in Series
+    close = _ensure_series(df, "Close")
+    high = _ensure_series(df, "High")
+    low = _ensure_series(df, "Low")
+    volume = _ensure_series(df, "Volume")
+
+    if close is None or high is None or low is None:
+        raise ValueError("Dati OHLC insufficienti per calcolare gli indicatori tecnici.")
+
+    df["Close"] = close
+    df["High"] = high
+    df["Low"] = low
+    if volume is not None:
+        df["Volume"] = volume
 
     # EMA
     df["EMA_20"] = df["Close"].ewm(span=20).mean()
@@ -34,13 +60,16 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["MACD"] = ema_fast - ema_slow
     df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
 
-    # Bande di Bollinger
+    # Bande di Bollinger (20)
     rolling = df["Close"].rolling(window=20)
     bb_mid = rolling.mean()
     bb_std = rolling.std()
     df["BB_upper"] = bb_mid + 2 * bb_std
     df["BB_lower"] = bb_mid - 2 * bb_std
-    df["BB_position"] = (df["Close"] - df["BB_lower"]) / (df["BB_upper"] - df["BB_lower"])
+
+    diff = df["BB_upper"] - df["BB_lower"]
+    diff = diff.replace(0, np.nan)
+    df["BB_position"] = (df["Close"] - df["BB_lower"]) / diff
 
     # ATR
     high_low = df["High"] - df["Low"]
@@ -51,11 +80,10 @@ def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["ATR"] = pd.Series(true_range, index=df.index).rolling(window=14).mean()
 
     # Volume medio
-    if "Volume" in df.columns:
+    if "Volume" in df.columns and df["Volume"].notna().any():
         df["Volume_MA"] = df["Volume"].rolling(window=20).mean()
         df["Volume_ratio"] = df["Volume"] / df["Volume_MA"]
     else:
-        df["Volume"] = np.nan
         df["Volume_MA"] = np.nan
         df["Volume_ratio"] = 1.0
 
@@ -90,7 +118,6 @@ def generate_features(
     tp_distance_pct = abs(tp - entry) / entry * 100 if entry != 0 else 0.0
     ema_diff_pct = (entry - latest["EMA_20"]) / latest["EMA_20"] * 100 if latest["EMA_20"] != 0 else 0.0
 
-    # Posizione rispetto alle bande (clippata per evitare estremi)
     bb_pos = latest.get("BB_position", 0.5)
     if np.isnan(bb_pos):
         bb_pos = 0.5
@@ -131,7 +158,7 @@ def simulate_historical_trades(df_ind: pd.DataFrame, n_trades: int = 500):
     """
     Simula trade storici per training e costruisce un database di comportamenti.
     Ritorna:
-      - X: matrizze feature
+      - X: matrice feature
       - y: label (1=successo, 0=fallimento)
       - trades_meta: DataFrame con info per analisi analogie
     """
@@ -552,7 +579,8 @@ def fetch_live_price(symbol: str):
             data = yf.download(symbol, period="5d", interval="1d", progress=False)
         if data.empty:
             return None
-        return float(data["Close"].iloc[-1])
+        close = _ensure_series(data, "Close")
+        return float(close.iloc[-1])
     except Exception:
         return None
 
