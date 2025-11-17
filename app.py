@@ -479,12 +479,6 @@ proper_names = {
     'SI=F': 'Silver (XAG/USD)',
     'BTC-USD': 'Bitcoin',
     '^GSPC': 'S&P 500',
-    'AAPL': 'Apple Inc.',
-    'TSLA': 'Tesla',
-    'NVDA': 'NVIDIA',
-    'MSFT': 'Microsoft',
-    'GOOGL': 'Google',
-    'AMZN': 'Amazon',
     'CL=F': 'Crude Oil',
     'NG=F': 'Natural Gas'
 }
