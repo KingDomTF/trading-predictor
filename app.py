@@ -502,102 +502,124 @@ st.markdown("""
     
     * { font-family: 'Inter', sans-serif; }
     
-    .main .block-container { padding-top: 2rem; max-width: 1800px; }
+    .main .block-container { 
+        padding-top: 1rem; 
+        padding-bottom: 1rem;
+        max-width: 1800px; 
+    }
     
     h1 {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
-        font-size: 3.5rem !important;
+        font-size: 2.5rem !important;
         text-align: center;
+        margin-bottom: 0.3rem !important;
+    }
+    
+    h2 {
+        font-size: 1.5rem !important;
+        margin-top: 1rem !important;
         margin-bottom: 0.5rem !important;
+        color: #667eea;
+    }
+    
+    h3 {
+        font-size: 1.2rem !important;
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.3rem !important;
+        color: #764ba2;
     }
     
     .subtitle {
         text-align: center;
         color: #4a5568;
-        font-size: 1.2rem;
+        font-size: 1rem;
         font-weight: 600;
-        margin-bottom: 2rem;
+        margin-bottom: 1rem;
     }
     
     .stMetric {
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        padding: 1.2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        transition: transform 0.2s ease;
+        padding: 0.8rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
     
-    .stMetric:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    .stMetric label {
+        font-size: 0.75rem !important;
+    }
+    
+    .stMetric [data-testid="stMetricValue"] {
+        font-size: 1.2rem !important;
     }
     
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border: none;
-        border-radius: 10px;
-        padding: 0.7rem 1.8rem;
-        font-weight: 700;
-        font-size: 1rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 6px rgba(102, 126, 234, 0.4);
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 15px rgba(102, 126, 234, 0.5);
+        border-radius: 8px;
+        padding: 0.5rem 1.2rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+        box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
     }
     
     .live-pulse {
         display: inline-block;
-        width: 12px;
-        height: 12px;
+        width: 10px;
+        height: 10px;
         background-color: #48bb78;
         border-radius: 50%;
         animation: pulse 2s infinite;
-        margin-right: 8px;
+        margin-right: 6px;
     }
     
     @keyframes pulse {
         0% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.7); }
-        70% { box-shadow: 0 0 0 12px rgba(72, 187, 120, 0); }
+        70% { box-shadow: 0 0 0 10px rgba(72, 187, 120, 0); }
         100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0); }
     }
     
     .trade-card {
         background: white;
-        border-radius: 15px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        border-left: 6px solid;
-        transition: all 0.3s ease;
-    }
-    
-    .trade-card:hover {
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-        transform: translateY(-3px);
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        border-left: 4px solid;
     }
     
     .trade-card-high { border-left-color: #48bb78; }
     .trade-card-medium { border-left-color: #ed8936; }
     .trade-card-low { border-left-color: #f56565; }
     
+    .dataframe {
+        font-size: 0.85rem !important;
+    }
+    
+    .stExpander {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+    }
+    
+    hr {
+        margin: 1rem 0 !important;
+    }
+    
     section[data-testid="stSidebar"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1>🔮 ALADDIN AI • ORACLE SYSTEM</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Advanced AI Trading Intelligence • News-Driven Analysis • Historical Behavior Patterns</p>', unsafe_allow_html=True)
+st.markdown('<h1>🔮 ALADDIN AI • ORACLE</h1>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">AI Trading Intelligence • News Analysis • Historical Patterns</p>', unsafe_allow_html=True)
 
 st.markdown("""
-<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 15px; margin-bottom: 2rem; text-align: center;'>
-    <p style='color: white; font-size: 1.2rem; margin: 0; font-weight: 600;'>
-        <span class='live-pulse'></span>Live Data • 📰 News Analysis • 🧠 Behavioral Patterns • 🎯 ~97% Accuracy
+<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 10px; margin-bottom: 1rem; text-align: center;'>
+    <p style='color: white; font-size: 1rem; margin: 0; font-weight: 600;'>
+        <span class='live-pulse'></span>Live Data • 📰 News • 🧠 Behavior • 🎯 ~97% Accuracy
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -668,23 +690,22 @@ if session_key in st.session_state:
     
     st.markdown("---")
     
-    st.markdown("## 📰 Advanced News Intelligence Analysis")
+    st.markdown("## 📰 News Intelligence")
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown("### 📡 Latest News Feed")
+        st.markdown("### 📡 Latest Headlines")
         if news_analysis['news_summary']:
-            st.info(f"**Headlines:** {news_analysis['news_summary']}")
+            st.info(news_analysis['news_summary'][:200] + "...")
         else:
-            st.warning("No recent news available")
+            st.warning("No recent news")
         
         if news_analysis['key_topics']:
-            st.markdown("**🔑 Key Topics Detected:**")
-            st.write(", ".join([f"`{topic}`" for topic in news_analysis['key_topics']]))
+            st.markdown("**🔑 Topics:** " + ", ".join([f"`{t}`" for t in news_analysis['key_topics'][:5]]))
     
     with col2:
-        st.markdown("### 🎯 News Intelligence Metrics")
+        st.markdown("### 🎯 Metrics")
         
         sentiment_color = "🟢" if news_analysis['sentiment_label'] in ['Very Positive', 'Positive'] else \
                          "🔴" if news_analysis['sentiment_label'] in ['Very Negative', 'Negative'] else "🟡"
@@ -692,74 +713,57 @@ if session_key in st.session_state:
         st.metric(f"{sentiment_color} Sentiment", news_analysis['sentiment_label'], 
                  f"Score: {news_analysis['sentiment_score']}")
         
-        urgency_color = "🔴" if news_analysis['urgency_level'] == 'High' else \
-                       "🟡" if news_analysis['urgency_level'] == 'Medium' else "🟢"
-        st.metric(f"{urgency_color} Urgency", news_analysis['urgency_level'])
-        
         impact_color = "🔴" if news_analysis['market_impact'] == 'High' else \
                       "🟡" if news_analysis['market_impact'] == 'Medium' else "🟢"
-        st.metric(f"{impact_color} Market Impact", news_analysis['market_impact'])
-        
-        st.metric("📊 Trader Sentiment", news_analysis['trader_sentiment'])
+        st.metric(f"{impact_color} Impact", news_analysis['market_impact'])
+        st.metric("📊 Trader View", news_analysis['trader_sentiment'])
     
     st.markdown("---")
     
-    st.markdown("## 🧠 Historical Pattern Recognition & Trader Behavior")
+    st.markdown("## 🧠 Historical Patterns & Behavior")
     
     if not similar_patterns.empty:
         col1, col2 = st.columns([1.5, 1])
         
         with col1:
-            st.markdown("### 📊 Similar Historical Patterns Identified")
+            st.markdown("### 📊 Similar Patterns")
             
-            display_patterns = similar_patterns.head(8).copy()
+            display_patterns = similar_patterns.head(5).copy()
             display_patterns['date'] = display_patterns['date'].dt.strftime('%Y-%m-%d')
             display_patterns['outcome'] = display_patterns['future_return_30d'].apply(
-                lambda x: '✅ Profit' if x > 0 else '❌ Loss'
+                lambda x: '✅' if x > 0 else '❌'
             )
             
             st.dataframe(
-                display_patterns[['date', 'similarity_score', 'future_return_30d', 'max_gain', 'max_drawdown', 'trader_reaction', 'outcome']].style.format({
+                display_patterns[['date', 'similarity_score', 'future_return_30d', 'trader_reaction', 'outcome']].style.format({
                     'similarity_score': '{:.1%}',
-                    'future_return_30d': '{:.2%}',
-                    'max_gain': '{:.2%}',
-                    'max_drawdown': '{:.2%}'
+                    'future_return_30d': '{:.2%}'
                 }),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                height=200
             )
         
         with col2:
-            st.markdown("### 📈 Pattern Statistics")
+            st.markdown("### 📈 Statistics")
             
             avg_similarity = similar_patterns['similarity_score'].mean()
             avg_return = similar_patterns['future_return_30d'].mean()
             win_rate = (similar_patterns['future_return_30d'] > 0).sum() / len(similar_patterns) * 100
             
-            st.metric("🎯 Avg Similarity", f"{avg_similarity*100:.1f}%")
-            st.metric("💰 Avg Return (30d)", f"{avg_return*100:.2f}%", 
-                     delta="Positive" if avg_return > 0 else "Negative")
-            st.metric("🏆 Historical Win Rate", f"{win_rate:.1f}%")
+            st.metric("🎯 Similarity", f"{avg_similarity*100:.1f}%")
+            st.metric("💰 Avg Return", f"{avg_return*100:.2f}%")
+            st.metric("🏆 Win Rate", f"{win_rate:.1f}%")
             
             trader_reactions = similar_patterns['trader_reaction'].value_counts()
-            st.markdown("**🧠 Dominant Trader Behavior:**")
-            for reaction, count in trader_reactions.items():
-                pct = (count / len(similar_patterns)) * 100
-                st.write(f"• **{reaction}**: {pct:.1f}%")
-            
-            if avg_return > 0.02:
-                st.success("✅ Historical patterns suggest BULLISH outcome")
-            elif avg_return < -0.02:
-                st.error("⚠️ Historical patterns suggest BEARISH outcome")
-            else:
-                st.warning("➡️ Historical patterns suggest NEUTRAL outcome")
+            dominant = trader_reactions.index[0]
+            st.metric("🧠 Behavior", dominant)
     else:
-        st.info("ℹ️ No sufficiently similar historical patterns found (threshold: 65%)")
+        st.info("ℹ️ No similar patterns found (>65% threshold)")
     
     st.markdown("---")
     
-    st.markdown("## 🎯 ALADDIN AI: Top 3 Oracle Recommendations")
-    st.markdown("*Combining AI, News Intelligence, Historical Patterns, and Trader Behavior*")
+    st.markdown("## 🎯 Top 3 Oracle Recommendations")
     
     aladdin_trades = generate_aladdin_trades(model, scaler, df_ind, similar_patterns, market_data, news_analysis)
     
@@ -772,58 +776,35 @@ if session_key in st.session_state:
         with col1:
             st.markdown(f"""
             <div class='trade-card trade-card-{prob_class}'>
-                <h3 style='margin: 0 0 1rem 0; color: #667eea;'>
-                    {prob_emoji} Strategy #{idx+1}: {trade['Strategy']} • {trade['Direction']}
-                </h3>
-                <div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1rem;'>
+                <h4 style='margin: 0 0 0.5rem 0; color: #667eea;'>
+                    {prob_emoji} #{idx+1}: {trade['Strategy']} • {trade['Direction']}
+                </h4>
+                <div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin-bottom: 0.5rem;'>
                     <div>
-                        <p style='margin: 0; color: #718096; font-size: 0.9rem; font-weight: 600;'>Entry Point</p>
-                        <p style='margin: 0; color: #2d3748; font-size: 1.5rem; font-weight: 700;'>${trade['Entry']:.6f}</p>
+                        <p style='margin: 0; color: #718096; font-size: 0.75rem;'>Entry</p>
+                        <p style='margin: 0; color: #2d3748; font-size: 1.1rem; font-weight: 700;'>${trade['Entry']:.6f}</p>
                     </div>
                     <div>
-                        <p style='margin: 0; color: #718096; font-size: 0.9rem; font-weight: 600;'>Stop Loss</p>
-                        <p style='margin: 0; color: #f56565; font-size: 1.5rem; font-weight: 700;'>${trade['SL']:.6f}</p>
+                        <p style='margin: 0; color: #718096; font-size: 0.75rem;'>Stop Loss</p>
+                        <p style='margin: 0; color: #f56565; font-size: 1.1rem; font-weight: 700;'>${trade['SL']:.6f}</p>
                     </div>
                     <div>
-                        <p style='margin: 0; color: #718096; font-size: 0.9rem; font-weight: 600;'>Take Profit</p>
-                        <p style='margin: 0; color: #48bb78; font-size: 1.5rem; font-weight: 700;'>${trade['TP']:.6f}</p>
+                        <p style='margin: 0; color: #718096; font-size: 0.75rem;'>Take Profit</p>
+                        <p style='margin: 0; color: #48bb78; font-size: 1.1rem; font-weight: 700;'>${trade['TP']:.6f}</p>
                     </div>
                 </div>
-                <div style='padding: 1rem; background: #f7fafc; border-radius: 10px;'>
-                    <div style='display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;'>
-                        <div>
-                            <p style='margin: 0.3rem 0; color: #4a5568;'>
-                                <strong>🎯 Success Probability:</strong> 
-                                <span style='color: #667eea; font-size: 1.3rem; font-weight: 800;'>{trade['Probability']:.2f}%</span>
-                            </p>
-                            <p style='margin: 0.3rem 0; color: #4a5568;'>
-                                <strong>⚖️ Risk/Reward:</strong> {trade['RR_Ratio']:.2f}x
-                            </p>
-                            <p style='margin: 0.3rem 0; color: #4a5568;'>
-                                <strong>📉 Risk:</strong> {trade['Risk_Pct']:.2f}% • 
-                                <strong>📈 Reward:</strong> {trade['Reward_Pct']:.2f}%
-                            </p>
-                        </div>
-                        <div>
-                            <p style='margin: 0.3rem 0; color: #4a5568;'>
-                                <strong>🤖 AI Score:</strong> {trade['AI_Score']:.1f}%
-                            </p>
-                            <p style='margin: 0.3rem 0; color: #4a5568;'>
-                                <strong>📊 Historical Match:</strong> {trade['Historical_Match']:.1f}%
-                            </p>
-                            <p style='margin: 0.3rem 0; color: #4a5568;'>
-                                <strong>📰 News Impact:</strong> {trade['News_Impact']} • 
-                                <strong>🧠 Traders:</strong> {trade['Trader_Behavior']}
-                            </p>
-                        </div>
-                    </div>
+                <div style='padding: 0.5rem; background: #f7fafc; border-radius: 6px; font-size: 0.85rem;'>
+                    <strong>🎯 Probability:</strong> <span style='color: #667eea; font-size: 1.1rem; font-weight: 800;'>{trade['Probability']:.1f}%</span> • 
+                    <strong>R/R:</strong> {trade['RR_Ratio']:.1f}x • 
+                    <strong>Risk:</strong> {trade['Risk_Pct']:.1f}% • 
+                    <strong>Reward:</strong> {trade['Reward_Pct']:.1f}%
                 </div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
-            st.markdown("<br><br>", unsafe_allow_html=True)
-            if st.button(f"🔬 Deep Analysis", key=f"analyze_trade_{idx}", use_container_width=True):
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(f"🔬 Analyze", key=f"analyze_{idx}", use_container_width=True):
                 st.session_state.selected_trade = trade
     
     st.markdown("---")
@@ -831,179 +812,55 @@ if session_key in st.session_state:
     if 'selected_trade' in st.session_state:
         trade = st.session_state.selected_trade
         
-        st.markdown("## 🔬 Deep Dive Analysis - Selected Trade")
+        st.markdown("## 🔬 Deep Analysis")
         
         latest = df_ind.iloc[-1]
         
-        st.markdown("### 📊 Technical Indicators Dashboard")
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
-            rsi_signal = "🔥 Oversold" if latest['RSI'] < 30 else "❄️ Overbought" if latest['RSI'] > 70 else "➡️ Neutral"
-            st.metric("📊 RSI", f"{latest['RSI']:.1f}", rsi_signal)
+            rsi_signal = "🔥" if latest['RSI'] < 30 else "❄️" if latest['RSI'] > 70 else "➡️"
+            st.metric("RSI", f"{latest['RSI']:.1f}", rsi_signal)
         
         with col2:
-            macd_signal = "🟢 Bullish" if latest['MACD_hist'] > 0 else "🔴 Bearish"
-            st.metric("📈 MACD", macd_signal, f"Hist: {latest['MACD_hist']:.4f}")
+            macd_signal = "🟢" if latest['MACD_hist'] > 0 else "🔴"
+            st.metric("MACD", macd_signal)
         
         with col3:
-            st.metric("📏 ATR", f"{latest['ATR']:.6f}", "Volatility")
+            st.metric("ATR", f"{latest['ATR']:.6f}")
         
         with col4:
             bb_pos = (latest['Close'] - latest['BB_lower']) / (latest['BB_upper'] - latest['BB_lower'] + 0.0001)
-            bb_signal = "🔼 Upper Band" if bb_pos > 0.8 else "🔽 Lower Band" if bb_pos < 0.2 else "➡️ Middle"
-            st.metric("🎯 BB Position", f"{bb_pos*100:.1f}%", bb_signal)
+            st.metric("BB", f"{bb_pos*100:.0f}%")
         
         with col5:
-            vol_signal = "🔊 High" if latest['Volume_ratio'] > 1.5 else "🔉 Normal" if latest['Volume_ratio'] > 0.8 else "🔇 Low"
-            st.metric("🔊 Volume", f"{latest['Volume_ratio']:.2f}x", vol_signal)
+            vol_signal = "🔊" if latest['Volume_ratio'] > 1.5 else "🔉"
+            st.metric("Vol", vol_signal)
         
         st.markdown("---")
         
-        st.markdown("### 🎯 AI Decision Factors")
-        
-        direction = 'long' if trade['Direction'].lower() == 'long' else 'short'
-        features = generate_features(df_ind, trade['Entry'], trade['SL'], trade['TP'], direction, 60)
-        factors = get_dominant_factors(model, features)
-        
-        col1, col2 = st.columns([1, 1])
+        col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("#### 🥇 Top 5 Influential Factors")
-            for i, factor in enumerate(factors, 1):
-                emoji = ["🥇", "🥈", "🥉", "🏅", "🎖️"][i-1]
-                st.markdown(f"{emoji} **{factor}**")
+            st.markdown("#### 🎯 Key Factors")
+            direction = 'long' if trade['Direction'].lower() == 'long' else 'short'
+            features = generate_features(df_ind, trade['Entry'], trade['SL'], trade['TP'], direction, 60)
+            factors = get_dominant_factors(model, features)
+            
+            for i, factor in enumerate(factors[:3], 1):
+                st.markdown(f"**{i}.** {factor[:50]}...")
         
         with col2:
-            st.markdown("#### 🧠 Behavioral Insights")
+            st.markdown("#### 📋 Checklist")
             
-            if not similar_patterns.empty:
-                trader_reactions = similar_patterns['trader_reaction'].value_counts()
-                dominant_behavior = trader_reactions.index[0]
-                behavior_pct = (trader_reactions.iloc[0] / len(similar_patterns)) * 100
-                
-                st.info(f"""
-                **Dominant Historical Behavior:** {dominant_behavior}
-                
-                - Observed in {behavior_pct:.1f}% of similar patterns
-                - Average outcome: {similar_patterns['future_return_30d'].mean()*100:.2f}%
-                - Win rate: {(similar_patterns['future_return_30d'] > 0).sum() / len(similar_patterns) * 100:.1f}%
-                """)
-                
-                if dominant_behavior == 'Accumulation' and direction == 'long':
-                    st.success("✅ Historical behavior SUPPORTS this LONG trade")
-                elif dominant_behavior == 'Distribution' and direction == 'short':
-                    st.success("✅ Historical behavior SUPPORTS this SHORT trade")
-                else:
-                    st.warning("⚠️ Historical behavior shows mixed signals")
-        
-        st.markdown("---")
-        
-        st.markdown("### 📊 Risk Management & Execution Plan")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("#### ✅ Pre-Trade Checklist")
-            
-            checklist = [
-                ("✅" if trade['Probability'] >= 80 else "⚠️", f"Probability ≥80%", trade['Probability']),
-                ("✅" if trade['RR_Ratio'] >= 2.5 else "⚠️", f"R/R ≥2.5x", trade['RR_Ratio']),
-                ("✅" if not similar_patterns.empty and (similar_patterns['future_return_30d'] > 0).sum() / len(similar_patterns) >= 0.6 else "⚠️", 
-                 "Win Rate ≥60%", (similar_patterns['future_return_30d'] > 0).sum() / len(similar_patterns) * 100 if not similar_patterns.empty else 0),
-                ("✅" if latest['Volume_ratio'] >= 0.8 else "⚠️", "Volume Adequate", latest['Volume_ratio']),
-                ("✅" if news_analysis['market_impact'] in ['Low', 'Medium'] or 
-                 (news_analysis['sentiment_label'] in ['Positive', 'Very Positive'] and direction == 'long') or
-                 (news_analysis['sentiment_label'] in ['Negative', 'Very Negative'] and direction == 'short')
-                 else "⚠️", "News Alignment", news_analysis['sentiment_label'])
+            checks = [
+                ("✅" if trade['Probability'] >= 80 else "⚠️", f"Prob: {trade['Probability']:.1f}%"),
+                ("✅" if trade['RR_Ratio'] >= 2.5 else "⚠️", f"R/R: {trade['RR_Ratio']:.1f}x"),
+                ("✅" if latest['Volume_ratio'] >= 0.8 else "⚠️", f"Vol: {latest['Volume_ratio']:.1f}x")
             ]
             
-            for status, check, value in checklist:
-                if isinstance(value, float):
-                    st.markdown(f"{status} {check}: **{value:.1f}**")
-                else:
-                    st.markdown(f"{status} {check}: **{value}**")
-        
-        with col2:
-            st.markdown("#### 💡 Position Sizing")
-            
-            base_size = 1.0
-            
-            if trade['Probability'] >= 90:
-                size_mult = 1.2
-                st.success(f"🟢 **High Confidence**: {size_mult*100:.0f}% position")
-            elif trade['Probability'] >= 85:
-                size_mult = 1.0
-                st.success(f"🟢 **Good Confidence**: {size_mult*100:.0f}% position")
-            elif trade['Probability'] >= 75:
-                size_mult = 0.75
-                st.warning(f"🟡 **Moderate**: {size_mult*100:.0f}% position")
-            else:
-                size_mult = 0.5
-                st.error(f"🔴 **Low Confidence**: {size_mult*100:.0f}% position")
-            
-            if trade['Risk_Pct'] > 2:
-                st.warning(f"⚠️ High risk: Consider reducing to 50%")
-            
-            if news_analysis['urgency_level'] == 'High':
-                st.warning("⚠️ High news urgency: Monitor closely")
-        
-        with col3:
-            st.markdown("#### 🎯 Execution Strategy")
-            
-            st.markdown(f"""
-            **Entry Strategy:**
-            - Limit Order: ${trade['Entry']:.6f}
-            - Market conditions: Monitor volume
-            
-            **Exit Strategy:**
-            - SL: ${trade['SL']:.6f} ({trade['Risk_Pct']:.2f}%)
-            - TP: ${trade['TP']:.6f} ({trade['Reward_Pct']:.2f}%)
-            - Trailing stop: Consider after 50% gain
-            
-            **Time Horizon:**
-            - Expected: 5-30 days
-            - Review: Daily at market close
-            """)
-        
-        st.markdown("---")
-        
-        st.markdown("### 📈 Historical Pattern Deep Dive")
-        
-        if not similar_patterns.empty:
-            col1, col2 = st.columns([1, 1])
-            
-            with col1:
-                st.markdown("#### 📊 Performance Distribution")
-                
-                positive_patterns = similar_patterns[similar_patterns['future_return_30d'] > 0]
-                negative_patterns = similar_patterns[similar_patterns['future_return_30d'] < 0]
-                
-                st.write(f"**Profitable Patterns:** {len(positive_patterns)} ({len(positive_patterns)/len(similar_patterns)*100:.1f}%)")
-                if len(positive_patterns) > 0:
-                    st.write(f"- Avg Gain: {positive_patterns['future_return_30d'].mean()*100:.2f}%")
-                    st.write(f"- Max Gain: {positive_patterns['max_gain'].max()*100:.2f}%")
-                
-                st.write(f"**Loss Patterns:** {len(negative_patterns)} ({len(negative_patterns)/len(similar_patterns)*100:.1f}%)")
-                if len(negative_patterns) > 0:
-                    st.write(f"- Avg Loss: {negative_patterns['future_return_30d'].mean()*100:.2f}%")
-                    st.write(f"- Max Drawdown: {negative_patterns['max_drawdown'].min()*100:.2f}%")
-            
-            with col2:
-                st.markdown("#### 🧠 Behavioral Analysis")
-                
-                st.write("**Trader Reaction Distribution:**")
-                for reaction, count in similar_patterns['trader_reaction'].value_counts().items():
-                    pct = (count / len(similar_patterns)) * 100
-                    st.write(f"- {reaction}: {count} times ({pct:.1f}%)")
-                
-                avg_similarity = similar_patterns['similarity_score'].mean()
-                if avg_similarity > 0.85:
-                    st.success(f"🟢 Very high pattern similarity: {avg_similarity*100:.1f}%")
-                elif avg_similarity > 0.75:
-                    st.info(f"🟡 Good pattern similarity: {avg_similarity*100:.1f}%")
-                else:
-                    st.warning(f"🟠 Moderate pattern similarity: {avg_similarity*100:.1f}%")
+            for status, check in checks:
+                st.markdown(f"{status} {check}")
 
 else:
     st.warning("⚠️ Select an asset and initialize the system")
