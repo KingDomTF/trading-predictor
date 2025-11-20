@@ -4,14 +4,13 @@ import numpy as np
 from sklearn.ensemble import VotingClassifier, GradientBoostingClassifier, RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import TimeSeriesSplit
 import yfinance as yf
 import datetime
 import requests
 import warnings
 warnings.filterwarnings('ignore')
 
-# ========================= ASSET =========================
+# ========================= CONFIGURAZIONE ASSET =========================
 ASSETS = {
     'GC=F': '🥇 Gold',
     'SI=F': '🥈 Silver', 
@@ -19,208 +18,230 @@ ASSETS = {
     '^GSPC': '📊 S&P 500'
 }
 
-# ========================= ADATTAMENTO INTELLIGENTE AL TIMEFRAME =========================
+# ========================= CONFIGURAZIONE ADATTIVA TIMEFRAME =========================
 def get_tf_config(interval):
     if interval == '5m':
         return {
-            'ema_fast': [5, 8, 13, 21], 'ema_slow': [34, 55, 89],
-            'rsi_period': 10, 'bb_period': [13, 21], 'atr_period': 10,
-            'pattern_lookback': 120, 'future_bars': 36, 'min_similarity': 0.78,
-            'simulations': 5000, 'atr_sl_mult': (0.6, 1.8), 'atr_tp_mult': (2.8, 6.0)
+            'ema_fast': [5,8,13,21], 'ema_slow': [34,55],
+            'rsi_period': 10, 'bb_period': 20, 'atr_period': 10,
+            'pattern_lookback': 144, 'future_bars': 36, 'min_similarity': 0.78,
+            'simulations': 5000
         }
     elif interval == '15m':
         return {
-            'ema_fast': [8, 13, 21, 34], 'ema_slow': [55, 89, 144],
-            'rsi_period': 12, 'bb_period': [20, 34], 'atr_period': 12,
-            'pattern_lookback': 100, 'future_bars': 40, 'min_similarity': 0.80,
-            'simulations': 4500, 'atr_sl_mult': (0.7, 2.0), 'atr_tp_mult': (3.0, 6.5)
+            'ema_fast': [8,13,21], 'ema_slow': [55,89],
+            'rsi_period': 12, 'bb_period': 20, 'atr_period': 12,
+            'pattern_lookback': 120, 'future_bars': 40, 'min_similarity': 0.80,
+            'simulations': 4500
         }
-    else:  # 1h e default
+    else:  # 1h
         return {
-            'ema_fast': [9, 20, 50], 'ema_slow': [100, 200],
-            'rsi_period': 14, 'bb_period': [20, 50], 'atr_period': 14,
+            'ema_fast': [9,20,50], 'ema_slow': [100,200],
+            'rsi_period': 14, 'bb_period': 20, 'atr_period': 14,
             'pattern_lookback': 90, 'future_bars': 50, 'min_similarity': 0.80,
-            'simulations': 3000, 'atr_sl_mult': (0.8, 2.5), 'atr_tp_mult': (3.5, 7.0)
+            'simulations': 3500
         }
 
-# ========================= INDICATORI OTTIMIZZATI PER TF BASSO =========================
-def calculate_adaptive_indicators(df, config):
+# ========================= INDICATORI ADATTIVI =========================
+def calculate_indicators(df, config):
     df = df.copy()
-    
-    # EMA adattive
     for p in config['ema_fast'] + config['ema_slow']:
         df[f'EMA_{p}'] = df['Close'].ewm(span=p, adjust=False).mean()
     
-    # EMA Alignment dinamico
-    fast_ok = pd.Series(1, index=df.index)
-    for i in range(len(config['ema_fast']) - 1):
-        fast_ok &= df[f'EMA_{config["ema_fast"][i]}'] > df[f'EMA_{config["ema_fast"][i+1]}']
-    slow_ok = pd.Series(1, index=df.index)
-    if len(config['ema_slow']) >= 2:
-        slow_ok = df[f'EMA_{config["ema_slow"][0]}'] > df[f'EMA_{config["ema_slow"][1]}']
-    df['EMA_Alignment'] = (fast_ok & (df[f'EMA_{config["ema_fast"][-1]}'] > df[f'EMA_{config["ema_slow"][0]}'] if config['ema_slow'] else True) & slow_ok).astype(int)
-    
+    # EMA Alignment intelligente
+    if len(config['ema_fast']) >= 3:
+        align = (df[f'EMA_{config["ema_fast"][0]}'] > df[f'EMA_{config["ema_fast"][1]}']) & \
+                (df[f'EMA_{config["ema_fast"][1]}'] > df[f'EMA_{config["ema_fast"][2]}'])
+    else:
+        align = df[f'EMA_{config["ema_fast"][0]}'] > df[f'EMA_{config["ema_fast"][-1]}']
+    if config['ema_slow']:
+        align &= df[f'EMA_{config["ema_fast"][-1]}'] > df[f'EMA_{config["ema_slow"][0]}']
+    df['EMA_Alignment'] = align.astype(int)
+
     # RSI
     delta = df['Close'].diff()
-    gain = delta.clip(lower=0).rolling(window=config['rsi_period']).mean()
-    loss = -delta.clip(upper=0).rolling(window=config['rsi_period']).mean()
+    gain = delta.clip(lower=0).rolling(config['rsi_period']).mean()
+    loss = -delta.clip(upper=0).rolling(config['rsi_period']).mean()
     rs = gain / (loss + 1e-10)
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
+    df['RSI'] = 100 - 100 / (1 + rs)
+
     # MACD veloce per intraday
-    exp1 = df['Close'].ewm(span=8).mean()
-    exp2 = df['Close'].ewm(span=21).mean()
-    df['MACD'] = exp1 - exp2
-    df['MACD_Signal'] = df['MACD'].ewm(span=5).mean()
+    df['MACD'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
+    df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
     df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
-    
-    # Bollinger Bands
-    for p in config['bb_period']:
-        mid = df['Close'].rolling(p).mean()
-        std = df['Close'].rolling(p).std()
-        df[f'BB_upper_{p}'] = mid + 2 * std
-        df[f'BB_lower_{p}'] = mid - 2 * std
-        df[f'BB_width_{p}'] = (df[f'BB_upper_{p}'] - df[f'BB_lower_{p}']) / mid
-    
-    # ATR ottimizzato
-    tr = pd.DataFrame(index=df.index)
-    tr['hl'] = df['High'] - df['Low']
-    tr['hc'] = abs(df['High'] - df['Close'].shift())
-    tr['lc'] = abs(df['Low'] - df['Close'].shift())
-    df['ATR'] = tr.max(axis=1).rolling(config['atr_period']).mean()
-    
+
+    # Bollinger
+    mid = df['Close'].rolling(config['bb_period']).mean()
+    std = df['Close'].rolling(config['bb_period']).std()
+    df['BB_upper'] = mid + 2*std
+    df['BB_lower'] = mid - 2*std
+    df['BB_width'] = (df['BB_upper'] - df['BB_lower']) / mid
+
+    # ATR
+    tr = pd.concat([
+        df['High'] - df['Low'],
+        abs(df['High'] - df['Close'].shift()),
+        abs(df['Low'] - df['Close'].shift())
+    ], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(config['atr_period']).mean()
+
     # Volume
-    df['Vol_MA'] = df['Volume'].rolling(20).mean()
-    df['Volume_ratio'] = df['Volume'] / (df['Vol_MA'] + 1)
-    
-    # Momentum
-    df['ROC'] = df['Close'].pct_change(8) * 100
-    df['Momentum'] = df['Close'] / df['Close'].shift(12) - 1
-    
-    # Volatilità
-    df['Volatility'] = df['Close'].pct_change().rolling(20).std() * np.sqrt(365*24*12 if interval=='5m' else 365*24*4 if interval=='15m' else 365*24)
-    
-    # Price position
-    df['PP_20'] = (df['Close'] - df['Low'].rolling(20).min()) / (df['High'].rolling(20).max() - df['Low'].rolling(20).min() + 1e-10)
-    
+    df['Vol_MA20'] = df['Volume'].rolling(20).mean()
+    df['Volume_ratio'] = df['Volume'] / (df['Vol_MA20'] + 1)
+
+    # Momentum & Position
+    df['Momentum'] = df['Close'].pct_change(10)
+    df['Price_Pos'] = (df['Close'] - df['Low'].rolling(20).min()) / (df['High'].rolling(20).max() - df['Low'].rolling(20).min() + 1e-8)
+
     return df.dropna()
 
-# ========================= PATTERN MATCHING ULTRA-VELOCE =========================
-def find_precise_patterns_fast(df_ind, config):
-    if len(df_ind) < config['pattern_lookback'] + config['future_bars'] + 100:
-        return pd.DataFrame()
-    
-    latest = df_ind.iloc[-config['pattern_lookback']:][['RSI','MACD_Hist','Volume_ratio','Momentum','ATR','PP_20','EMA_Alignment']]
-    current_vec = latest.mean().values
-    
-    patterns = []
-    step = 5 if len(df_ind) > 20000 else 2  # accelerazione su 5m
-    
-    for i in range(config['pattern_lookback'] + 200, len(df_ind) - config['future_bars'], step):
-        window = df_ind.iloc[i-config['pattern_lookback']:i][['RSI','MACD_Hist','Volume_ratio','Momentum','ATR','PP_20','EMA_Alignment']]
-        if len(window) < config['pattern_lookback'] * 0.9: continue
-        hist_vec = window.mean().values
-        
-        # Similarità coseno + euclidea normalizzata
-        cos_sim = np.dot(current_vec, hist_vec) / (np.linalg.norm(current_vec) * np.linalg.norm(hist_vec) + 1e-10)
-        similarity = cos_sim * 0.7 + (1 - np.mean(np.abs(current_vec - hist_vec) / (np.abs(current_vec) + np.abs(hist_vec) + 1e-10))) * 0.3
-        
-        if similarity > config['min_similarity']:
-            future_ret = (df_ind['Close'].iloc[i + config['future_bars']] - df_ind['Close'].iloc[i]) / df_ind['Close'].iloc[i]
-            patterns.append({
-                'date': df_ind.index[i],
-                'similarity': similarity,
-                'return': future_ret,
-                'direction': 'LONG' if future_ret > 0.015 else 'SHORT' if future_ret < -0.015 else 'HOLD'
-            })
-    
-    return pd.DataFrame(patterns).sort_values('similarity', ascending=False).head(40) if patterns else pd.DataFrame()
+# ========================= PATTERN MATCHING VELOCE =========================
+def find_patterns(df_ind, config):
+    if len(df_ind) < 300: return pd.DataFrame()
+    lookback = config['pattern_lookback']
+    features = ['RSI','MACD_Hist','Volume_ratio','Momentum','Price_Pos','EMA_Alignment']
+    current = df_ind.iloc[-lookback:][features].mean()
 
-# ========================= TRAINING OTTIMIZZATO E VELOCE =========================
-@st.cache_resource(ttl=300)
-def train_quantum_model(symbol, interval):
-    config = get_tf_config(interval)
-    data = yf.download(symbol, period='800d', interval=interval, progress=False, auto_adjust=True)
-    if len(data) < 500: return None, None, None, None
+    matches = []
+    for i in range(lookback + 100, len(df_ind) - config['future_bars'], 4):
+        hist = df_ind.iloc[i-lookback:i][features].mean()
+        similarity = 1 - np.mean(np.abs(current - hist) / (np.abs(current) + np.abs(hist) + 1e-8))
+        if similarity > config['min_similarity']:
+            ret = (df_ind['Close'].iloc[i + config['future_bars']] - df_ind['Close'].iloc[i]) / df_ind['Close'].iloc[i]
+            matches.append({'similarity': similarity, 'return': ret, 'direction': 'LONG' if ret > 0.02 else 'SHORT' if ret < -0.02 else 'HOLD'})
     
-    df_ind = calculate_adaptive_indicators(data, config)
-    patterns = find_precise_patterns_fast(df_ind, config)
+    return pd.DataFrame(matches).sort_values('similarity', ascending=False).head(30) if matches else pd.DataFrame()
+
+# ========================= FEATURES PER ML =========================
+def make_features(df_slice, direction):
+    l = df_slice.iloc[-1]
+    features = np.array([
+        l['RSI']/100,
+        1 if l['RSI'] < 30 else 0,
+        1 if l['RSI'] > 70 else 0,
+        l['MACD_Hist'] / l['Close'],
+        l['EMA_Alignment'],
+        (l['Close'] - l['BB_lower']) / (l['BB_upper'] - l['BB_lower'] + 1e-8),
+        l['Volume_ratio'],
+        l['Momentum'],
+        l['ATR']/l['Close'],
+        l['Price_Pos'],
+        1 if direction == 'long' else 0
+    ], dtype=np.float32)
+    return features
+
+# ========================= TRAINING CON CACHE =========================
+@st.cache_resource(ttl=180)
+def train_model(_symbol, _interval):
+    config = get_tf_config(_interval)
+    data = yf.download(_symbol, period="730d", interval=_interval, progress=False)
+    if len(data) < 300:
+        return None, None, None, None
     
-    # Training intelligente con simulazioni realistiche
+    df_ind = calculate_indicators(data, config)
+    patterns = find_patterns(df_ind, config)
+
     X, y = [], []
-    for _ in range(config['simulations']):
-        idx = np.random.randint(300, len(df_ind)-150)
-        direction = 'long' if df_ind.iloc[idx-30:idx]['EMA_Alignment'].mean() > 0.5 else 'short'
-        
+    sims = config['simulations']
+    for _ in range(sims):
+        idx = np.random.randint(200, len(df_ind)-120)
+        direction = 'long' if df_ind.iloc[idx-30:idx]['EMA_Alignment'].mean() > 0.6 else 'short'
         entry = df_ind.iloc[idx]['Close']
-        atr = df_ind.iloc[idx]['ATR']
-        sl_mult = np.random.uniform(*config['atr_sl_mult'])
-        tp_mult = np.random.uniform(*config['atr_tp_mult'])
+        atr = max(df_ind.iloc[idx]['ATR'], entry*0.0001)
         
-        sl = entry * (1 - sl_mult * atr / entry) if direction == 'long' else entry * (1 + sl_mult * atr / entry)
-        tp = entry * (1 + tp_mult * atr / entry) if direction == 'long' else entry * (1 - tp_mult * atr / entry)
-        
-        features = generate_features_vector(df_ind.iloc[:idx+1], entry, sl, tp, direction, config)
-        future = df_ind.iloc[idx+1:idx+101]['High'].max() if direction=='long' else df_ind.iloc[idx+1:idx+101]['Low'].min()
-        
-        success = 1 if (direction=='long' and future >= tp) or (direction=='short' and future <= tp) else 0
-        
-        X.append(features)
+        sl_mult = np.random.uniform(0.8, 2.2)
+        tp_mult = np.random.uniform(3.2, 6.5)
+        sl = entry - atr*sl_mult if direction=='long' else entry + atr*sl_mult
+        tp = entry + atr*tp_mult if direction=='long' else entry - atr*tp_mult
+
+        feat = make_features(df_ind.iloc[:idx+1], direction)
+        future_high = df_ind.iloc[idx+1:idx+101]['High'].max()
+        future_low = df_ind.iloc[idx+1:idx+101]['Low'].min()
+        hit_tp = (future_high >= tp) if direction=='long' else (future_low <= tp)
+        hit_sl_first = (future_low <= sl) if direction=='long' else (future_high >= sl)
+        success = 1 if hit_tp and not hit_sl_first else 0
+
+        X.append(feat)
         y.append(success)
-    
+
     X = np.array(X)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    
-    # Ensemble ancora più potente
+
     ensemble = VotingClassifier([
-        ('gb', GradientBoostingClassifier(n_estimators=400, max_depth=10, learning_rate=0.07, subsample=0.8)),
-        ('rf', RandomForestClassifier(n_estimators=500, max_depth=15, min_samples_split=3, n_jobs=-1)),
-        ('nn', MLPClassifier(hidden_layer_sizes=(256,128,64,32), max_iter=800, early_stopping=True, alpha=0.0001))
-    ], voting='soft', weights=[3,2,1.5])
-    
+        ('gb', GradientBoostingClassifier(n_estimators=350, max_depth=9, learning_rate=0.08)),
+        ('rf', RandomForestClassifier(n_estimators=400, max_depth=14, n_jobs=-1)),
+        ('nn', MLPClassifier(hidden_layer_sizes=(128,64,32), max_iter=600, early_stopping=True))
+    ], voting='soft', weights=[2.5, 2, 1])
+
     ensemble.fit(X_scaled, y)
-    
     return ensemble, scaler, df_ind, patterns
 
-# ========================= FEATURES AGGIORNATE =========================
-def generate_features_vector(df_slice, entry, sl, tp, direction, config):
-    latest = df_slice.iloc[-1]
-    prev = df_slice.iloc[-2]
-    
-    features = [
-        latest['RSI']/100, 
-        1 if latest['RSI'] < 30 else 0,
-        1 if latest['RSI'] > 70 else 0,
-        latest['MACD_Hist']/latest['Close'],
-        latest['MACD']/latest['MACD'].rolling(20).std() if latest['MACD'].rolling(20).std() != 0 else 0,
-        latest['EMA_Alignment'],
-        (latest['Close'] - latest[f'BB_lower_{config["bb_period"][0]}']) / (latest[f'BB_upper_{config["bb_period"][0]}'] - latest[f'BB_lower_{config["bb_period"][0]}'] + 1e-10),
-        latest['Volume_ratio'],
-        1 if latest['Volume_ratio'] > 2.5 else 0,
-        latest['Momentum'],
-        latest['ATR']/latest['Close'],
-        latest['PP_20'],
-        abs(tp - entry)/abs(entry - sl),
-        1 if direction == 'long' else 0
-    ]
-    return np.array(features, dtype=np.float32)
+# ========================= PREZZO LIVE =========================
+def get_live_price(symbol):
+    try:
+        if symbol == 'BTC-USD':
+            r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true", timeout=5)
+            data = r.json()['bitcoin']
+            return {'price': data['usd'], 'change': data['usd_24h_change']}
+        else:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            price = info.get('regularMarketPrice') or info.get('currentPrice') or ticker.history(period='1d')['Close'].iloc[-1]
+            open_p = info.get('regularMarketOpen', price)
+            return {'price': price, 'change': (price - open_p)/open_p*100}
+    except:
+        return {'price': 0, 'change': 0}
 
-# ========================= RESTO DEL CODICE (UI identica ma più veloce e precisa) =========================
-# ... [il codice Streamlit rimane quasi identico, ma con queste modifiche chiave:]
+# ========================= UI STREAMLIT =========================
+st.set_page_config(page_title="ALADDIN QUANTUM 2025", page_icon="⚡", layout="wide")
+st.markdown("<h1 style='text-align:center;'>⚡ ALADDIN QUANTUM SCALPER 2025</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#666; font-size:1.2rem;'>5m • 15m • 1h | Ensemble AI + Pattern Matching | Precisione Reale 2025</p>", unsafe_allow_html=True)
 
-# Nel main:
-interval = st.selectbox("Timeframe", ['5m', '15m', '1h'], index=0)  # 5m di default per te!
+col1, col2, col3 = st.columns([2,1,1])
+with col1:
+    symbol = st.selectbox("Asset", options=list(ASSETS.keys()), format_func=lambda x: ASSETS[x])
+with col2:
+    interval = st.selectbox("Timeframe", ['5m', '15m', '1h'], index=0)  # 5m di default per te!
+with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    refresh = st.button("🔄 Update", use_container_width=True)
 
-# Training con cache separata per ogni TF
-key = f"quantum_{symbol}_{interval}"
+# ========================= CARICAMENTO DATI =========================
+key = f"q_{symbol}_{interval}"
 if key not in st.session_state or refresh:
-    with st.spinner(f"🚀 Addestramento QUANTUM su {interval}... (pochi secondi)"):
-        ensemble, scaler, df_ind, patterns = train_quantum_model(symbol, interval)
-        live_data = get_live_data(symbol)  # funzione già presente
-        # ... salva in session_state
+    with st.spinner(f"⚡ Addestramento QUANTUM su {interval} in corso..."):
+        ensemble, scaler, df_ind, patterns = train_model(symbol, interval)
+        live = get_live_price(symbol)
+        st.session_state[key] = {
+            'ensemble': ensemble, 'scaler': scaler, 'df_ind': df_ind,
+            'patterns': patterns, 'live': live, 'time': datetime.datetime.now()
+        }
+        if ensemble:
+            st.success(f"✅ Pronto! {datetime.datetime.now().strftime('%H:%M:%S')}")
+        else:
+            st.error("Errore dati")
 
-# Predizioni ultra-precise con boost contestuali
-# Probabilità ora REALISTICHE: 88-96% sui setup perfetti (non più 99% fasulli)
+if key in st.session_state:
+    state = st.session_state[key]
+    live = state['live']
+    df_ind = state['df_ind']
+    patterns = state['patterns']
+    ensemble = state['ensemble']
+    scaler = state['scaler']
 
-# Ho anche aggiunto un badge "QUANTUM MODE" quando usi 5m/15m con icona ⚡
+    # Prezzo live
+    st.markdown(f"### {ASSETS[symbol]} • {interval} • Ultimo aggiornamento: {state['time'].strftime('%H:%M:%S')}")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Prezzo", f"${live['price']:,.2f}")
+    col2.metric("Variazione", f"{live['change']:+.2f}%")
+
+    # Pattern storici
+    if not patterns.empty:
+        dom = patterns['direction'].mode()[0]
+        avg_ret = patterns['return'].mean()*100
+        st.success(f"Pattern dominante: {dom} • Ritorno medio simile: {avg_ret:+.2f}%")
+    
+    # Predizione attuale
+    latest = df_ind.iloc[-1]
+    direction = 'long' if latest['EMA_Alignment'] == 1 and
