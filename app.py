@@ -19,9 +19,9 @@ ASSETS = {
 }
 
 TIMEFRAMES = {
-    '5m': {'name': '⚡ 5 Minutes', 'period': '59d', 'color': '#e53e3e', 'lookback': 60, 'min_data': 300},
-    '15m': {'name': '🔥 15 Minutes', 'period': '59d', 'color': '#dd6b20', 'lookback': 80, 'min_data': 250},
-    '1h': {'name': '📊 1 Hour', 'period': '729d', 'color': '#3182ce', 'lookback': 100, 'min_data': 200}
+    '5m': {'name': '⚡ 5 Minutes', 'period': '60d', 'color': '#e53e3e', 'lookback': 60},
+    '15m': {'name': '🔥 15 Minutes', 'period': '60d', 'color': '#dd6b20', 'lookback': 80},
+    '1h': {'name': '📊 1 Hour', 'period': '730d', 'color': '#3182ce', 'lookback': 100}
 }
 
 def get_realtime_crypto_price(symbol):
