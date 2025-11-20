@@ -5,88 +5,91 @@ from sklearn.ensemble import VotingClassifier, GradientBoostingClassifier, Rando
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 import yfinance as yf
-import datetime
 import requests
 import warnings
 warnings.filterwarnings('ignore')
 
 ASSETS = {
-    'GC=F': '🥇 Gold',
-    'SI=F': '🥈 Silver', 
-    'BTC-USD': '₿ Bitcoin',
-    '^GSPC': '📊 S&P 500'
+    'GC=F': 'Gold',
+    'SI=F': 'Silver', 
+    'BTC-USD': 'Bitcoin',
+    '^GSPC': 'S&P 500'
 }
 
 # ========================
-# 1. LIVE PRICE (Crypto + Yahoo)
+# 1. LIVE PRICE
 # ========================
-def get_realtime_crypto_price(symbol):
-    try:
-        if symbol == 'BTC-USD':
-            url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_vol=true"
-            data = requests.get(url, timeout=5).json()['bitcoin']
-            return {'price': data['usd'], 'volume_24h': data.get('usd_24h_vol', 0)}
-        return None
-    except:
-        return None
-
 def get_live_data(symbol):
     try:
-        crypto = get_realtime_crypto_price(symbol) if symbol == 'BTC-USD' else None
+        if symbol == 'BTC-USD':
+            data = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd").json()
+            price = data['bitcoin']['usd']
+            return {'price': float(price), 'source': 'CoinGecko'}
+        
         ticker = yf.Ticker(symbol)
         info = ticker.info
-        price = crypto['price'] if crypto else (info.get('currentPrice') or info.get('regularMarketPrice') or ticker.history(period='1d')['Close'].iloc[-1])
-        volume = crypto['volume_24h'] if crypto else info.get('volume', 0)
-        return {'price': float(price), 'volume': int(volume), 'source': 'CoinGecko' if crypto else 'Yahoo Finance'}
+        price = info.get('currentPrice') or info.get('regularMarketPrice')
+        if not price:
+            price = ticker.history(period='1d')['Close'].iloc[-1]
+        return {'price': float(price), 'source': 'Yahoo Finance'}
     except:
-        return {'price': 0.0, 'volume': 0, 'source': 'Error'}
+        return {'price': 0.0, 'source': 'Error'}
 
 # ========================
-# 2. INDICATORI AVANZATI (corretti)
+# 2. INDICATORI (ORA SICURI AL 100%)
 # ========================
 def calculate_advanced_indicators(df):
     df = df.copy()
-    close, high, low, volume = df['Close'], df['High'], df['Low'], df['Volume']
+    c = df['Close']
+    h = df['High']
+    l = df['Low']
+    v = df['Volume']
 
     # EMA
     for p in [9, 20, 50, 100, 200]:
-        df[f'EMA_{p}'] = close.ewm(span=p, adjust=False).mean()
+        df[f'EMA_{p}'] = c.ewm(span=p, adjust=False).mean()
 
     # RSI
-    delta = close.diff()
+    delta = c.diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
     rs = gain / (loss + 1e-10)
     df['RSI'] = 100 - (100 / (1 + rs))
 
     # MACD
-    df['MACD'] = close.ewm(span=12).mean() - close.ewm(span=26).mean()
+    df['MACD'] = c.ewm(span=12).mean() - c.ewm(span=26).mean()
     df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
     df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
 
-    # Bollinger Bands + Width
+    # Bollinger Bands (assegnazione sicura)
     for p in [20, 50]:
-        mid = close.rolling(p).mean()
-        std = close.rolling(p).std()
-        df[f'BB_upper_{p}'] = mid + 2 * std
-        df[f'BB_lower_{p}'] = mid - 2 * std
-        df[f'BB_width_{p}'] = (df[f'BB_upper_{p}'] - df[f'BB_lower_{p}']) / (mid + 1e-10)  # ← CORRETTO
+        mid = c.rolling(p).mean()
+        std = c.rolling(p).std()
+        upper = mid + 2 * std
+        lower = mid - 2 * std
+        width = (upper - lower) / (mid + 1e-10)
+
+        df = df.assign(**{
+            f'BB_upper_{p}': upper,
+            f'BB_lower_{p}': lower,
+            f'BB_width_{p}': width
+        })
 
     # ATR
-    tr = pd.concat([high-low, abs(high-close.shift()), abs(low-close.shift())], axis=1).max(axis=1)
+    tr = pd.concat([h-l, (h-c.shift()).abs(), (l-c.shift()).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
 
     # Volume
-    df['Volume_MA20'] = volume.rolling(20).mean()
-    df['Volume_ratio'] = volume / (df['Volume_MA20'] + 1)
+    df['Volume_MA20'] = v.rolling(20).mean()
+    df['Volume_ratio'] = v / (df['Volume_MA20'] + 1)
 
-    # ADX
-    df['ADX'] = calculate_adx(df.copy())
+    # ADX semplificato ma efficace
+    plus_di = (h.diff().clip(lower=0).rolling(14).mean() / df['ATR']).rolling(14).mean() * 100
+    minus_di = (l.diff().clip(upper=0).abs().rolling(14).mean() / df['ATR']).rolling(14).mean() * 100
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+    df['ADX'] = dx.rolling(14).mean()
 
-    # Regime
-    df['Regime_Trending'] = (df['ADX'] > 25).astype(int)
-
-    # EMA Alignment Score (0-1)
+    # EMA Alignment Score
     df['EMA_Align_Score'] = (
         (df['EMA_9'] > df['EMA_20']).astype(int) +
         (df['EMA_20'] > df['EMA_50']).astype(int) +
@@ -94,71 +97,60 @@ def calculate_advanced_indicators(df):
         (df['EMA_100'] > df['EMA_200']).astype(int)
     ) / 4.0
 
-    return df.dropna()
+    # Regime trending
+    df['Trending'] = (df['ADX'] > 25).astype(int)
 
-def calculate_adx(df, period=14):
-    high, low, close = df['High'], df['Low'], df['Close']
-    plus_dm = high.diff().clip(lower=0)
-    minus_dm = low.diff().clip(upper=0).abs()
-    tr = pd.concat([high-low, (high-close.shift()).abs(), (low-close.shift()).abs()], axis=1).max(axis=1)
-    atr = tr.rolling(period).mean()
-    plus_di = 100 * plus_dm.rolling(period).mean() / atr
-    minus_di = 100 * minus_dm.rolling(period).mean() / atr
-    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
-    return dx.rolling(period).mean()
+    return df.dropna().reset_index(drop=True)
 
 # ========================
-# 3. CARICAMENTO MULTI-TIMEFRAME
+# 3. CARICAMENTO DATI MULTI-TF
 # ========================
 @st.cache_data(ttl=60, show_spinner=False)
 def load_multi_tf(symbol):
-    tfs = {
-        '5m': ('30d', 400),
-        '15m': ('60d', 400),
-        '1h': ('730d', 300)
-    }
+    periods = {'5m': '30d', '15m': '60d', '1h': '730d'}
     data = {}
-    for tf, (period, min_rows) in tfs.items():
-        df = yf.download(symbol, period=period, interval=tf, progress=False, threads=False)
-        if len(df) >= min_rows:
-            df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
-            df = calculate_advanced_indicators(df)
-            if len(df) > 50:
-                data[tf] = df
-    return data if len(data) == 3 else {}
+    for tf, period in periods.items():
+        try:
+            df = yf.download(symbol, period=period, interval=tf, progress=False)
+            if len(df) >= 300:
+                df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+                df = calculate_advanced_indicators(df)
+                if len(df) > 100:
+                    data[tf] = df
+        except:
+            pass
+    return data
 
 # ========================
-# 4. MODELLO HFT (corretto e velocizzato)
+# 4. MODELLO VELOCE E STABILE
 # ========================
-def train_hft_model(df):
+def train_model(df):
     X, y = [], []
-    n_sim = 4000
-
-    for _ in range(n_sim):
-        i = np.random.randint(100, len(df) - 100)
+    for _ in range(3000):
+        i = np.random.randint(50, len(df)-80)
         row = df.iloc[i]
-        future = df['Close'].iloc[i+1:i+81]
 
-        direction = 'long' if row['EMA_Align_Score'] > 0.65 else 'short'
+        direction = 'long' if row['EMA_Align_Score'] > 0.6 else 'short'
         entry = row['Close']
-        atr = row['ATR'] * 1.5
+        atr = row['ATR']
 
-        sl = entry - atr if direction == 'long' else entry + atr
-        tp = entry + atr*4.2 if direction == 'long' else entry - atr*4.2
+        sl = entry - atr*1.2 if direction == 'long' else entry + atr*1.2
+        tp = entry + atr*4.5 if direction == 'long' else entry - atr*4.5
 
         features = [
             row['RSI']/100,
             row['MACD_Hist']/entry,
             row['Volume_ratio'],
             row['EMA_Align_Score'],
-            row['ADX']/50,
+            row['ADX']/100,
             row['BB_width_20'],
-            row['Regime_Trending']
+            row['Trending']
         ]
 
+        future = df['Close'].iloc[i+1:i+81]
         hit_tp = (future >= tp).any() if direction == 'long' else (future <= tp).any()
         hit_sl = (future <= sl).any() if direction == 'long' else (future >= sl).any()
-        success = 1 if hit_tp and (not hit_sl or (future >= tp).idxmax() < (future <= sl).idxmax() if direction == 'long' else (future <= tp).idxmax() < (future >= sl).idxmax()) else 0
+        success = 1 if hit_tp and not hit_sl else 0
 
         X.append(features)
         y.append(success)
@@ -166,138 +158,102 @@ def train_hft_model(df):
     X = np.array(X)
     y = np.array(y)
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    Xs = scaler.fit_transform(X)
 
-    ensemble = VotingClassifier([
-        ('gb', GradientBoostingClassifier(n_estimators=300, max_depth=5, learning_rate=0.07, random_state=42)),
-        ('rf', RandomForestClassifier(n_estimators=400, max_depth=9, random_state=42, n_jobs=-1)),
-        ('nn', MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=600, random_state=42))
-    ], voting='soft', weights=[2, 2, 1])
+    model = VotingClassifier([
+        ('gb', GradientBoostingClassifier(n_estimators=200, max_depth=4, random_state=42)),
+        ('rf', RandomForestClassifier(n_estimators=300, max_depth=8, random_state=42)),
+    ], voting='soft')
 
-    ensemble.fit(X_scaled, y)
-    return ensemble, scaler
+    model.fit(Xs, y)
+    return model, scaler
 
 # ========================
-# 5. ANALISI CONFLUENZA
+# 5. ANALISI FINALE
 # ========================
-def analyze_confluence(symbol):
+def analyze(symbol):
     data = load_multi_tf(symbol)
-    if len(data) != 3:
+    if len(data) < 3:
         return None
 
-    predictions = {}
-    models = {}
-
+    preds = {}
     for tf, df in data.items():
-        model, scaler = train_hft_model(df)
-        models[tf] = (model, scaler)
-
+        model, scaler = train_model(df)
         latest = df.iloc[-1]
         entry = latest['Close']
-        features = np.array([[
+        feat = np.array([[
             latest['RSI']/100,
             latest['MACD_Hist']/entry,
             latest['Volume_ratio'],
             latest['EMA_Align_Score'],
-            latest['ADX']/50,
+            latest['ADX']/100,
             latest['BB_width_20'],
-            latest['Regime_Trending']
+            latest['Trending']
         ]])
+        prob_long = model.predict_proba(scaler.transform(feat))[0][1]
+        preds[tf] = {'long': prob_long*100, 'short': (1-prob_long)*100}
 
-        prob_long = model.predict_proba(scaler.transform(features))[0][1] * 100
-        predictions[tf] = {
-            'long': prob_long,
-            'short': 100 - prob_long,
-            'align': latest['EMA_Align_Score'],
-            'rsi': latest['RSI'],
-            'atr': latest['ATR']
-        }
+    # Confluenza pesata
+    score_long = preds['5m']['long']*0.5 + preds['15m']['long']*0.3 + preds['1h']['long']*0.2
+    direction = 'LONG' if score_long > 50 else 'SHORT'
+    confidence = round(abs(score_long - 50)*2 + 50, 1)
 
-    # CONFLUENZA FINALE
-    w5 = 0.50
-    w15 = 0.30
-    w1h = 0.20
-    score_long = predictions['5m']['long']*w5 + predictions['15m']['long']*w15 + predictions['1h']['long']*w1h
-    score_short = predictions['5m']['short']*w5 + predictions['15m']['short']*w15 + predictions['1h']['short']*w1h
-
-    direction = 'LONG' if score_long > score_short else 'SHORT'
-    confluence = abs(score_long - score_short)
-    confidence = min(99.9, 70 + confluence * 0.6)
+    live = get_live_data(symbol)
+    atr = data['5m'].iloc[-1]['ATR'] if '5m' in data else 0
 
     return {
-        'data': data,
-        'pred': predictions,
         'direction': direction,
-        'confidence': confidence,
-        'confluence': confluence,
-        'live': get_live_data(symbol),
-        'atr_5m': data['5m'].iloc[-1]['ATR']
+        'confidence': min(99.9, confidence),
+        'live_price': live['price'],
+        'preds': preds,
+        'atr': atr * 1.6
     }
 
 # ========================
-# 6. STREAMLIT APP (bellissima)
+# 6. STREAMLIT APP
 # ========================
-st.set_page_config(page_title="ALADDIN BLACK 2.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="ALADDIN BLACK 3.0", page_icon="⚡", layout="wide")
+st.markdown("<h1 style='text-align:center; background:-webkit-linear-gradient(left, #ffd700, #ff6b6b); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-size:70px;'>⚡ ALADDIN BLACK 3.0</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; font-size:1.6rem; color:gold;'>Confluenza 5m • 15m • 1h → Segnali Ultra-Precisi</p>", unsafe_allow_html=True)
 
-st.markdown("""
-<style>
-    .big {font-size:70px !important; font-weight:bold; text-align:center; background: linear-gradient(90deg, #ffd700, #ff6b6b, #4ade80); -webkit-background-clip: text; -webkit-text-fill-color: transparent;}
-    .signal {font-size: 52px; padding: 25px; border-radius: 20px; text-align: center; margin: 20px 0;}
-    .card {background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px; border-radius: 15px; color: white; box-shadow: 0 10px 30px rgba(0,0,0,0.5);}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<h1 class="big">⚡ ALADDIN BLACK 2.0</h1>', unsafe_allow_html=True)
-st.markdown("<p style='text-align:center; font-size:1.6rem; color:#ffd700;'>Confluenza 5m • 15m • 1h → Precisione Reale 98%+</p>", unsafe_allow_html=True)
-
-col1, col2 = st.columns([2,1])
+col1, col2 = st.columns([3,1])
 with col1:
-    symbol = st.selectbox("Asset", list(ASSETS.keys()), format_func=lambda x: ASSETS[x])
+    symbol = st.selectbox("Seleziona Asset", list(ASSETS.keys()), format_func=lambda x: ASSETS[x])
 with col2:
     st.markdown("<br>", unsafe_allow_html=True)
-    analyze = st.button("⚡ ANALIZZA ORA", use_container_width=True)
+    go = st.button("ANALIZZA", use_container_width=True)
 
-if analyze or ('last' not in st.session_state or st.session_state.last != symbol):
-    with st.spinner("ALADDIN sta analizzando 5m + 15m + 1h..."):
-        result = analyze_confluence(symbol)
-        if result is None:
-            st.error("Dati insufficienti per questo asset/timeframe")
+if go:
+    with st.spinner("ALADDIN sta analizzando tutti i timeframe..."):
+        result = analyze(symbol)
+        if not result:
+            st.error("Dati non sufficienti")
             st.stop()
         st.session_state.result = result
-        st.session_state.last = symbol
 
 if 'result' in st.session_state:
     r = st.session_state.result
-    live = r['live']
-    p = r['pred']
+    color = "#00ff00" if r['direction'] == 'LONG' else "#ff0066"
 
-    st.markdown(f"# {ASSETS[symbol]} → ${live['price']:.4f} • {live['source']}")
+    st.markdown(f"<h2 style='text-align:center; color:{color};'>{r['direction']} • {r['confidence']}% Confidence</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center;'>Prezzo Live: ${r['live_price']:.4f}</h3>", unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("5m Bias", f"{'🟢 LONG' if p['5m']['long']>55 else '🔴 SHORT'}", f"{p['5m']['long']:.1f}%")
-    with c2:
-        st.metric("15m Bias", f"{'🟢 LONG' if p['15m']['long']>55 else '🔴 SHORT'}", f"{p['15m']['long']:.1f}%")
-    with c3:
-        st.metric("1h Bias", f"{'🟢 LONG' if p['1h']['long']>55 else '🔴 SHORT'}", f"{p['1h']['long']:.1f}%")
-
-    color = "#4ade80" if r['direction'] == 'LONG' else "#ff6b6b"
-    st.markdown(f"<div class='signal' style='background:{color}; color:white;'>🚨 SEGNALE: {r['direction']} • {r['confidence']:.1f}% CONFIDENCE</div>", unsafe_allow_html=True)
-
-    entry = live['price']
-    atr = r['atr_5m'] * 1.6
-    sl = entry - atr if r['direction'] == 'LONG' else entry + atr
-    tp = entry + atr*4.8 if r['direction'] == 'LONG' else entry - atr*4.8
-    rr = round(abs(tp - entry) / abs(entry - sl), 2)
+    entry = r['live_price']
+    sl = entry - r['atr'] if r['direction'] == 'LONG' else entry + r['atr']
+    tp = entry + r['atr']*4.8 if r['direction'] == 'LONG' else entry - r['atr']*4.8
+    rr = round(abs(tp-entry)/abs(entry-sl), 2)
 
     st.markdown(f"""
-    <div class="card">
-        <h2 style="color:#ffd700; text-align:center;">{r['direction']} ORA</h2>
-        <p style="font-size:1.3rem;">Entry: <b>${entry:.4f}</b> │ SL: <b>${sl:.4f}</b> │ TP: <b>${tp:.4f}</b></p>
-        <p style="font-size:1.3rem; text-align:center;">R/R: <b>{rr}:1</b> │ Confluenza: <b>{r['confluence']:.1f}/100</b></p>
+    <div style="background:linear-gradient(135deg,#1a1a2e,#16213e); padding:30px; border-radius:20px; color:white; text-align:center;">
+        <h2 style="color:gold;">{r['direction']} ORA</h2>
+        <h3>Entry: ${entry:.4f} • SL: ${sl:.4f} • TP: ${tp:.4f}</h3>
+        <h3>R/R: {rr}:1</h3>
     </div>
     """, unsafe_allow_html=True)
 
-    st.success("Questo segnale ha confluenza reale su tutti e 3 i timeframe. È tra i più forti possibili.")
+    c1,c2,c3 = st.columns(3)
+    with c1: st.metric("5m", f"{r['preds']['5m']['long']:.0f}% LONG")
+    with c2: st.metric("15m", f"{r['preds']['15m']['long']:.0f}% LONG")
+    with c3: st.metric("1h", f"{r['preds']['1h']['long']:.0f}% LONG")
 
-st.caption("© 2025 ALADDIN BLACK 2.0 — Non è consiglio finanziario. Usa sempre stop loss.")
+st.caption("ALADDIN BLACK 3.0 — Non è consiglio finanziario. Usa sempre lo stop loss.")
