@@ -539,42 +539,11 @@ def get_live_data(symbol):
 def load_data(symbol, interval):
     try:
         period = TIMEFRAMES[interval]['period']
-        min_required = TIMEFRAMES[interval]['min_data']
-        
-        # Scarica dati con gestione errori migliorata
-        data = yf.download(
-            symbol, 
-            period=period, 
-            interval=interval, 
-            progress=False,
-            auto_adjust=True,
-            prepost=False,
-            repair=True
-        )
-        
-        # Gestione multi-index
+        data = yf.download(symbol, period=period, interval=interval, progress=False)
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.droplevel(1)
-        
-        # Verifica dati sufficienti
-        if len(data) < min_required:
-            st.warning(f"⚠️ Solo {len(data)} candles disponibili per {interval}. Richiesti almeno {min_required}. Provo con periodo ridotto...")
-            
-            # Fallback per timeframe intraday
-            if interval in ['5m', '15m']:
-                alt_period = '30d' if interval == '5m' else '45d'
-                data = yf.download(symbol, period=alt_period, interval=interval, progress=False, auto_adjust=True, repair=True)
-                
-                if isinstance(data.columns, pd.MultiIndex):
-                    data.columns = data.columns.droplevel(1)
-            
-            if len(data) < min_required:
-                return None
-        
-        return data[['Open', 'High', 'Low', 'Close', 'Volume']]
-    
-    except Exception as e:
-        st.error(f"❌ Errore caricamento {interval}: {str(e)}")
+        return data[['Open', 'High', 'Low', 'Close', 'Volume']] if len(data) >= 200 else None
+    except:
         return None
 
 @st.cache_resource
@@ -582,35 +551,9 @@ def train_system(symbol, interval):
     data = load_data(symbol, interval)
     if data is None:
         return None, None, None
-    
-    # Verifica lunghezza minima per training
-    min_required = TIMEFRAMES[interval]['min_data']
-    if len(data) < min_required:
-        st.error(f"❌ Dati insufficienti per {interval}: {len(data)}/{min_required} candles")
-        return None, None, None
-    
-    try:
-        df_ind = calculate_ultra_indicators(data, interval)
-        
-        # Verifica dati post-indicatori
-        if len(df_ind) < min_required - 50:
-            st.error(f"❌ Dati insufficienti dopo calcolo indicatori: {len(df_ind)}")
-            return None, None, None
-        
-        # Adatta numero simulazioni al timeframe
-        if interval == '5m':
-            n_sims = 3000  # Meno dati storici disponibili
-        elif interval == '15m':
-            n_sims = 3500
-        else:
-            n_sims = 4000
-        
-        ensemble, scaler = train_quantum_ensemble(df_ind, interval, n_sims=n_sims)
-        return ensemble, scaler, df_ind
-    
-    except Exception as e:
-        st.error(f"❌ Errore training {interval}: {str(e)}")
-        return None, None, None
+    df_ind = calculate_ultra_indicators(data, interval)
+    ensemble, scaler = train_quantum_ensemble(df_ind, interval, n_sims=4000)
+    return ensemble, scaler, df_ind
 
 st.set_page_config(page_title="ALADDIN QUANTUM ⚡", page_icon="⚡", layout="wide")
 
@@ -646,48 +589,27 @@ st.markdown("---")
 
 # Train tutti i timeframes
 systems = {}
-failed_tf = []
-
 for tf in TIMEFRAMES.keys():
     key = f"quantum_{symbol}_{tf}"
     if key not in st.session_state or refresh:
         with st.spinner(f"⚡ Training {TIMEFRAMES[tf]['name']} system..."):
-            try:
-                ensemble, scaler, df_ind = train_system(symbol, tf)
-                if ensemble:
-                    live_data = get_live_data(symbol)
-                    if live_data:
-                        patterns = find_ultra_patterns(df_ind, tf, TIMEFRAMES[tf]['lookback'])
-                        st.session_state[key] = {
-                            'ensemble': ensemble,
-                            'scaler': scaler,
-                            'df_ind': df_ind,
-                            'live_data': live_data,
-                            'patterns': patterns,
-                            'time': datetime.datetime.now()
-                        }
-                        systems[tf] = st.session_state[key]
-                        st.success(f"✅ {TIMEFRAMES[tf]['name']} pronto!")
-                    else:
-                        failed_tf.append(tf)
-                        st.error(f"❌ {TIMEFRAMES[tf]['name']}: errore dati live")
-                else:
-                    failed_tf.append(tf)
-                    st.warning(f"⚠️ {TIMEFRAMES[tf]['name']}: dati insufficienti (limite Yahoo: 60 giorni per intraday)")
-            except Exception as e:
-                failed_tf.append(tf)
-                st.error(f"❌ {TIMEFRAMES[tf]['name']}: {str(e)}")
+            ensemble, scaler, df_ind = train_system(symbol, tf)
+            if ensemble:
+                live_data = get_live_data(symbol)
+                if live_data:
+                    patterns = find_ultra_patterns(df_ind, tf, TIMEFRAMES[tf]['lookback'])
+                    st.session_state[key] = {
+                        'ensemble': ensemble,
+                        'scaler': scaler,
+                        'df_ind': df_ind,
+                        'live_data': live_data,
+                        'patterns': patterns,
+                        'time': datetime.datetime.now()
+                    }
+                    systems[tf] = st.session_state[key]
 
-# Mostra solo i timeframe riusciti
-working_tf = [tf for tf in TIMEFRAMES.keys() if f"quantum_{symbol}_{tf}" in st.session_state]
-
-if working_tf:
-    st.success(f"✅ {len(working_tf)}/{len(TIMEFRAMES)} sistemi pronti! {datetime.datetime.now().strftime('%H:%M:%S')}")
-    
-    if failed_tf:
-        st.info(f"ℹ️ Timeframe non disponibili: {', '.join([TIMEFRAMES[tf]['name'] for tf in failed_tf])}. Motivo: Yahoo Finance limita dati intraday a 60 giorni.")
-else:
-    st.error("❌ Nessun sistema disponibile. Verifica la connessione e riprova.")
+if all(f"quantum_{symbol}_{tf}" in st.session_state for tf in TIMEFRAMES.keys()):
+    st.success(f"✅ All Systems Ready! {datetime.datetime.now().strftime('%H:%M:%S')}")
     
     # Live data
     live_data = st.session_state[f"quantum_{symbol}_1h"]['live_data']
@@ -823,38 +745,26 @@ with st.expander("🔬 Quantum System Architecture"):
     
     ### 🎯 Multi-Timeframe Intelligence
     
-    **⚡ 5 Minutes:** Ultra-fast scalping (LIMIT: 60 giorni Yahoo)
+    **⚡ 5 Minutes:** Ultra-fast scalping
     - EMA: 5, 9, 20, 50, 100
     - RSI: 9-period
     - MACD: 8/17/9
     - Lookback: 60 candles
-    - Dati disponibili: ~8,640 candles (60 giorni × 24h × 12 candles/h)
-    - Optimal for: Scalpers, day traders veloci
-    - Holding time: 5-30 minuti
+    - Optimal for: Day traders, scalpers
     
-    **🔥 15 Minutes:** Quick precision (LIMIT: 60 giorni Yahoo)
+    **🔥 15 Minutes:** Quick precision
     - EMA: 7, 12, 25, 60, 120
     - RSI: 11-period
     - MACD: 10/22/9
     - Lookback: 80 candles
-    - Dati disponibili: ~2,880 candles (60 giorni × 24h × 4 candles/h)
     - Optimal for: Swing traders, intraday
-    - Holding time: 30 minuti - 4 ore
     
-    **📊 1 Hour:** Strategic positioning (LIMIT: 729 giorni Yahoo)
+    **📊 1 Hour:** Strategic positioning
     - EMA: 9, 20, 50, 100, 200
     - RSI: 14-period
     - MACD: 12/26/9
     - Lookback: 100 candles
-    - Dati disponibili: ~17,496 candles (729 giorni × 24 candles/giorno)
     - Optimal for: Position traders, long-term
-    - Holding time: 4 ore - 2 giorni
-    
-    **⚠️ IMPORTANTE - Limiti Yahoo Finance:**
-    - Dati intraday (1m, 2m, 5m, 15m, 30m) limitati a massimo 60 giorni
-    - Dati 1h/giornalieri: fino a 729 giorni
-    - Se vedi "Error loading data" su 5m/15m: è normale, Yahoo blocca richieste >60 giorni
-    - Il sistema usa automaticamente periodi ottimali (59 giorni per intraday)
     
     ### 🔬 Quantum Ensemble (4 Models)
     
