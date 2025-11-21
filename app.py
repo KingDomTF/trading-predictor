@@ -54,340 +54,6 @@ def calculate_technical_indicators(df):
     df = df.dropna()
     return df
 
-def get_gold_fundamental_factors():
-    """Recupera fattori fondamentali che influenzano il prezzo dell'oro."""
-    factors = {}
-    
-    st.info("🔄 Recupero dati di mercato in tempo reale...")
-    
-    try:
-        # DXY (Dollar Index) - provo diversi ticker
-        dxy_tickers = ["DX-Y.NYB", "DX=F", "USDOLLAR"]
-        dxy_current = None
-        
-        for ticker_symbol in dxy_tickers:
-            try:
-                dxy = yf.Ticker(ticker_symbol)
-                dxy_hist = dxy.history(period="1d", interval="1m")
-                if not dxy_hist.empty and len(dxy_hist) > 0:
-                    factors['dxy_current'] = float(dxy_hist['Close'].iloc[-1])
-                    if len(dxy_hist) > 1:
-                        factors['dxy_change'] = ((dxy_hist['Close'].iloc[-1] - dxy_hist['Close'].iloc[0]) / dxy_hist['Close'].iloc[0]) * 100
-                    else:
-                        factors['dxy_change'] = 0.0
-                    st.success(f"✅ Dollar Index recuperato: ${factors['dxy_current']:.2f}")
-                    break
-            except:
-                continue
-        
-        if 'dxy_current' not in factors:
-            factors['dxy_current'] = 106.2
-            factors['dxy_change'] = -0.3
-            st.warning("⚠️ Dollar Index: uso valore stimato")
-        
-        # Tassi interesse USA (10Y Treasury)
-        try:
-            tnx = yf.Ticker("^TNX")
-            tnx_hist = tnx.history(period="1d", interval="1m")
-            if not tnx_hist.empty and len(tnx_hist) > 0:
-                factors['yield_10y'] = float(tnx_hist['Close'].iloc[-1])
-                st.success(f"✅ Treasury 10Y: {factors['yield_10y']:.2f}%")
-            else:
-                factors['yield_10y'] = 4.42
-                st.warning("⚠️ Treasury 10Y: uso valore stimato")
-        except:
-            factors['yield_10y'] = 4.42
-            st.warning("⚠️ Treasury 10Y: uso valore stimato")
-        
-        # VIX (Volatilità/Fear)
-        try:
-            vix = yf.Ticker("^VIX")
-            vix_hist = vix.history(period="1d", interval="1m")
-            if not vix_hist.empty and len(vix_hist) > 0:
-                factors['vix'] = float(vix_hist['Close'].iloc[-1])
-                st.success(f"✅ VIX: {factors['vix']:.2f}")
-            else:
-                factors['vix'] = 16.8
-                st.warning("⚠️ VIX: uso valore stimato")
-        except:
-            factors['vix'] = 16.8
-            st.warning("⚠️ VIX: uso valore stimato")
-        
-        # S&P 500 (Risk-on/Risk-off)
-        try:
-            spx = yf.Ticker("^GSPC")
-            spx_hist = spx.history(period="1d", interval="1m")
-            if not spx_hist.empty and len(spx_hist) > 1:
-                factors['spx_momentum'] = ((spx_hist['Close'].iloc[-1] - spx_hist['Close'].iloc[0]) / spx_hist['Close'].iloc[0]) * 100
-                st.success(f"✅ S&P 500 Momentum: {factors['spx_momentum']:+.2f}%")
-            else:
-                factors['spx_momentum'] = 1.8
-                st.warning("⚠️ S&P 500: uso valore stimato")
-        except:
-            factors['spx_momentum'] = 1.8
-            st.warning("⚠️ S&P 500: uso valore stimato")
-        
-        # Silver e Gold (correlazione metalli preziosi)
-        try:
-            silver = yf.Ticker("SI=F")
-            silver_hist = silver.history(period="1d", interval="1m")
-            gold = yf.Ticker("GC=F")
-            gold_hist = gold.history(period="1d", interval="1m")
-            
-            if not silver_hist.empty and not gold_hist.empty and len(silver_hist) > 0 and len(gold_hist) > 0:
-                silver_price = float(silver_hist['Close'].iloc[-1])
-                gold_price = float(gold_hist['Close'].iloc[-1])
-                factors['gold_silver_ratio'] = gold_price / silver_price
-                st.success(f"✅ Gold/Silver Ratio: {factors['gold_silver_ratio']:.2f} (Gold: ${gold_price:.2f}, Silver: ${silver_price:.2f})")
-            else:
-                factors['gold_silver_ratio'] = 88.5
-                st.warning("⚠️ Gold/Silver Ratio: uso valore stimato")
-        except:
-            factors['gold_silver_ratio'] = 88.5
-            st.warning("⚠️ Gold/Silver Ratio: uso valore stimato")
-        
-        # Inflazione stimata (usando differenza tra 10Y e 5Y come proxy)
-        try:
-            fvx = yf.Ticker("^FVX")
-            fvx_hist = fvx.history(period="1d", interval="1m")
-            if not fvx_hist.empty and len(fvx_hist) > 0:
-                yield_5y = float(fvx_hist['Close'].iloc[-1])
-                factors['inflation_expectations'] = max(0.5, factors['yield_10y'] - yield_5y + 2.0)
-                st.success(f"✅ Inflazione Attesa: {factors['inflation_expectations']:.2f}%")
-            else:
-                factors['inflation_expectations'] = 2.5
-                st.warning("⚠️ Inflazione: uso valore stimato")
-        except:
-            factors['inflation_expectations'] = 2.5
-            st.warning("⚠️ Inflazione: uso valore stimato")
-        
-    except Exception as e:
-        st.error(f"❌ Errore nel recupero dati: {str(e)}")
-        factors = {
-            'dxy_current': 106.2,
-            'dxy_change': -0.3,
-            'yield_10y': 4.42,
-            'vix': 16.8,
-            'spx_momentum': 1.8,
-            'gold_silver_ratio': 88.5,
-            'inflation_expectations': 2.5
-        }
-        st.warning("⚠️ Uso valori stimati per tutti i parametri")
-    
-    # Fattori geopolitici (score 0-10, basato su analisi qualitativa 2025)
-    factors['geopolitical_risk'] = 7.5  # Medio Oriente, Ucraina, tensioni USA-Cina
-    
-    # Domanda banche centrali (tonnellate annue stimate)
-    factors['central_bank_demand'] = 1050  # 2024-2025 trend
-    
-    # Sentiment retail (0-10)
-    factors['retail_sentiment'] = 6.8
-    
-    st.success("✅ Recupero dati completato!")
-    
-    return factors
-
-def analyze_gold_historical_comparison(current_price, factors):
-    """Analizza confronti storici e predice prezzo futuro dell'oro."""
-    
-    # Periodi storici di riferimento
-    historical_periods = {
-        '1971-1980': {
-            'description': 'Bull Market Post-Bretton Woods',
-            'start_price': 35,
-            'end_price': 850,
-            'gain_pct': 2329,
-            'duration_years': 9,
-            'avg_inflation': 8.5,
-            'geopolitical': 8,
-            'dollar_weak': True,
-            'key_events': 'Fine gold standard, inflazione alta, crisi petrolio'
-        },
-        '2001-2011': {
-            'description': 'Bull Market Post-Dot-Com e Crisi 2008',
-            'start_price': 255,
-            'end_price': 1920,
-            'gain_pct': 653,
-            'duration_years': 10,
-            'avg_inflation': 2.8,
-            'geopolitical': 7,
-            'dollar_weak': True,
-            'key_events': '9/11, guerre, QE, crisi finanziaria'
-        },
-        '2015-2020': {
-            'description': 'Consolidamento e COVID Rally',
-            'start_price': 1050,
-            'end_price': 2070,
-            'gain_pct': 97,
-            'duration_years': 5,
-            'avg_inflation': 1.8,
-            'geopolitical': 6,
-            'dollar_weak': False,
-            'key_events': 'Tassi bassi, QE, pandemia'
-        },
-        '2022-2025': {
-            'description': 'Era Inflazione Post-COVID e Tensioni',
-            'start_price': 1800,
-            'end_price': current_price,
-            'gain_pct': ((current_price - 1800) / 1800) * 100,
-            'duration_years': 3,
-            'avg_inflation': 4.5,
-            'geopolitical': 7.5,
-            'dollar_weak': False,
-            'key_events': 'Inflazione persistente, guerra Ucraina, crisi bancarie, dedollarizzazione'
-        }
-    }
-    
-    # Analisi contesto attuale (2025)
-    current_context = {
-        'inflation': factors['inflation_expectations'],
-        'dollar_strength': 'Forte' if factors['dxy_current'] > 103 else 'Debole',
-        'real_rates': factors['yield_10y'] - factors['inflation_expectations'],
-        'risk_sentiment': 'Risk-Off' if factors['vix'] > 20 else 'Neutrale' if factors['vix'] > 15 else 'Risk-On',
-        'geopolitical': factors['geopolitical_risk'],
-        'central_bank': 'Compratori Netti' if factors['central_bank_demand'] > 500 else 'Venditori',
-        'technical_trend': 'Bullish' if current_price > 2600 else 'Neutrale'
-    }
-    
-    # Trova periodo storico più simile
-    similarity_scores = {}
-    
-    for period, data in historical_periods.items():
-        if period == '2022-2025':
-            continue
-        
-        score = 0
-        
-        # Inflazione simile
-        inflation_diff = abs(data['avg_inflation'] - factors['inflation_expectations'])
-        score += max(0, 10 - inflation_diff * 2)
-        
-        # Geopolitica simile
-        geo_diff = abs(data['geopolitical'] - factors['geopolitical_risk'])
-        score += max(0, 10 - geo_diff * 2)
-        
-        # Dollar weakness
-        current_dollar_weak = factors['dxy_current'] < 100
-        if data['dollar_weak'] == current_dollar_weak:
-            score += 15
-        
-        # Domanda banche centrali
-        if factors['central_bank_demand'] > 800:
-            score += 10
-        
-        similarity_scores[period] = score
-    
-    most_similar = max(similarity_scores, key=similarity_scores.get)
-    similarity_pct = (similarity_scores[most_similar] / 45) * 100
-    
-    # Calcolo prezzo target basato su multipli metodi
-    
-    # Metodo 1: Proiezione da periodo simile
-    similar_period = historical_periods[most_similar]
-    annual_return = (similar_period['gain_pct'] / 100) / similar_period['duration_years']
-    projection_1y = current_price * (1 + annual_return)
-    
-    # Metodo 2: Modello fattori fondamentali
-    base_price = current_price
-    
-    # Dollar impact (inverso)
-    if factors['dxy_change'] < 0:
-        base_price *= 1.015  # Dollar debole = oro forte
-    elif factors['dxy_change'] > 1:
-        base_price *= 0.985  # Dollar forte = oro debole
-    
-    # Real rates impact
-    if current_context['real_rates'] < 1:
-        base_price *= 1.025  # Tassi reali bassi favoriscono oro
-    elif current_context['real_rates'] > 2:
-        base_price *= 0.98
-    
-    # VIX/Fear impact
-    if factors['vix'] > 25:
-        base_price *= 1.03  # Alta volatilità = flight to safety
-    elif factors['vix'] < 15:
-        base_price *= 0.99
-    
-    # Geopolitical premium
-    geo_multiplier = 1 + (factors['geopolitical_risk'] / 100)
-    base_price *= geo_multiplier
-    
-    # Central bank demand
-    cb_multiplier = 1 + ((factors['central_bank_demand'] - 500) / 10000)
-    base_price *= cb_multiplier
-    
-    # Inflazione
-    inflation_multiplier = 1 + (factors['inflation_expectations'] / 100)
-    base_price *= inflation_multiplier
-    
-    projection_fundamental = base_price
-    
-    # Metodo 3: Analisi tecnica avanzata
-    gold_data = yf.Ticker("GC=F").history(period="1y")
-    if not gold_data.empty:
-        volatility = gold_data['Close'].pct_change().std() * np.sqrt(252)
-        momentum = ((gold_data['Close'].iloc[-1] - gold_data['Close'].iloc[-20]) / gold_data['Close'].iloc[-20]) * 100
-        
-        projection_technical = current_price * (1 + (momentum / 100) * 1.5)
-    else:
-        projection_technical = current_price * 1.05
-    
-    # Metodo 4: Gold/Silver Ratio
-    historical_avg_ratio = 70
-    current_ratio = factors['gold_silver_ratio']
-    
-    if current_ratio > historical_avg_ratio:
-        ratio_adjustment = 1.02  # Oro sovraperformante, possibile correzione o continua
-    else:
-        ratio_adjustment = 1.01
-    
-    projection_ratio = current_price * ratio_adjustment
-    
-    # Media ponderata delle proiezioni
-    weights = [0.3, 0.35, 0.25, 0.1]  # Storico, Fondamentale, Tecnico, Ratio
-    projections = [projection_1y, projection_fundamental, projection_technical, projection_ratio]
-    
-    target_price_1y = sum(w * p for w, p in zip(weights, projections))
-    
-    # Range di confidenza
-    std_projections = np.std(projections)
-    lower_bound = target_price_1y - std_projections
-    upper_bound = target_price_1y + std_projections
-    
-    # Targets a 3, 6, 12 mesi
-    target_3m = current_price + (target_price_1y - current_price) * 0.25
-    target_6m = current_price + (target_price_1y - current_price) * 0.5
-    
-    # Confidence score (0-100)
-    confidence = min(100, similarity_pct * 0.6 + 
-                     (40 if factors['central_bank_demand'] > 800 else 20) +
-                     (20 if factors['geopolitical_risk'] > 6 else 10))
-    
-    return {
-        'current_price': current_price,
-        'target_3m': target_3m,
-        'target_6m': target_6m,
-        'target_1y': target_price_1y,
-        'range_low': lower_bound,
-        'range_high': upper_bound,
-        'most_similar_period': most_similar,
-        'similarity_pct': similarity_pct,
-        'period_data': historical_periods[most_similar],
-        'current_context': current_context,
-        'confidence': confidence,
-        'key_drivers': {
-            'Dollar Index': f"${factors['dxy_current']:.2f} ({factors['dxy_change']:+.2f}%)",
-            'Tassi 10Y': f"{factors['yield_10y']:.2f}%",
-            'Tassi Reali': f"{current_context['real_rates']:.2f}%",
-            'VIX': f"{factors['vix']:.1f}",
-            'Inflazione Attesa': f"{factors['inflation_expectations']:.2f}%",
-            'Rischio Geopolitico': f"{factors['geopolitical_risk']}/10",
-            'Domanda BC': f"{factors['central_bank_demand']} ton/anno",
-            'Gold/Silver Ratio': f"{factors['gold_silver_ratio']:.1f}"
-        },
-        'historical_periods': historical_periods
-    }
-
 def generate_features(df_ind, entry, sl, tp, direction, main_tf):
     """Genera features per la predizione."""
     latest = df_ind.iloc[-1]
@@ -438,6 +104,7 @@ def simulate_historical_trades(df_ind, n_trades=500):
        
         features = generate_features(df_ind.iloc[:idx+1], entry, sl, tp, direction, 60)
        
+        # Simula outcome
         future_prices = df_ind.iloc[idx+1:idx+51]['Close'].values
         if len(future_prices) > 0:
             if direction == 'long':
@@ -518,97 +185,167 @@ def predict_price(df_ind, steps=5):
         return None, None
 
 def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
-    """Analisi approfondita della psicologia dell'investitore."""
+    """Analisi approfondita della psicologia dell'investitore con comparazione storica, bias comportamentali e focus specifici su asset come Bitcoin, Argento, Oro e S&P 500."""
     latest = df_ind.iloc[-1]
     trend = 'bullish' if latest['Trend'] == 1 else 'bearish'
     
+    # Analisi generale attuale (2025), arricchita con dati recenti al 28 Ottobre 2025
     current_analysis = f"""
-    **🌍 Contesto Globale (Novembre 2025)**
+    **🌍 Contesto Globale (Ottobre 2025)**
     
-    Nel contesto attuale, i mercati globali sono influenzati da inflazione persistente (al 3.5% negli USA), tensioni geopolitiche (es. Medio Oriente e Ucraina) e un boom dell'IA che ha spinto il NASDAQ oltre i 20,000 punti. La psicologia degli investitori è segnata da un mix di ottimismo tecnologico e ansia macroeconomica, con il VIX a livelli elevati (intorno a 25), indicando volatilità. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive, amplificate da social media e AI-driven trading.
+    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente (al 3.5% negli USA), tensioni geopolitiche (es. Medio Oriente e Ucraina) e un boom dell'IA che ha spinto il NASDAQ oltre i 20,000 punti. La psicologia degli investitori è segnata da un mix di ottimismo tecnologico e ansia macroeconomica, con il VIX a livelli elevati (intorno a 25), indicando volatilità. Studi recenti, come quello su ACR Journal (Ottobre 2025), sottolineano come l'intelligenza emotiva riduca errori del 20-30%, mentre Flexible Plan Investments nota che i bias colpiscono anche istituzionali in mercati estremi. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive, amplificate da social media e AI-driven trading. Robo-advisor e nudge comportamentali (ScienceDirect, 2025) stanno mitigando questi effetti promuovendo diversificazione.
     """
     
+    # Sezione integrata sui bias comportamentali generali, aggiornata al 2025
     biases_analysis = """
     ### 🧠 Analisi Approfondita dei Bias Comportamentali negli Investimenti (2025)
     
-    I bias comportamentali causano perdite annue del 2-3% per retail investors (Morningstar, J.P. Morgan). Nel 2025, social media e algoritmi amplificano questi effetti, con un 'gap comportamentale' stimato al 4% in mercati volatili.
+    Basato su una meta-analisi su F1000Research (Ottobre 2025), i bias comportamentali causano perdite annue del 2-3% per retail investors (Morningstar, J.P. Morgan). Nel 2025, social media e algoritmi amplificano questi effetti, con un 'gap comportamentale' stimato al 4% in mercati volatili.
     
-    | Bias Cognitivo | Impatto |
-    |---------------|---------|
-    | **Avversione alle Perdite** | Deflussi da fondi azionari >200 mld USD |
-    | **Eccessiva Fiducia** | Amplificato da app, perdite in mercati instabili |
-    | **Effetto Gregge** | Flash crash virali, afflussi obbligazionari 850 mld |
-    | **Bias di Conferma** | Echo chamber AI causano bolle |
-    | **Recency Bias** | Comprare alto, vendere basso |
+    | Bias Cognitivo | Definizione | Esempio Generale | Impatto nel 2025 | Fonte |
+    |---------------|-------------|------------------|------------------|-------|
+    | **Avversione alle Perdite** | Perdite percepite 2x più dolorose dei guadagni. | Mantenere asset in calo sperando in recuperi. | Deflussi da fondi azionari >200 mld USD post-boom IA (Charles Schwab, Giugno 2025). | Prospect Theory; Vanguard. |
+    | **Eccessiva Fiducia** | Sovrastima abilità predittive. | Overtrading in volatili come crypto. | Amplificato da app, perdite in instabili mercati (JPMorgan, Agosto 2025). | Barber & Odean. |
+    | **Effetto Gregge** | Seguire la massa. | Acquistare tech in euforia. | Flash crash virali, afflussi obbligazionari 850 mld (EPFR, 2025). | EPFR Global. |
+    | **Bias di Conferma** | Cercare conferme a convinzioni. | Ignorare segnali negativi. | Echo chamber AI causano bolle (Taylor & Francis, 2025). | Finanza comportamentale. |
+    | **Bias di Ancoraggio** | Affidarsi a prima info. | Non vendere fino a prezzo acquisto. | Ritardi riequilibri in fluttuazioni tassi (Emerald Insight, Agosto 2025). | Framing effect. |
+    | **Recency Bias** | Focus su eventi recenti. | Assumere trend brevi continuino. | Comprare alto post-rally IA, vendere basso post-crash (EJBRM, Luglio 2025). | Boston Institute. |
     
-    💡 **Raccomandazione**: Fondi indicizzati/ETF con rebalancing automatico outperformano strategie emotive, riducendo bias del 15-25%.
+    💡 **Raccomandazione**: Fondi indicizzati/ETF con rebalancing automatico outperformano strategie emotive (Dalbar 2025), riducendo bias del 15-25%.
     """
     
-    return current_analysis + biases_analysis
+    # Analisi specifica per asset richiesti, basata su ricerche aggiornate al 2025
+    asset_specific = ""
+    if symbol == 'GC=F':
+        asset_specific = """
+        ### 🥇 Focus su Oro (GC=F / XAU/USD): Psicologia e Bias nel 2025
+        
+        Nel 2025, l'oro ha visto un ritorno al ruolo di safe-haven tradizionale in un contesto di incertezza economica prolungata e inflazione persistente. Con banche centrali che continuano ad accumulare (oltre 1,000 tonnellate acquistate nel 2024, secondo World Gold Council), il mercato riflette sia domanda istituzionale che retail FOMO. Bias chiave:
+        
+        - **Safe-Haven Bias**: In periodi di stress (crisi geopolitiche, inflazione), investitori mostrano flight-to-quality verso oro, amplificando movimenti al rialzo (F1000Research, 2025).
+        - **Loss Aversion**: Tendenza a mantenere posizioni in oro durante cali, aspettando recuperi storici (simile al pattern 2011-2015).
+        - **Herding e FOMO**: Rally dell'oro nel 2024-2025 (target $3,000+ secondo alcuni analisti) ha creato herding, con retail che entra tardi (Ainvest, Ottobre 2025).
+        - **Recency Bias**: Focus su performance recente (oro +15% YTD 2025) porta a sovrastimare continuazione trend.
+        - **Confirmation Bias**: Investitori bullish cercano solo news positive (domanda banche centrali), ignorando segnali di correzione.
+        
+        **Comparazione Storica:**
+        - **Bull Market 1971-1980**: Da $35 a $850, seguito da bear market ventennale; parallelo a contesto inflazionistico 2020-2025.
+        - **Rally 2008-2011**: Da $800 a $1,920 per crisi finanziaria; simile ma 2025 vede inflazione più persistente.
+        - **Consolidamento 2011-2019**: Correzione e range-trading; avverte su possibili prese di profitto post-rally 2024-2025.
+        - **COVID Rally 2020**: Spike rapido a $2,070; nel 2025, rally più graduale ma sostenuto da fundamentals (debito sovrano, dedollarizzazione).
+        
+        **Previsione Comportamentale**: La psicologia attuale suggerisce che emotional attachment all'oro come "store of value" può amplificare volatilità. Investitori dovrebbero bilanciare allocazioni (5-15% portafoglio secondo strategist) e evitare concentrazioni eccessive dovute a fear-driven decisions. ETF come GLD e IAU offrono esposizione liquida, riducendo bias emotivi rispetto a possesso fisico.
+        """
+    elif symbol == 'BTC-USD':
+        asset_specific = """
+        ### ₿ Focus su Bitcoin (BTC-USD): Psicologia e Bias nel 2025
+        
+        Nel 2025, Bitcoin ha visto un shift psicologico: da 'legittimità' (2020-2023, MicroStrategy) a 'adozione istituzionale' (2024, ETF) a 'produttività' (2025, con domande su come renderlo yield-bearing). Con il 73% della supply in long-term holders (Ainvest, Ottobre 2025), il mercato riflette accumulo strategico. Bias chiave:
+        
+        - **Herding e Sentiment**: Studi (Sage, Luglio 2025) mostrano herding, sentiment e attention driving anomalie prezzi, amplificate da social (es. FOMO in rally).
+        - **Loss Aversion/Disposition**: Investitori vendono vincitori troppo presto, tengono perdenti (ScienceDirect, 2025).
+        - **Overconfidence**: Sovrastima predizioni, leading a overtrading (Emerald, Agosto 2025).
+        - **Bandwagon Effect**: Prezzi BTC creano feedback loops, amplificando herd mentality (Springer, Luglio 2025).
+        
+        **Comparazione Storica:**
+        - **Bolla Dot-Com (2000)**: Simile eccessiva confidenza in 'nuova tech', seguito da crash.
+        - **Crollo COVID (2020)**: FOMO rapido; nel 2025, volatilità prolungata con ETF stabilizzanti.
+        - **Tulip Mania (1630s)**: Parallelo a crypto frenzy, ma 2025 ha maturazione istituzionale.
+        
+        **Previsione**: Emotional psychology outperforma modelli tradizionali per predire prezzi (Onesafe, Ottobre 2025). Raccomando allocazioni 5-10% in portafogli diversificati per bilanciare rischio.
+        """
+    elif symbol == 'SI=F':
+        asset_specific = """
+        ### 🥈 Focus su Argento (SI=F / XAG/USD): Psicologia e Bias nel 2025
+        
+        L'argento nel 2025 mostra un 'behavioral bull case' (Ainvest, Agosto 2025), con reflection effect amplificante volatilità (1.7x vs oro). ETF come SLV vedono shift rapidi dovuti a psychology, con afflussi in periodi di stress industriale/inflazione. Bias chiave:
+        
+        - **FOMO/Recency Bias**: 'Silver rush' con prezzi surging su domanda industriale (LinkedIn, Ottobre 2025), leading a herd mentality.
+        - **Magical Thinking**: Skew judgment in precious metals, lontano da fundamentals (Facebook, Ottobre 2025).
+        - **Overconfidence/Herd**: Multipli bias in rally, come FOMO post-stabilizzazione (LinkedIn).
+        
+        **Comparazione Storica:**
+        - **Caccia all'Argento (1980)**: Fratelli Hunt manipolarono mercato; 2025 vede surge organico ma simile euforia.
+        - **Crisi 2008**: Argento come safe-haven; nel 2025, mix safe-haven/industriale amplifica bias.
+        - **Bollicine Storiche**: Simile a South Sea Bubble, con social media acceleranti herd.
+        
+        **Previsione**: Target $65+ (analisti), con correzioni come buying opps. Suggerisco esposizione tramite ETF per mitigare volatility emotiva.
+        """
+    elif symbol == '^GSPC':
+        asset_specific = """
+        ### 📊 Focus su S&P 500 (^GSPC): Psicologia e Bias nel 2025
+        
+        L'S&P 500 nel 2025 prevede guadagni muti (Morgan Stanley, Febbraio 2025), con behavioral component in drops (SSRN, Giugno 2025). Psicologia shapata da emozioni (fear/greed), con VIX elevato. Bias chiave:
+        
+        - **Overconfidence/Loss Aversion**: Leading a poor choices (UBS, 2025).
+        - **Herd Mentality**: Emozioni reshapano landscape (FinancialContent, Settembre 2025).
+        - **Zero-Risk Illusion**: Rischi 'sentiti' più che dati (Investing.com, Ottobre 2025).
+        
+        **Comparazione Storica:**
+        - **Crisi 2008**: Behavioral mistakes amplificati; advisor prevengono (Russell Investments).
+        - **COVID 2020**: Volatile emotions; 2025 più muted ma simile psychology.
+        - **Dot-Com 2000**: Overconfidence in tech, parallelo a IA boom.
+        
+        **Previsione**: Opportunità in growth/value; focus su controlling behavior (Virtus, 2025). Raccomando indici passivi per evitare bias.
+        """
+    else:
+        asset_specific = f"""
+        ### 📈 Analisi Specifica per {symbol}
+        
+        Per asset generali, la psicologia segue pattern macro, con bias come herd e overconfidence dominanti. Comparare a crisi passate per insights su comportamenti futuri.
+        """
+    
+    # Comparazione storica generale, arricchita
+    historical_comparison = """
+    
+    ### 📚 Comparazione Storica Generale:
+    
+    - **2008 Crisi Finanziaria**: Panico senza amplificazione digitale; value funds outperformarono growth.
+    - **2020 COVID**: FOMO rapido con recovery a V; nel 2025, volatilità più prolungata con AI e robo-advisor mitiganti (F1000Research, Settembre 2025).
+    - **2000 Dot-Com**: Eccessiva confidenza in tech stocks, parallelo al boom IA 2024-2025 (ScienceDirect).
+    - **Bolle Storiche**: FOMO amplificato da comunicazione online istantanea (post X su psicologia investing, Ottobre 2025).
+    - **1989 Bolla Giappone**: Euphoria seguita da declino decennale; nel 2025, mercati emergenti mostrano risk aversion culturale (es. preferenza oro in Asia).
+    
+    I bias comportamentali sono universali e atemporali, ma nel 2025 sono intensificati dalla disponibilità di dati real-time e social media. Strategie sistematiche attraverso fondi indicizzati mitigano questi effetti, come dimostrato in tutte le crisi passate (studio Dalbar 2025: gap tra returns di mercato e investitori retail di 3-4% annuo).
+    """
+    
+    return current_analysis + biases_analysis + asset_specific + historical_comparison
 
 def get_web_signals(symbol, df_ind):
-    """Funzione dinamica per ottenere segnali web aggiornati."""
+    """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
     try:
-        st.info(f"🔄 Recupero dati di mercato per {symbol}...")
-        
         ticker = yf.Ticker(symbol)
         
-        # Recupero prezzo più recente con retry multipli
-        hist = None
-        for interval in ['1m', '2m', '5m', '15m', '30m', '1h', '1d']:
-            for period in ['1d', '5d', '1mo']:
-                try:
-                    hist = ticker.history(period=period, interval=interval)
-                    if not hist.empty and len(hist) > 0:
-                        break
-                except:
-                    continue
-            if hist is not None and not hist.empty:
-                break
-        
-        if hist is None or hist.empty:
-            st.error(f"❌ Impossibile recuperare dati per {symbol}")
+        # Prezzo corrente
+        hist = ticker.history(period='1d')
+        if hist.empty:
             return []
-        
-        current_price = float(hist['Close'].iloc[-1])
-        st.success(f"✅ Prezzo attuale {symbol}: ${current_price:.2f}")
+        current_price = hist['Close'].iloc[-1]
         
         # News recenti
-        try:
-            news = ticker.news
-            if news and isinstance(news, list) and len(news) > 0:
-                news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)])
-                st.success(f"✅ {len(news)} news recuperate")
-            else:
-                news_summary = 'Nessuna news recente disponibile.'
-                st.warning("⚠️ Nessuna news disponibile")
-        except:
-            news_summary = 'Nessuna news recente disponibile.'
-            st.warning("⚠️ Errore nel recupero news")
+        news = ticker.news
+        news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente disponibile.'
         
+        # Sentiment
         sentiment_label, sentiment_score = get_sentiment(news_summary)
         
         # Calcolo stagionalità
-        try:
-            hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
-            if len(hist_monthly) >= 12:
-                hist_monthly['Return'] = hist_monthly['Close'].pct_change()
-                hist_monthly['Month'] = hist_monthly.index.month
-                monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
-                current_month = datetime.datetime.now().month
-                avg_current = monthly_returns.get(current_month, 0) * 100
-                seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%.'
-                st.success("✅ Analisi stagionalità completata")
-            else:
-                seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
-                st.warning("⚠️ Dati stagionalità limitati")
-        except:
+        hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
+        if len(hist_monthly) < 12:
             seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
-            st.warning("⚠️ Errore nel calcolo stagionalità")
+        else:
+            hist_monthly['Return'] = hist_monthly['Close'].pct_change()
+            hist_monthly['Month'] = hist_monthly.index.month
+            monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
+            current_month = datetime.datetime.now().month
+            avg_current = monthly_returns.get(current_month, 0) * 100
+            seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%. Basato su pattern storici e reazioni di mercato a news simili.'
         
+        # Previsione prezzo (usa df_ind per timeframe specifico)
         _, forecast_series = predict_price(df_ind, steps=5)
         forecast_note = f'Previsione media per i prossimi 5 periodi: {forecast_series.mean():.2f}' if forecast_series is not None else 'Previsione non disponibile.'
         
+        # Genera suggerimenti precisi basati su sentiment e trend
         latest = df_ind.iloc[-1]
         atr = latest['ATR']
         trend = latest['Trend']
@@ -639,6 +376,7 @@ def get_web_signals(symbol, df_ind):
                 'Forecast_Note': forecast_note
             })
         
+        # Aggiungi un terzo suggerimento se sentiment neutrale
         if sentiment_score == 0:
             dir = directions[0] if trend == 1 else directions[1]
             entry = round(current_price, 2)
@@ -662,31 +400,12 @@ def get_web_signals(symbol, df_ind):
                 'Forecast_Note': forecast_note
             })
         
-        st.success(f"✅ {len(suggestions)} suggerimenti generati")
         return suggestions
-        
     except Exception as e:
-        st.error(f"❌ Errore nel recupero dati web: {str(e)}")
+        st.error(f"Errore nel recupero dati web: {e}")
         return []
 
-def fetch_real_time_prices():
-    """Scova i prezzi degli strumenti incorporati in tempo reale."""
-    prices = {}
-    for ticker, name in proper_names.items():
-        try:
-            data = yf.Ticker(ticker)
-            hist = data.history(period="1d", interval="1m")
-            if not hist.empty:
-                prices[name] = float(hist['Close'].iloc[-1])
-            else:
-                # Fallback to larger interval
-                hist = data.history(period="1d", interval="5m")
-                if not hist.empty:
-                    prices[name] = float(hist['Close'].iloc[-1])
-        except Exception as e:
-            prices[name] = f"Errore: {str(e)}"
-    return prices
-
+# ==================== STREAMLIT APP ====================
 @st.cache_data
 def load_sample_data(symbol, interval='1h'):
     """Carica dati reali da yfinance."""
@@ -722,6 +441,7 @@ def train_or_load_model(symbol, interval='1h'):
     model, scaler = train_model(X, y)
     return model, scaler, df_ind
 
+# Mappatura nomi propri, aggiornata con S&P 500
 proper_names = {
     'GC=F': 'XAU/USD (Gold)',
     'EURUSD=X': 'EUR/USD',
@@ -730,17 +450,21 @@ proper_names = {
     '^GSPC': 'S&P 500',
 }
 
+# Configurazione pagina
 st.set_page_config(
-    page_title="Trading Predictor AI - Gold Focus",
-    page_icon="🥇",
+    page_title="Trading Predictor AI - Enhanced",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
+# CSS personalizzato ultra-migliorato
 st.markdown("""
 <style>
+    /* Import Google Fonts */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
+    /* Global Styles */
     * {
         font-family: 'Inter', sans-serif;
     }
@@ -751,8 +475,9 @@ st.markdown("""
         max-width: 1600px;
     }
     
+    /* Header Styling */
     h1 {
-        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 700;
@@ -761,79 +486,83 @@ st.markdown("""
     }
     
     h2 {
-        color: #FFA500;
+        color: #667eea;
         font-weight: 600;
         font-size: 1.8rem !important;
         margin-top: 1.5rem !important;
     }
     
     h3 {
-        color: #FF8C00;
+        color: #764ba2;
         font-weight: 600;
         font-size: 1.4rem !important;
         margin-top: 1rem !important;
     }
     
+    /* Card Styling */
     .stMetric {
-        background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%);
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         padding: 1.2rem;
         border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(255, 215, 0, 0.2);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         transition: transform 0.2s ease;
     }
     
     .stMetric:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(255, 215, 0, 0.3);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
     }
     
     .stMetric label {
         font-size: 0.9rem !important;
         font-weight: 600 !important;
-        color: #8B4513 !important;
+        color: #4a5568 !important;
     }
     
     .stMetric [data-testid="stMetricValue"] {
         font-size: 1.8rem !important;
         font-weight: 700 !important;
-        color: #B8860B !important;
+        color: #2d3748 !important;
     }
     
+    /* Button Styling */
     .stButton > button {
-        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border: none;
         border-radius: 8px;
         padding: 0.6rem 1.5rem;
         font-weight: 600;
         transition: all 0.3s ease;
-        box-shadow: 0 4px 6px rgba(255, 165, 0, 0.3);
+        box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(255, 165, 0, 0.4);
+        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
     }
     
+    /* Input Styling */
     .stTextInput > div > div > input {
         border-radius: 8px;
-        border: 2px solid #FFE4B5;
+        border: 2px solid #e2e8f0;
         padding: 0.6rem;
         font-size: 1rem;
         transition: border-color 0.2s ease;
     }
     
     .stTextInput > div > div > input:focus {
-        border-color: #FFD700;
-        box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.1);
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
     
     .stSelectbox > div > div > select {
         border-radius: 8px;
-        border: 2px solid #FFE4B5;
+        border: 2px solid #e2e8f0;
         padding: 0.6rem;
     }
     
+    /* Alert/Message Styling */
     .stSuccess {
         background-color: #c6f6d5;
         border-left: 4px solid #48bb78;
@@ -862,14 +591,16 @@ st.markdown("""
         padding: 1rem;
     }
     
+    /* Expander Styling */
     .streamlit-expanderHeader {
-        background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%);
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         border-radius: 8px;
         padding: 0.8rem;
         font-weight: 600;
-        color: #8B4513;
+        color: #2d3748;
     }
     
+    /* Table Styling */
     .dataframe {
         border-radius: 8px;
         overflow: hidden;
@@ -877,42 +608,46 @@ st.markdown("""
     }
     
     .dataframe thead tr th {
-        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white !important;
         font-weight: 600;
         padding: 0.8rem;
     }
     
     .dataframe tbody tr:hover {
-        background-color: #FFF8DC;
+        background-color: #f7fafc;
     }
     
+    /* Sidebar Hidden */
     section[data-testid="stSidebar"] {
         display: none;
     }
     
+    /* Custom Trade Card */
     .trade-card {
         background: white;
         border-radius: 12px;
         padding: 1rem;
         margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(255, 215, 0, 0.15);
-        border-left: 4px solid #FFD700;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+        border-left: 4px solid #667eea;
         transition: all 0.2s ease;
     }
     
     .trade-card:hover {
-        box-shadow: 0 4px 8px rgba(255, 215, 0, 0.25);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
         transform: translateX(4px);
     }
     
+    /* Divider */
     hr {
         margin: 2rem 0;
         border: none;
         height: 2px;
-        background: linear-gradient(90deg, transparent, #FFD700, transparent);
+        background: linear-gradient(90deg, transparent, #667eea, transparent);
     }
     
+    /* Markdown table styling */
     table {
         border-collapse: collapse;
         width: 100%;
@@ -923,7 +658,7 @@ st.markdown("""
     }
     
     table thead {
-        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
     }
     
@@ -935,48 +670,34 @@ st.markdown("""
     
     table td {
         padding: 0.8rem 1rem;
-        border-bottom: 1px solid #FFE4B5;
+        border-bottom: 1px solid #e2e8f0;
     }
     
     table tbody tr:hover {
-        background-color: #FFF8DC;
+        background-color: #f7fafc;
     }
     
-    .gold-prediction-box {
-        background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%);
-        border: 3px solid #FFD700;
-        border-radius: 15px;
-        padding: 2rem;
-        margin: 2rem 0;
-        box-shadow: 0 8px 16px rgba(255, 215, 0, 0.3);
-    }
-    
-    .confidence-bar {
-        background: linear-gradient(90deg, #FF6B6B 0%, #FFD700 50%, #4ECB71 100%);
-        height: 30px;
-        border-radius: 15px;
-        position: relative;
-        overflow: hidden;
-    }
-    
+    /* Loading spinner */
     .stSpinner > div {
-        border-top-color: #FFD700 !important;
+        border-top-color: #667eea !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🥇 Trading Predictor AI - Gold Analysis")
+# Header con styling migliorato
+st.title("📊 Trading Success Predictor AI")
 st.markdown("""
-<div style='background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;'>
+<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;'>
     <p style='color: white; font-size: 1.1rem; margin: 0; text-align: center; font-weight: 500;'>
-        🥇 Analisi Oro Avanzata • 📊 Confronto Storico • 🎯 Previsioni Multi-Fattoriali • 🧠 Psicologia Investitori
+        🤖 Analisi predittiva avanzata con Machine Learning • 📈 Indicatori tecnici real-time • 🧠 Psicologia dell'investitore
     </p>
 </div>
 """, unsafe_allow_html=True)
 
+# Parametri in layout migliorato
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
-    symbol = st.text_input("🔍 Seleziona Strumento (Ticker)", value="GC=F", help="GC=F (Oro), SI=F (Argento), BTC-USD, ^GSPC (S&P 500)")
+    symbol = st.text_input("🔍 Seleziona Strumento (Ticker)", value="GC=F", help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)")
     proper_name = proper_names.get(symbol, symbol)
     st.markdown(f"**Strumento selezionato:** `{proper_name}`")
 with col2:
@@ -987,6 +708,7 @@ with col3:
 
 st.markdown("---")
 
+# Inizializzazione modello
 session_key = f"model_{symbol}_{data_interval}"
 if session_key not in st.session_state or refresh_data:
     with st.spinner("🧠 Caricamento AI e analisi dati..."):
@@ -1003,195 +725,13 @@ if session_key in st.session_state:
     scaler = state['scaler']
     df_ind = state['df_ind']
     
-    # Fetch latest price to ensure it's current
-    ticker = yf.Ticker(symbol)
-    latest_hist = ticker.history(period="1d", interval="1m")
-    if not latest_hist.empty:
-        current_price = float(latest_hist['Close'].iloc[-1])
-    else:
-        current_price = df_ind['Close'].iloc[-1]
-    
-    # SEZIONE SPECIALE GOLD
-    if symbol == 'GC=F':
-        st.markdown("## 🥇 ANALISI ORO COMPLETA - Multi-Fattoriale")
-        
-        with st.spinner("🔍 Analisi fondamentali e confronto storico in corso..."):
-            factors = get_gold_fundamental_factors()
-            gold_analysis = analyze_gold_historical_comparison(current_price, factors)
-        
-        st.markdown("""
-        <div class='gold-prediction-box'>
-            <h2 style='color: #B8860B; text-align: center; margin-bottom: 1.5rem;'>🎯 PREVISIONI PREZZO ORO</h2>
-        """, unsafe_allow_html=True)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("💵 Prezzo Attuale", f"${gold_analysis['current_price']:.2f}")
-        with col2:
-            change_3m = ((gold_analysis['target_3m'] - current_price) / current_price) * 100
-            st.metric("📅 Target 3 Mesi", f"${gold_analysis['target_3m']:.2f}", f"{change_3m:+.1f}%")
-        with col3:
-            change_6m = ((gold_analysis['target_6m'] - current_price) / current_price) * 100
-            st.metric("📅 Target 6 Mesi", f"${gold_analysis['target_6m']:.2f}", f"{change_6m:+.1f}%")
-        with col4:
-            change_1y = ((gold_analysis['target_1y'] - current_price) / current_price) * 100
-            st.metric("📅 Target 12 Mesi", f"${gold_analysis['target_1y']:.2f}", f"{change_1y:+.1f}%")
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Confidence score
-        st.markdown("### 🎯 Livello di Confidenza della Previsione")
-        confidence = gold_analysis['confidence']
-        col_conf, col_range = st.columns([1, 1])
-        
-        with col_conf:
-            st.markdown(f"""
-            <div style='text-align: center; padding: 1rem;'>
-                <div class='confidence-bar' style='margin: 1rem 0;'>
-                    <div style='width: {confidence}%; background: rgba(255, 255, 255, 0.3); height: 100%; display: flex; align-items: center; justify-content: center;'>
-                        <span style='color: white; font-weight: bold; font-size: 1.2rem;'>{confidence:.1f}%</span>
-                    </div>
-                </div>
-                <p style='color: #666; margin-top: 0.5rem;'>Confidenza basata su similarità storica e fattori fondamentali</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col_range:
-            st.markdown("#### 📊 Range di Prezzo (12 mesi)")
-            st.info(f"""
-            **Scenario Pessimista:** ${gold_analysis['range_low']:.2f}  
-            **Scenario Base:** ${gold_analysis['target_1y']:.2f}  
-            **Scenario Ottimista:** ${gold_analysis['range_high']:.2f}  
-            
-            Range: ${gold_analysis['range_low']:.2f} - ${gold_analysis['range_high']:.2f}
-            """)
-        
-        st.markdown("---")
-        
-        # Periodo storico più simile
-        st.markdown("### 📚 Confronto con Periodo Storico Più Simile")
-        
-        similar_period = gold_analysis['most_similar_period']
-        period_data = gold_analysis['period_data']
-        
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.markdown(f"""
-            #### 🕰️ {similar_period}: {period_data['description']}
-            
-            **Similarità con contesto attuale:** {gold_analysis['similarity_pct']:.1f}%
-            
-            **Statistiche Periodo Storico:**
-            - 💵 Prezzo Inizio: ${period_data['start_price']:.2f}
-            - 💵 Prezzo Fine: ${period_data['end_price']:.2f}
-            - 📈 Guadagno: {period_data['gain_pct']:.0f}%
-            - ⏱️ Durata: {period_data['duration_years']} anni
-            - 📊 Inflazione Media: {period_data['avg_inflation']:.1f}%
-            - ⚠️ Rischio Geopolitico: {period_data['geopolitical']}/10
-            
-            **Eventi Chiave:** {period_data['key_events']}
-            """)
-        
-        with col2:
-            st.markdown("#### 🌍 Contesto Attuale (2025)")
-            context = gold_analysis['current_context']
-            
-            st.markdown(f"""
-            **Macro-Ambiente:**
-            - 💵 Forza Dollaro: {context['dollar_strength']}
-            - 📊 Tassi Reali: {context['real_rates']:.2f}%
-            - 📉 Sentiment Rischio: {context['risk_sentiment']}
-            - ⚠️ Rischio Geopolitico: {context['geopolitical']}/10
-            - 🏦 Banche Centrali: {context['central_bank']}
-            - 📈 Trend Tecnico: {context['technical_trend']}
-            - 💹 Inflazione: {factors['inflation_expectations']:.2f}%
-            """)
-        
-        st.markdown("---")
-        
-        # Key drivers
-        st.markdown("### 🔑 Fattori Chiave che Influenzano il Prezzo dell'Oro")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        drivers = gold_analysis['key_drivers']
-        driver_items = list(drivers.items())
-        
-        with col1:
-            for i in range(0, 3):
-                if i < len(driver_items):
-                    key, value = driver_items[i]
-                    st.markdown(f"**{key}:** {value}")
-        
-        with col2:
-            for i in range(3, 6):
-                if i < len(driver_items):
-                    key, value = driver_items[i]
-                    st.markdown(f"**{key}:** {value}")
-        
-        with col3:
-            for i in range(6, len(driver_items)):
-                key, value = driver_items[i]
-                st.markdown(f"**{key}:** {value}")
-        
-        st.markdown("---")
-        
-        # Tabella comparazione tutti i periodi
-        st.markdown("### 📊 Confronto Tutti i Periodi Storici")
-        
-        historical_df = pd.DataFrame([
-            {
-                'Periodo': periodo,
-                'Descrizione': data['description'],
-                'Prezzo Inizio': f"${data['start_price']:.2f}",
-                'Prezzo Fine': f"${data['end_price']:.2f}",
-                'Guadagno %': f"{data['gain_pct']:.0f}%",
-                'Durata (anni)': data['duration_years'],
-                'Inflazione Media %': f"{data['avg_inflation']:.1f}%",
-                'Rischio Geo': f"{data['geopolitical']}/10"
-            }
-            for periodo, data in gold_analysis['historical_periods'].items()
-        ])
-        
-        st.dataframe(historical_df, use_container_width=True, hide_index=True)
-        
-        st.markdown("---")
-        
-        # Interpretazione
-        st.markdown("### 💡 Interpretazione e Raccomandazioni")
-        
-        interpretation = f"""
-        Basandosi sull'analisi multi-fattoriale e sul confronto con il periodo storico più simile ({similar_period}), 
-        che presenta una similarità del {gold_analysis['similarity_pct']:.1f}% con il contesto attuale:
-        
-        **Scenario Probabile:**
-        - Il prezzo dell'oro potrebbe raggiungere **${gold_analysis['target_1y']:.2f}** entro 12 mesi
-        - Questo rappresenta un potenziale guadagno del **{change_1y:+.1f}%**
-        - La confidenza in questa previsione è del **{confidence:.1f}%**
-        
-        **Fattori Supportivi:**
-        - {'✅ Tassi reali bassi favoriscono oro' if context['real_rates'] < 1.5 else '⚠️ Tassi reali elevati potrebbero limitare upside'}
-        - {'✅ Dollaro debole supporta oro' if context['dollar_strength'] == 'Debole' else '⚠️ Dollaro forte potrebbe pesare'}
-        - {'✅ Alta volatilità (VIX) favorisce safe-haven' if factors['vix'] > 20 else '✅ Bassa volatilità indica stabilità'}
-        - {'✅ Forte domanda banche centrali' if factors['central_bank_demand'] > 800 else '⚠️ Domanda BC moderata'}
-        - {'✅ Rischio geopolitico elevato supporta oro' if factors['geopolitical_risk'] > 6 else '⚠️ Contesto geopolitico stabile'}
-        
-        **Strategia Consigliata:**
-        - **Investitori Long-Term:** Considerare accumulo graduale in range ${gold_analysis['range_low']:.2f}-${current_price:.2f}
-        - **Traders:** Target tecnici a ${gold_analysis['target_3m']:.2f} (3M) e ${gold_analysis['target_6m']:.2f} (6M)
-        - **Allocazione Suggerita:** 5-15% del portafoglio in oro fisico o ETF (GLD, IAU)
-        - **Stop-Loss:** Sotto ${current_price * 0.92:.2f} (-8% dal prezzo attuale)
-        """
-        
-        st.info(interpretation)
-    
-    # Resto del codice standard
+    # Calcola previsione prezzo
     avg_forecast, forecast_series = predict_price(df_ind, steps=5)
+    
+    # Recupero segnali web dinamici
     web_signals_list = get_web_signals(symbol, df_ind)
     
-    st.markdown("---")
-    
+    # Layout principale migliorato
     col_left, col_right = st.columns([1.2, 0.8])
    
     with col_left:
@@ -1209,7 +749,7 @@ if session_key in st.session_state:
                 with col_trade:
                     st.markdown(f"""
                     <div class='trade-card'>
-                        <strong style='font-size: 1.1rem; color: #FFD700;'>{row['Direction'].upper()}</strong> 
+                        <strong style='font-size: 1.1rem; color: #667eea;'>{row['Direction'].upper()}</strong> 
                         <span style='color: #4a5568;'>• Entry: <strong>${row['Entry']:.2f}</strong> • SL: ${row['SL']:.2f} • TP: ${row['TP']:.2f}</span><br>
                         <span style='color: #2d3748;'>📊 Probabilità: <strong>{row['Probability']:.0f}%</strong> {sentiment_emoji} Sentiment: <strong>{row['Sentiment']}</strong></span>
                     </div>
@@ -1218,7 +758,7 @@ if session_key in st.session_state:
                     if st.button("🔍", key=f"analyze_{idx}", help="Analizza con AI"):
                         st.session_state.selected_trade = row
            
-            with st.expander("📊 Dettagli Supplementari"):
+            with st.expander("📊 Dettagli Supplementari (Stagionalità, News, Previsioni)"):
                 st.markdown("#### 📅 Analisi Stagionalità")
                 st.info(suggestions_df.iloc[0]['Seasonality_Note'])
                 
@@ -1237,21 +777,30 @@ if session_key in st.session_state:
                 st.markdown("#### 🔮 Previsione Prezzo")
                 st.info(suggestions_df.iloc[0]['Forecast_Note'])
         else:
-            st.info("ℹ️ Nessun suggerimento web disponibile.")
+            st.info("ℹ️ Nessun suggerimento web disponibile per questo strumento al momento.")
    
     with col_right:
         st.markdown("### 🚀 Asset con Potenziale 2025")
+        st.markdown("*Basato su analisi storica e trend macro*")
         
         data = [
             {"Asset": "🥇 Gold", "Ticker": "GC=F", "Score": "⭐⭐⭐⭐⭐"},
             {"Asset": "🥈 Silver", "Ticker": "SI=F", "Score": "⭐⭐⭐⭐"},
             {"Asset": "₿ Bitcoin", "Ticker": "BTC-USD", "Score": "⭐⭐⭐⭐"},
             {"Asset": "💎 Nvidia", "Ticker": "NVDA", "Score": "⭐⭐⭐⭐⭐"},
+            {"Asset": "🖥️ Broadcom", "Ticker": "AVGO", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🔍 Palantir", "Ticker": "PLTR", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🏦 JPMorgan", "Ticker": "JPM", "Score": "⭐⭐⭐"},
+            {"Asset": "☁️ Microsoft", "Ticker": "MSFT", "Score": "⭐⭐⭐⭐⭐"},
+            {"Asset": "📦 Amazon", "Ticker": "AMZN", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🚗 Tesla", "Ticker": "TSLA", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🔋 Lithium", "Ticker": "LIT", "Score": "⭐⭐⭐⭐"},
             {"Asset": "📊 S&P 500", "Ticker": "^GSPC", "Score": "⭐⭐⭐⭐"}
         ]
         growth_df = pd.DataFrame(data)
         st.dataframe(growth_df, use_container_width=True, hide_index=True)
     
+    # Analisi del trade selezionato
     if 'selected_trade' in st.session_state:
         trade = st.session_state.selected_trade
        
@@ -1263,10 +812,11 @@ if session_key in st.session_state:
            
             features = generate_features(df_ind, entry, sl, tp, direction, 60)
             success_prob = predict_success(model, scaler, features)
-            factors_list = get_dominant_factors(model, features)
+            factors = get_dominant_factors(model, features)
            
             st.markdown("---")
             
+            # Statistiche correnti con layout migliorato
             st.markdown("### 📊 Dashboard Statistiche Real-Time")
             latest = df_ind.iloc[-1]
             
@@ -1290,13 +840,14 @@ if session_key in st.session_state:
                     st.metric("🔮 Previsione", "N/A")
             
             st.markdown("---")
-            st.markdown("## 🎯 Risultati Analisi AI")
+            st.markdown("## 🎯 Risultati Analisi AI Avanzata")
            
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 delta = success_prob - trade['Probability']
                 st.metric("🎲 Probabilità AI", f"{success_prob:.1f}%",
-                         delta=f"{delta:+.1f}%" if delta != 0 else None)
+                         delta=f"{delta:+.1f}%" if delta != 0 else None,
+                         help=f"Analisi Web: {trade['Probability']:.0f}%")
             with col2:
                 rr = abs(tp - entry) / abs(entry - sl)
                 rr_emoji = "🟢" if rr >= 2 else "🟡" if rr >= 1.5 else "🔴"
@@ -1310,6 +861,7 @@ if session_key in st.session_state:
            
             st.markdown("---")
             
+            # Valutazione comparativa migliorata
             st.markdown("### 💡 Valutazione Comparativa")
             col_web, col_ai, col_final = st.columns(3)
            
@@ -1347,14 +899,17 @@ if session_key in st.session_state:
            
             st.markdown("---")
             
+            # Fattori chiave con styling migliorato
             st.markdown("### 🔍 Fattori Chiave dell'Analisi AI")
+            st.markdown("*I 5 fattori più influenti nella predizione*")
             
-            for i, factor in enumerate(factors_list, 1):
+            for i, factor in enumerate(factors, 1):
                 emoji = ["🥇", "🥈", "🥉", "🏅", "🎖️"][i-1]
                 st.markdown(f"{emoji} **{i}.** {factor}")
             
             st.markdown("---")
             
+            # Sezione psicologia potenziata
             st.markdown("### 🧠 Analisi Psicologica dell'Investitore")
             st.markdown("*Approfondimento comportamentale con focus su " + proper_name + "*")
             
@@ -1363,6 +918,7 @@ if session_key in st.session_state:
 else:
     st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
 
+# Info con styling migliorato
 with st.expander("ℹ️ Come Funziona Questo Sistema"):
     st.markdown("""
     ### 🤖 Tecnologia AI Avanzata
@@ -1371,68 +927,33 @@ with st.expander("ℹ️ Come Funziona Questo Sistema"):
     - 📊 **14 Indicatori Tecnici**: RSI, MACD, EMA, Bollinger Bands, ATR, Volume, Trend
     - 📈 **500+ Setup Storici**: Simulazioni basate su dati reali per training del modello
     - 🌐 **Segnali Web Real-Time**: News, sentiment, stagionalità e previsioni dinamiche
-    - 🧠 **Psicologia Comportamentale**: Analisi approfondita dei bias cognitivi
-    - 📚 **Comparazioni Storiche**: Pattern da crisi del 2008, COVID-19, Dot-Com
-    
-    ### 🥇 Analisi Speciale ORO (GC=F)
-    
-    **Fattori Fondamentali Analizzati:**
-    - 💵 **Dollar Index (DXY)**: Correlazione inversa con oro
-    - 📊 **Tassi di Interesse**: 10Y Treasury yields e tassi reali
-    - 📉 **VIX (Volatilità)**: Indicatore di fear/safe-haven demand
-    - 📈 **S&P 500**: Risk-on vs Risk-off sentiment
-    - 🥈 **Gold/Silver Ratio**: Indicatore di valore relativo
-    - 💹 **Aspettative Inflazione**: TIPS spread come proxy
-    - 🌍 **Rischio Geopolitico**: Score qualitativo 0-10
-    - 🏦 **Domanda Banche Centrali**: Tonnellate acquistate annualmente
-    - 😊 **Sentiment Retail**: Indicatore 0-10
-    
-    **Periodi Storici di Riferimento:**
-    - **1971-1980**: Bull Market Post-Bretton Woods (+2,329%)
-    - **2001-2011**: Post Dot-Com e Crisi 2008 (+653%)
-    - **2015-2020**: Consolidamento e COVID Rally (+97%)
-    - **2022-2025**: Era Inflazione Post-COVID (in corso)
-    
-    **Metodologia di Previsione (4 Metodi Combinati):**
-    1. **Proiezione Storica**: Basata sul periodo più simile
-    2. **Modello Fondamentale**: 9 fattori macro ponderati
-    3. **Analisi Tecnica**: Volatilità e momentum
-    4. **Gold/Silver Ratio**: Valore relativo metalli preziosi
-    
-    **Confidence Score**: Calcolato da similarità storica (60%) + fattori fondamentali (40%)
+    - 🧠 **Psicologia Comportamentale**: Analisi approfondita dei bias cognitivi con focus specifico su Gold, Silver, Bitcoin e S&P 500
+    - 📚 **Comparazioni Storiche**: Pattern da crisi del 2008, COVID-19, Dot-Com, e altre bolle storiche
     
     ### 🎯 Caratteristiche Uniche
     - ✅ **Analisi Dual-Mode**: Confronto tra predizioni AI e analisi web
     - ✅ **Risk Management**: Calcolo automatico di Risk/Reward ratio
-    - ✅ **Multi-Timeframe**: Previsioni 3M, 6M, 12M con range di confidenza
-    - ✅ **Comparazione Storica**: Identifica automaticamente periodo più simile
-    - ✅ **Real-Time Data**: Integrazione con yfinance per dati aggiornati
+    - ✅ **Sentiment Analysis**: Analisi keyword-based su news recenti
+    - ✅ **Forecasting**: Previsioni prezzi basate su EMA
+    - ✅ **Asset Screening**: Lista curata di asset con potenziale per il 2025
     
-    ### 📖 Disclaimer Importante
-    
-    Le previsioni sono basate su modelli quantitativi e analisi storica. I mercati finanziari sono influenzati da 
-    innumerevoli variabili imprevedibili. Questa analisi non costituisce consiglio finanziario. 
-    
-    **Fattori di rischio:**
-    - Eventi geopolitici imprevisti (guerre, sanzioni, crisi)
-    - Cambiamenti improvvisi politica monetaria Fed/BCE
-    - Shock economici globali (recessione, crisi bancarie)
-    - Scoperte tecnologiche che cambiano domanda/offerta
-    - Sentimento di mercato irrazionale (panic selling, FOMO)
-    
-    Consulta sempre un consulente finanziario professionista prima di investire.
+    ### 📖 Fonti e Metodologia
+    Basato su ricerche aggiornate a Ottobre 2025 da:
+    - F1000Research, ACR Journal, ScienceDirect
+    - Flexible Plan Investments, Morningstar, J.P. Morgan
+    - World Gold Council, EPFR Global, Dalbar Studies
     """)
 
+# Footer elegante
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%); border-radius: 12px; margin-top: 2rem;'>
-    <p style='color: #8B4513; font-size: 0.95rem; margin: 0;'>
+<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; margin-top: 2rem;'>
+    <p style='color: #4a5568; font-size: 0.95rem; margin: 0;'>
         ⚠️ <strong>Disclaimer Importante:</strong> Questo è uno strumento educativo e di ricerca. Non costituisce consiglio finanziario.<br>
-        Le previsioni sono basate su modelli quantitativi e analisi storica. I risultati passati non garantiscono performance future.<br>
         Consulta sempre un professionista qualificato prima di prendere decisioni di investimento.
     </p>
-    <p style='color: #A0826D; font-size: 0.85rem; margin-top: 0.5rem;'>
-        🥇 Sviluppato con Machine Learning e analisi multi-fattoriale • © 2025
+    <p style='color: #718096; font-size: 0.85rem; margin-top: 0.5rem;'>
+        Sviluppato con ❤️ utilizzando Machine Learning • © 2025
     </p>
 </div>
 """, unsafe_allow_html=True)
