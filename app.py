@@ -1,16 +1,83 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import VotingClassifier, GradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import VotingClassifier, GradientBoostingClassifier, RandomForestClassifier, AdaBoostClassifier
 from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 import yfinance as yf
 import datetime
 import warnings
 import requests
-warnings.filterwarnings('ignore')
 
-ASSETS = {'GC=F': '🥇 Gold', 'SI=F': '🥈 Silver', 'BTC-USD': '₿ Bitcoin', '^GSPC': '📊 S&P 500'}
+# --- CONFIGURAZIONE ---
+warnings.filterwarnings('ignore')
+st.set_page_config(page_title="ALADDIN ULTIMATE", page_icon="🎯", layout="wide")
+
+ASSETS = {
+    'GC=F': '🥇 Gold', 
+    'SI=F': '🥈 Silver', 
+    'BTC-USD': '₿ Bitcoin', 
+    '^GSPC': '📊 S&P 500'
+}
+
+# --- DATA FETCHING & INDICATORS ---
+
+def get_vix_data():
+    """VIX Fear Index - Inversamente correlato con S&P500"""
+    try:
+        vix = yf.Ticker("^VIX")
+        hist = vix.history(period='5d')
+        if not hist.empty:
+            current_vix = hist['Close'].iloc[-1]
+            vix_ma = hist['Close'].mean()
+            return {
+                'vix': current_vix,
+                'vix_ma': vix_ma,
+                'vix_regime': 'EXTREME_FEAR' if current_vix > 30 else 'FEAR' if current_vix > 20 else 'NEUTRAL' if current_vix > 12 else 'COMPLACENCY',
+                'vix_trend': 'RISING' if current_vix > vix_ma else 'FALLING'
+            }
+        return {'vix': 15, 'vix_ma': 15, 'vix_regime': 'NEUTRAL', 'vix_trend': 'NEUTRAL'}
+    except:
+        return {'vix': 15, 'vix_ma': 15, 'vix_regime': 'NEUTRAL', 'vix_trend': 'NEUTRAL'}
+
+def get_put_call_ratio():
+    """
+    Proxy per Put/Call Ratio. 
+    Nota: I dati real-time PC ratio sono difficili da ottenere free. 
+    Usiamo un proxy basato sulla volatilità implicita relativa se disponibile o placeholder.
+    """
+    return {'pc_ratio': 0.9, 'pc_boost': 0} # Placeholder funzionale
+
+def get_fear_greed_index():
+    """CNN Fear & Greed Index proxy (basato su VIX, momentum, breadth)"""
+    try:
+        vix_data = get_vix_data()
+        sp500 = yf.Ticker("^GSPC")
+        hist = sp500.history(period='125d')
+        
+        if len(hist) >= 125:
+            current_price = hist['Close'].iloc[-1]
+            ma_125 = hist['Close'].rolling(125).mean().iloc[-1]
+            momentum_score = ((current_price - ma_125) / ma_125) * 100
+            
+            nyse_adv_dec = 1.2 if momentum_score > 5 else 0.8 if momentum_score < -5 else 1.0
+            vix_score = (30 - vix_data['vix']) / 30 * 100
+            momentum_score_norm = max(0, min(100, 50 + momentum_score * 2))
+            breadth_score = nyse_adv_dec * 50
+            
+            fg_index = (vix_score * 0.4 + momentum_score_norm * 0.3 + breadth_score * 0.3)
+            fg_index = max(0, min(100, fg_index))
+            
+            if fg_index >= 75: fg_label = 'EXTREME_GREED'
+            elif fg_index >= 55: fg_label = 'GREED'
+            elif fg_index >= 45: fg_label = 'NEUTRAL'
+            elif fg_index >= 25: fg_label = 'FEAR'
+            else: fg_label = 'EXTREME_FEAR'
+            
+            return {'fg_index': fg_index, 'fg_label': fg_label}
+        return {'fg_index': 50, 'fg_label': 'NEUTRAL'}
+    except:
+        return {'fg_index': 50, 'fg_label': 'NEUTRAL'}
 
 def get_realtime_crypto(symbol):
     try:
@@ -24,54 +91,82 @@ def get_realtime_crypto(symbol):
     except:
         return None
 
-def calc_indicators_scalping(df, timeframe='5m'):
-    """Indicatori ottimizzati per scalping 5m/15m"""
+def calc_order_flow_proxy(df):
+    """Order Flow Imbalance proxy (buy vs sell pressure)"""
+    df = df.copy()
+    df['Price_Delta'] = df['Close'] - df['Open']
+    df['Price_Range'] = df['High'] - df['Low']
+    
+    # Evitiamo divisione per zero
+    denom = df['Price_Range'].replace(0, 0.00001)
+    
+    df['Buy_Pressure'] = ((df['Close'] - df['Low']) / denom) * df['Volume']
+    df['Sell_Pressure'] = ((df['High'] - df['Close']) / denom) * df['Volume']
+    
+    denom_ofi = (df['Buy_Pressure'] + df['Sell_Pressure']).replace(0, 0.00001)
+    df['OFI'] = (df['Buy_Pressure'] - df['Sell_Pressure']) / denom_ofi
+    
+    df['OFI_MA'] = df['OFI'].rolling(window=20).mean()
+    df['OFI_Momentum'] = df['OFI'] - df['OFI_MA']
+    df['Cumulative_OFI'] = df['OFI'].rolling(window=50).sum()
+    
+    df['Buy_Volume'] = df['Buy_Pressure'].rolling(window=20).sum()
+    df['Sell_Volume'] = df['Sell_Pressure'].rolling(window=20).sum()
+    
+    denom_vol_imb = (df['Buy_Volume'] + df['Sell_Volume']).replace(0, 0.00001)
+    df['Volume_Imbalance'] = (df['Buy_Volume'] - df['Sell_Volume']) / denom_vol_imb
+    
+    # MFI Simulation
+    df['MFI'] = df['RSI'] # Proxy semplice se MFI non calcolato esplicitamente
+    # OBV Signal
+    df['OBV_Signal'] = np.where(df['Close'] > df['Close'].shift(1), 1, 0)
+
+    return df
+
+def calc_advanced_indicators(df, tf='5m'):
+    """Indicatori avanzati con Order Flow"""
     df = df.copy()
     
-    # EMA fast per scalping
-    if timeframe in ['5m', '15m']:
+    # Medie Mobili
+    if tf in ['5m', '15m']:
         df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
         df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
         df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    else:  # 1h
+    else:
         df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
         df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
         df['EMA_100'] = df['Close'].ewm(span=100, adjust=False).mean()
     
-    # RSI veloce per scalping
-    period = 9 if timeframe in ['5m', '15m'] else 14
+    # RSI
+    period = 9 if tf in ['5m', '15m'] else 14
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     rs = gain / (loss + 0.00001)
     df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI_9'] = df['RSI'] # Alias
+    df['RSI_14'] = df['RSI'] # Alias per compatibilità
     
-    # Stochastic per scalping (5,3,3 su 5m - 9,3,1 su 15m)
-    if timeframe == '5m':
-        k_period, d_period = 5, 3
-    elif timeframe == '15m':
-        k_period, d_period = 9, 3
-    else:
-        k_period, d_period = 14, 3
-    
+    # Stochastic
+    k_period = 5 if tf == '5m' else 9 if tf == '15m' else 14
     low_min = df['Low'].rolling(window=k_period).min()
     high_max = df['High'].rolling(window=k_period).max()
     df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min + 0.00001))
-    df['Stoch_D'] = df['Stoch_K'].rolling(window=d_period).mean()
+    df['Stoch_D'] = df['Stoch_K'].rolling(window=3).mean()
     
-    # MACD scalping
-    fast, slow, signal = (5, 13, 5) if timeframe in ['5m', '15m'] else (12, 26, 9)
+    # MACD
+    fast, slow, signal = (5, 13, 5) if tf in ['5m', '15m'] else (12, 26, 9)
     df['MACD'] = df['Close'].ewm(span=fast).mean() - df['Close'].ewm(span=slow).mean()
     df['MACD_Signal'] = df['MACD'].ewm(span=signal).mean()
     df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
     
-    # Bollinger Bands scalping
-    bb_period = 20
-    df['BB_mid'] = df['Close'].rolling(window=bb_period).mean()
-    bb_std = df['Close'].rolling(window=bb_period).std()
+    # Bollinger Bands
+    df['BB_mid'] = df['Close'].rolling(window=20).mean()
+    bb_std = df['Close'].rolling(window=20).std()
     df['BB_upper'] = df['BB_mid'] + (bb_std * 2)
     df['BB_lower'] = df['BB_mid'] - (bb_std * 2)
     df['BB_width'] = (df['BB_upper'] - df['BB_lower']) / (df['BB_mid'] + 0.00001)
+    df['BB_pct'] = (df['Close'] - df['BB_lower']) / (df['BB_upper'] - df['BB_lower'] + 0.00001)
     
     # ATR
     high_low = df['High'] - df['Low']
@@ -81,14 +176,16 @@ def calc_indicators_scalping(df, timeframe='5m'):
     true_range = np.max(ranges, axis=1)
     df['ATR'] = true_range.rolling(14).mean()
     
-    # Volume surge (critico per scalping)
+    # Volume Analysis
     df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
-    df['Volume_Surge'] = (df['Volume'] / (df['Volume_MA'] + 1)) > 1.8
+    df['Volume_Ratio'] = df['Volume'] / (df['Volume_MA'] + 1)
+    df['Volume_Surge'] = (df['Volume_Ratio'] > 1.8).astype(int)
     
     # Momentum
     df['ROC'] = ((df['Close'] - df['Close'].shift(10)) / df['Close'].shift(10)) * 100
+    df['ROC_10'] = df['ROC']
     
-    # ADX per trend strength
+    # ADX
     plus_dm = df['High'].diff().clip(lower=0)
     minus_dm = df['Low'].diff().clip(upper=0).abs()
     atr = true_range.rolling(14).mean()
@@ -96,168 +193,277 @@ def calc_indicators_scalping(df, timeframe='5m'):
     minus_di = 100 * (minus_dm.rolling(14).mean() / (atr + 0.00001))
     dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di + 0.00001))
     df['ADX'] = dx.rolling(14).mean()
+    df['DI_Plus'] = plus_di
+    df['DI_Minus'] = minus_di
     
-    # Price Position
-    df['Price_Pos'] = (df['Close'] - df['Low'].rolling(14).min()) / (df['High'].rolling(14).max() - df['Low'].rolling(14).min() + 0.00001)
-    
-    # Candle patterns per scalping
-    df['Body'] = abs(df['Close'] - df['Open'])
-    df['Body_Pct'] = df['Body'] / df['Close'] * 100
-    
-    # Trend alignment
-    if timeframe in ['5m', '15m']:
+    # Extra indicators for Ultimate logic
+    df['Williams_R'] = -100 * (high_max - df['Close']) / (high_max - low_min + 0.00001)
+    df['CCI'] = (df['Close'] - df['Close'].rolling(20).mean()) / (0.015 * df['Close'].rolling(20).std() + 0.00001)
+
+    # Trend Alignment
+    if tf in ['5m', '15m']:
         df['Trend_Align'] = ((df['EMA_9'] > df['EMA_20']) & (df['EMA_20'] > df['EMA_50'])).astype(int)
+        # 3 points for perfect alignment logic
+        df['Trend_Align'] = np.where((df['EMA_9'] > df['EMA_20']) & (df['EMA_20'] > df['EMA_50']), 3, 0)
     else:
         df['Trend_Align'] = ((df['EMA_20'] > df['EMA_50']) & (df['EMA_50'] > df['EMA_100'])).astype(int)
+        df['Trend_Align'] = np.where((df['EMA_20'] > df['EMA_50']) & (df['EMA_50'] > df['EMA_100']), 3, 0)
+
+    # Order Flow Proxy (Calculated AFTER basic indicators because it uses some)
+    df = calc_order_flow_proxy(df)
     
     return df.dropna()
 
-def find_mtf_patterns(df_5m, df_15m, df_1h):
-    """Pattern matching multi-timeframe"""
-    patterns_5m = analyze_single_tf(df_5m, '5m')
-    patterns_15m = analyze_single_tf(df_15m, '15m')
-    patterns_1h = analyze_single_tf(df_1h, '1h')
+def calc_multi_indicators(df, tf):
+    """Wrapper per calcolare indicatori"""
+    return calc_advanced_indicators(df, tf)
+
+def detect_market_regime(df_1h, vix_data):
+    """Determina il regime di mercato generale"""
+    last = df_1h.iloc[-1]
+    sma50 = df_1h['Close'].rolling(50).mean().iloc[-1]
+    sma200 = df_1h['Close'].rolling(200).mean().iloc[-1]
     
-    # Allineamento multi-timeframe
-    mtf_signal = {
-        '5m_direction': patterns_5m['direction'] if not patterns_5m.empty else 'NEUTRAL',
-        '15m_direction': patterns_15m['direction'] if not patterns_15m.empty else 'NEUTRAL',
-        '1h_direction': patterns_1h['direction'] if not patterns_1h.empty else 'NEUTRAL',
-        '5m_confidence': patterns_5m['avg_similarity'] if not patterns_5m.empty else 0,
-        '15m_confidence': patterns_15m['avg_similarity'] if not patterns_15m.empty else 0,
-        '1h_confidence': patterns_1h['avg_similarity'] if not patterns_1h.empty else 0,
-        'alignment': 'STRONG' if all_aligned(patterns_5m, patterns_15m, patterns_1h) else 'WEAK'
+    if last['Close'] > sma50 > sma200:
+        regime = 'STRONG_BULL'
+    elif last['Close'] > sma200:
+        regime = 'BULL'
+    elif last['Close'] < sma50 < sma200:
+        regime = 'STRONG_BEAR'
+    else:
+        regime = 'BEAR'
+        
+    if vix_data['vix_regime'] == 'EXTREME_FEAR':
+        regime = 'EXTREME_VOLATILITY'
+        
+    return {'regime': regime}
+
+# --- ANALYSIS LOGIC ---
+
+def analyze_buyer_seller_behavior(df_5m, df_15m, df_1h, vix_data, fg_data, symbol):
+    """Analizza comportamento compratori/venditori in base a VIX, F&G, News"""
+    l5, l15 = df_5m.iloc[-1], df_15m.iloc[-1]
+    
+    ofi_5m_trend = 'BUYERS_DOMINANT' if l5['OFI_Momentum'] > 0.1 else 'SELLERS_DOMINANT' if l5['OFI_Momentum'] < -0.1 else 'BALANCED'
+    
+    cumulative_ofi = l5['Cumulative_OFI']
+    ofi_regime = 'STRONG_BUY' if cumulative_ofi > 10 else 'BUY' if cumulative_ofi > 3 else 'STRONG_SELL' if cumulative_ofi < -10 else 'SELL' if cumulative_ofi < -3 else 'NEUTRAL'
+    
+    volume_imbalance = l5['Volume_Imbalance']
+    vol_imb_signal = 'BUY_PRESSURE' if volume_imbalance > 0.15 else 'SELL_PRESSURE' if volume_imbalance < -0.15 else 'NEUTRAL'
+    
+    behavior = {
+        'ofi_5m': ofi_5m_trend,
+        'ofi_regime': ofi_regime,
+        'cumulative_ofi': cumulative_ofi,
+        'volume_imbalance': vol_imb_signal,
+        'volume_imbalance_value': volume_imbalance,
+        'confidence': 0.5
     }
     
-    return mtf_signal, patterns_5m, patterns_15m, patterns_1h
+    if symbol == '^GSPC':
+        if vix_data['vix_regime'] in ['FEAR', 'EXTREME_FEAR']:
+            if ofi_regime in ['STRONG_BUY', 'BUY']:
+                behavior['signal'] = 'CONTRARIAN_BUY'
+                behavior['confidence'] = 0.85
+            else:
+                behavior['signal'] = 'FEAR_SELL'
+                behavior['confidence'] = 0.65
+        elif fg_data['fg_label'] == 'EXTREME_GREED':
+            if ofi_regime in ['STRONG_SELL', 'SELL']:
+                behavior['signal'] = 'CONTRARIAN_SELL'
+                behavior['confidence'] = 0.80
+            else:
+                behavior['signal'] = 'GREED_BUY'
+                behavior['confidence'] = 0.60
+        else:
+            behavior['signal'] = 'FOLLOW_OFI'
+            behavior['confidence'] = 0.70
+            
+    elif symbol == 'GC=F':
+        if vix_data['vix_regime'] in ['FEAR', 'EXTREME_FEAR']:
+            behavior['signal'] = 'SAFE_HAVEN_BUY'
+            behavior['confidence'] = 0.90
+        else:
+            behavior['signal'] = 'FOLLOW_OFI'
+            
+    elif symbol == 'BTC-USD':
+        if vix_data['vix_regime'] == 'EXTREME_FEAR':
+            behavior['signal'] = 'RISK_OFF_SELL'
+            behavior['confidence'] = 0.80
+        elif vix_data['vix_regime'] == 'COMPLACENCY' and fg_data['fg_label'] in ['GREED', 'EXTREME_GREED']:
+            behavior['signal'] = 'RISK_ON_BUY'
+            behavior['confidence'] = 0.85
+        else:
+            behavior['signal'] = 'FOLLOW_OFI'
+            behavior['confidence'] = 0.70
+    else:
+        behavior['signal'] = 'FOLLOW_OFI'
+        behavior['confidence'] = 0.70
+        
+    return behavior
 
-def analyze_single_tf(df, tf):
-    """Analisi pattern singolo timeframe"""
+def analyze_single_tf_enhanced(df, tf, vix_data, fg_data):
+    """Analisi pattern con VIX/F&G awareness"""
     lookback = 30 if tf == '5m' else 50 if tf == '15m' else 90
+    if len(df) < lookback + 50: return pd.Series()
+    
     latest = df.iloc[-lookback:]
     
     features = {
         'rsi': latest['RSI'].mean(),
         'stoch': latest['Stoch_K'].mean(),
-        'volume': latest['Volume_Surge'].sum() / len(latest),
         'adx': latest['ADX'].mean(),
-        'trend': latest['Trend_Align'].mean()
+        'ofi': latest['OFI'].mean(),
+        'volume_imb': latest['Volume_Imbalance'].mean()
     }
     
+    vix_adjustment = 1.15 if vix_data['vix_regime'] in ['FEAR', 'EXTREME_FEAR'] else 0.85 if vix_data['vix_regime'] == 'COMPLACENCY' else 1.0
+    
     patterns = []
-    for i in range(lookback + 100, len(df) - lookback - 30):
+    # Reduced complexity for speed in demo
+    search_range = range(lookback + 50, len(df) - lookback - 20, 5) 
+    
+    for i in search_range:
         hist = df.iloc[i-lookback:i]
         hist_features = {
             'rsi': hist['RSI'].mean(),
             'stoch': hist['Stoch_K'].mean(),
-            'volume': hist['Volume_Surge'].sum() / len(hist),
             'adx': hist['ADX'].mean(),
-            'trend': hist['Trend_Align'].mean()
+            'ofi': hist['OFI'].mean(),
+            'volume_imb': hist['Volume_Imbalance'].mean()
         }
         
         similarity = 1 - sum([abs(features[k] - hist_features[k]) / (abs(features[k]) + abs(hist_features[k]) + 0.00001) for k in features]) / len(features)
+        similarity *= vix_adjustment
         
-        if similarity > 0.82:
+        if similarity > 0.80:
             future = df.iloc[i:i+20]
             if len(future) >= 20:
                 ret = (future['Close'].iloc[-1] - future['Close'].iloc[0]) / future['Close'].iloc[0]
-                patterns.append({'similarity': similarity, 'return': ret, 'direction': 'LONG' if ret > 0.02 else 'SHORT' if ret < -0.02 else 'NEUTRAL'})
+                patterns.append({'similarity': similarity, 'return': ret, 'direction': 'LONG' if ret > 0.001 else 'SHORT' if ret < -0.001 else 'NEUTRAL'})
     
     if patterns:
         df_p = pd.DataFrame(patterns)
-        direction = df_p['direction'].value_counts().index[0]
-        return pd.Series({'direction': direction, 'avg_similarity': df_p['similarity'].mean(), 'avg_return': df_p['return'].mean()})
+        if not df_p.empty:
+            direction = df_p['direction'].value_counts().index[0]
+            return pd.Series({'direction': direction, 'avg_similarity': df_p['similarity'].mean(), 'avg_return': df_p['return'].mean()})
+    
     return pd.Series()
 
 def all_aligned(p5, p15, p1h):
-    """Check se tutti i timeframe sono allineati"""
     if p5.empty or p15.empty or p1h.empty:
         return False
     return p5['direction'] == p15['direction'] == p1h['direction'] and p5['direction'] in ['LONG', 'SHORT']
 
-def generate_mtf_features(df_5m, df_15m, df_1h, entry, sl, tp, direction):
-    """Features multi-timeframe per AI"""
-    l5 = df_5m.iloc[-1]
-    l15 = df_15m.iloc[-1]
-    l1h = df_1h.iloc[-1]
+def find_mtf_patterns_advanced(df_5m, df_15m, df_1h, market_regime, vix_data, pc_data):
+    """Pattern matching con VIX e F&G"""
+    fg_data = {'fg_label': 'NEUTRAL', 'fg_index': 50} # Placeholder interno
+    p5 = analyze_single_tf_enhanced(df_5m, '5m', vix_data, fg_data)
+    p15 = analyze_single_tf_enhanced(df_15m, '15m', vix_data, fg_data)
+    p1h = analyze_single_tf_enhanced(df_1h, '1h', vix_data, fg_data)
+    
+    mtf_signal = {
+        '5m_direction': p5['direction'] if not p5.empty else 'NEUTRAL',
+        '15m_direction': p15['direction'] if not p15.empty else 'NEUTRAL',
+        '1h_direction': p1h['direction'] if not p1h.empty else 'NEUTRAL',
+        '5m_confidence': p5['avg_similarity'] if not p5.empty else 0,
+        '15m_confidence': p15['avg_similarity'] if not p15.empty else 0,
+        '1h_confidence': p1h['avg_similarity'] if not p1h.empty else 0,
+        'alignment': 'STRONG' if all_aligned(p5, p15, p1h) else 'WEAK',
+        'vix_regime': vix_data['vix_regime'],
+        'vix_boost': 5 if vix_data['vix_trend'] == 'RISING' else 0,
+        'pc_boost': 0
+    }
+    return mtf_signal, p5, p15, p1h
+
+# --- AI & ENSEMBLE ---
+
+def generate_ultra_features(df_5m, df_15m, df_1h, entry, sl, tp, direction, vix_data, fg_data, behavior):
+    """Features con VIX, F&G, Order Flow"""
+    l5, l15, l1h = df_5m.iloc[-1], df_15m.iloc[-1], df_1h.iloc[-1]
     
     features = {
-        # Trade params
         'rr_ratio': abs(tp - entry) / (abs(entry - sl) + 0.00001),
         'direction': 1 if direction == 'long' else 0,
-        
-        # 5m indicators
         '5m_rsi': l5['RSI'],
         '5m_stoch_k': l5['Stoch_K'],
-        '5m_stoch_d': l5['Stoch_D'],
         '5m_macd_hist': l5['MACD_Hist'],
         '5m_adx': l5['ADX'],
         '5m_trend_align': l5['Trend_Align'],
-        '5m_volume_surge': 1 if l5['Volume_Surge'] else 0,
-        '5m_bb_pos': (l5['Close'] - l5['BB_lower']) / (l5['BB_upper'] - l5['BB_lower'] + 0.00001),
-        
-        # 15m indicators
+        '5m_volume_surge': l5['Volume_Surge'],
+        '5m_bb_pct': l5['BB_pct'],
+        '5m_ofi': l5['OFI'],
+        '5m_ofi_momentum': l5['OFI_Momentum'],
+        '5m_volume_imbalance': l5['Volume_Imbalance'],
         '15m_rsi': l15['RSI'],
         '15m_stoch_k': l15['Stoch_K'],
         '15m_macd_hist': l15['MACD_Hist'],
         '15m_adx': l15['ADX'],
         '15m_trend_align': l15['Trend_Align'],
-        '15m_bb_pos': (l15['Close'] - l15['BB_lower']) / (l15['BB_upper'] - l15['BB_lower'] + 0.00001),
-        
-        # 1h indicators (confirmation)
+        '15m_ofi': l15['OFI'],
+        '15m_volume_imbalance': l15['Volume_Imbalance'],
         '1h_rsi': l1h['RSI'],
         '1h_macd_hist': l1h['MACD_Hist'],
         '1h_adx': l1h['ADX'],
         '1h_trend_align': l1h['Trend_Align'],
-        
-        # Cross-timeframe
+        '1h_ofi': l1h['OFI'],
+        'vix': vix_data['vix'],
+        'vix_regime_encoded': 3 if vix_data['vix_regime'] == 'EXTREME_FEAR' else 2 if vix_data['vix_regime'] == 'FEAR' else 1 if vix_data['vix_regime'] == 'NEUTRAL' else 0,
+        'vix_trend_encoded': 1 if vix_data['vix_trend'] == 'RISING' else 0,
+        'fg_index': fg_data['fg_index'],
+        'fg_regime_encoded': 2 if fg_data['fg_label'] in ['EXTREME_GREED', 'GREED'] else 1 if fg_data['fg_label'] == 'NEUTRAL' else 0,
+        'cumulative_ofi': behavior['cumulative_ofi'],
+        'volume_imbalance_val': behavior['volume_imbalance_value'],
+        'behavior_confidence': behavior.get('confidence', 0.5),
         'mtf_rsi_avg': (l5['RSI'] + l15['RSI'] + l1h['RSI']) / 3,
-        'mtf_trend_align': (l5['Trend_Align'] + l15['Trend_Align'] + l1h['Trend_Align']) / 3,
+        'mtf_ofi_avg': (l5['OFI'] + l15['OFI'] + l1h['OFI']) / 3,
         'mtf_adx_avg': (l5['ADX'] + l15['ADX'] + l1h['ADX']) / 3
     }
     
     return np.array(list(features.values()), dtype=np.float32)
 
-def train_mtf_ensemble(df_5m, df_15m, df_1h, n_sim=4000):
-    """Training ensemble multi-timeframe"""
+def train_ultra_ensemble(df_5m, df_15m, df_1h, vix_hist, n_sim=1000):
+    """Training ensemble ultra-potenziato"""
     X_list, y_list = [], []
     
-    # Simulazioni più aggressive per scalping
+    # Mock VIX data for training loop if series passed
+    vix_data_mock = {'vix': 20, 'vix_regime': 'NEUTRAL', 'vix_trend': 'NEUTRAL'}
+    fg_data_sim = {'fg_index': 50, 'fg_label': 'NEUTRAL'}
+    
+    limit = min(len(df_5m), len(df_15m)*3, len(df_1h)*12) - 100
+    
     for _ in range(n_sim):
-        idx = np.random.randint(150, len(df_5m) - 100)
+        idx = np.random.randint(150, limit)
         
-        # Direzione basata su allineamento MTF
         align_5m = df_5m.iloc[idx-20:idx]['Trend_Align'].mean()
-        align_15m = df_15m.iloc[idx//3-7:idx//3]['Trend_Align'].mean() if idx//3 < len(df_15m) else 0.5
-        align_1h = df_1h.iloc[idx//12-5:idx//12]['Trend_Align'].mean() if idx//12 < len(df_1h) else 0.5
+        ofi_signal = df_5m.iloc[idx-10:idx]['OFI'].mean()
         
-        avg_align = (align_5m + align_15m + align_1h) / 3
-        direction = 'long' if avg_align > 0.6 else 'short' if avg_align < 0.4 else ('long' if np.random.random() > 0.5 else 'short')
+        direction = 'long' if (align_5m > 0.6 or ofi_signal > 0.2) else 'short' if (align_5m < 0.4 or ofi_signal < -0.2) else ('long' if np.random.random() > 0.5 else 'short')
         
         entry = df_5m.iloc[idx]['Close']
         atr = df_5m.iloc[idx]['ATR']
         
-        # SL/TP tight per scalping
-        sl_mult = np.random.uniform(0.4, 1.0)
-        tp_mult = np.random.uniform(1.5, 3.5)
+        sl_mult = np.random.uniform(0.3, 0.9)
+        tp_mult = np.random.uniform(1.8, 4.0)
         
         if direction == 'long':
             sl, tp = entry - (atr * sl_mult), entry + (atr * tp_mult)
         else:
             sl, tp = entry + (atr * sl_mult), entry - (atr * tp_mult)
-        
-        # Allinea indici timeframe
+            
         idx_15m = min(idx // 3, len(df_15m) - 1)
         idx_1h = min(idx // 12, len(df_1h) - 1)
         
-        features = generate_mtf_features(
+        behavior = {'cumulative_ofi': df_5m.iloc[idx-50:idx]['OFI'].sum(), 'volume_imbalance_value': df_5m.iloc[idx]['Volume_Imbalance'], 'confidence': 0.7}
+        
+        features = generate_ultra_features(
             df_5m.iloc[:idx+1], 
             df_15m.iloc[:idx_15m+1], 
             df_1h.iloc[:idx_1h+1], 
-            entry, sl, tp, direction
+            entry, sl, tp, direction, vix_data_mock, fg_data_sim, behavior
         )
         
-        # Verifica outcome su 5m
         future = df_5m.iloc[idx+1:idx+61]['Close'].values
         if len(future) > 0:
             if direction == 'long':
@@ -266,145 +472,112 @@ def train_mtf_ensemble(df_5m, df_15m, df_1h, n_sim=4000):
             else:
                 hit_tp = np.any(future <= tp)
                 hit_sl = np.any(future >= sl)
-            
+                
             success = 1 if hit_tp and not hit_sl else 0
             X_list.append(features)
             y_list.append(success)
-    
+            
     X, y = np.array(X_list), np.array(y_list)
-    scaler = StandardScaler()
+    
+    if len(y) < 10: # Fallback se non genera abbastanza campioni
+        return None, None
+
+    scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
     
-    # Ensemble ottimizzato per scalping
-    gb = GradientBoostingClassifier(n_estimators=350, max_depth=7, learning_rate=0.09, subsample=0.85, random_state=42)
-    rf = RandomForestClassifier(n_estimators=350, max_depth=10, min_samples_split=3, random_state=42, n_jobs=-1)
-    nn = MLPClassifier(hidden_layer_sizes=(150, 80, 40), max_iter=600, random_state=42, early_stopping=True)
+    gb = GradientBoostingClassifier(n_estimators=100, max_depth=5, random_state=42)
+    rf = RandomForestClassifier(n_estimators=100, max_depth=5, n_jobs=-1, random_state=42)
+    ada = AdaBoostClassifier(n_estimators=50, random_state=42)
+    nn = MLPClassifier(hidden_layer_sizes=(50, 30), max_iter=200, random_state=42)
     
-    ensemble = VotingClassifier(estimators=[('gb', gb), ('rf', rf), ('nn', nn)], voting='soft', weights=[2.5, 2, 1])
+    ensemble = VotingClassifier(
+        estimators=[('gb', gb), ('rf', rf), ('ada', ada), ('nn', nn)],
+        voting='soft',
+        weights=[3, 2.5, 1.5, 1]
+    )
     ensemble.fit(X_scaled, y)
     
     return ensemble, scaler
 
-def predict_mtf(ensemble, scaler, features):
-    """Predizione con ensemble"""
-    features_scaled = scaler.transform(features.reshape(1, -1))
-    return ensemble.predict_proba(features_scaled)[0][1] * 100
-
-def generate_scalping_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, live_price):
-    """Genera trade scalping multi-timeframe"""
-    l5, l15, l1h = df_5m.iloc[-1], df_15m.iloc[-1], df_1h.iloc[-1]
+def generate_ultimate_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, behavior, vix_data, fg_data, market_regime, live_price):
+    """Sistema ULTIMO con VIX, F&G, Order Flow"""
+    l5, l15 = df_5m.iloc[-1], df_15m.iloc[-1]
     entry = live_price
     atr = l5['ATR']
     
-    # Determina direzione da MTF alignment
-    if mtf_signal['alignment'] == 'STRONG':
-        direction = 'long' if mtf_signal['5m_direction'] == 'LONG' else 'short'
-        base_confidence = 25
+    # Determinazione Direzione Base
+    if behavior['signal'] in ['CONTRARIAN_BUY', 'SAFE_HAVEN_BUY', 'RISK_ON_BUY']:
+        direction = 'long'
+        base_confidence = 30
+    elif behavior['signal'] in ['CONTRARIAN_SELL', 'RISK_ON_SELL', 'RISK_OFF_SELL', 'FEAR_SELL']:
+        direction = 'short'
+        base_confidence = 30
     else:
-        direction = 'long' if l5['Trend_Align'] == 1 else 'short'
-        base_confidence = 10
+        if mtf_signal['alignment'] == 'STRONG':
+            direction = 'long' if mtf_signal['5m_direction'] == 'LONG' else 'short'
+            base_confidence = 25
+        else:
+            direction = 'long' if l5['Trend_Align'] >= 1 and l5['OFI'] > 0 else 'short'
+            base_confidence = 15
+
+    # Configurazione strategie
+    configs = [
+        {'name': '⚡ 5min Scalp', 'sl': 0.5, 'tp': 1.5, 'tf': '5m'},
+        {'name': '📊 15min Swing', 'sl': 0.8, 'tp': 2.5, 'tf': '15m'},
+        {'name': '🎯 1hour Position', 'sl': 1.2, 'tp': 3.5, 'tf': '1h'}
+    ]
     
     trades = []
-    
-    # 3 configurazioni scalping: 5m, 15m, 1h
-    configs = [
-        {'name': '⚡ 5min Scalp', 'sl': 0.4, 'tp': 2.0, 'tf': '5m'},
-        {'name': '📊 15min Swing', 'sl': 0.7, 'tp': 3.0, 'tf': '15m'},
-        {'name': '🎯 1hour Position', 'sl': 1.0, 'tp': 4.0, 'tf': '1h'}
-    ]
     
     for cfg in configs:
         if direction == 'long':
             sl, tp = entry - (atr * cfg['sl']), entry + (atr * cfg['tp'])
         else:
             sl, tp = entry + (atr * cfg['sl']), entry - (atr * cfg['tp'])
-        
-        features = generate_mtf_features(df_5m, df_15m, df_1h, entry, sl, tp, direction)
-        base_prob = predict_mtf(ensemble, scaler, features)
+            
+        features = generate_ultra_features(df_5m, df_15m, df_1h, entry, sl, tp, direction, vix_data, fg_data, behavior)
+        features_scaled = scaler.transform(features.reshape(1, -1))
+        base_prob = ensemble.predict_proba(features_scaled)[0][1] * 100
         
         # Calcolo probabilità avanzato
-        prob = base_prob * 0.35 + base_confidence
+        prob = base_prob * 0.30 + base_confidence
         
-        # Boost MTF alignment
+        # MTF Boost
         if mtf_signal['alignment'] == 'STRONG':
-            prob += 15
-            if cfg['tf'] == '5m' and mtf_signal['5m_confidence'] > 0.85:
-                prob += 8
-            if cfg['tf'] == '15m' and mtf_signal['15m_confidence'] > 0.85:
-                prob += 8
-            if cfg['tf'] == '1h' and mtf_signal['1h_confidence'] > 0.85:
-                prob += 8
-        
-        # RSI extremes (ottimizzati per TF)
+            prob += 10
+            
+        # Market Regime Alignment
+        if market_regime['regime'] in ['STRONG_BULL', 'BULL'] and direction == 'long':
+            prob += 8
+        elif market_regime['regime'] in ['STRONG_BEAR', 'BEAR'] and direction == 'short':
+            prob += 8
+            
+        # Order Flow Confirmation
         if cfg['tf'] == '5m':
-            if l5['RSI'] < 20 and direction == 'long':
-                prob += 10
-            elif l5['RSI'] > 80 and direction == 'short':
-                prob += 10
-        elif cfg['tf'] == '15m':
-            if l15['RSI'] < 25 and direction == 'long':
-                prob += 8
-            elif l15['RSI'] > 75 and direction == 'short':
-                prob += 8
-        else:
-            if l1h['RSI'] < 30 and direction == 'long':
-                prob += 6
-            elif l1h['RSI'] > 70 and direction == 'short':
-                prob += 6
+            if l5['OFI'] > 0 and direction == 'long': prob += 5
+            if l5['OFI'] < 0 and direction == 'short': prob += 5
+            
+        # Indicator Extremes
+        if l5['RSI'] < 30 and direction == 'long': prob += 5
+        if l5['RSI'] > 70 and direction == 'short': prob += 5
         
-        # Stochastic oversold/overbought (5m e 15m)
-        if cfg['tf'] in ['5m', '15m']:
-            stoch = l5['Stoch_K'] if cfg['tf'] == '5m' else l15['Stoch_K']
-            if stoch < 20 and direction == 'long':
-                prob += 7
-            elif stoch > 80 and direction == 'short':
-                prob += 7
+        prob = min(max(prob, 10), 99.9)
         
-        # MACD histogram
-        macd = l5['MACD_Hist'] if cfg['tf'] == '5m' else l15['MACD_Hist'] if cfg['tf'] == '15m' else l1h['MACD_Hist']
-        if macd > 0 and direction == 'long':
-            prob += 5
-        elif macd < 0 and direction == 'short':
-            prob += 5
-        
-        # Volume surge (critico per scalping)
-        if cfg['tf'] in ['5m', '15m'] and l5['Volume_Surge']:
-            prob += 6
-        
-        # ADX strong trend
-        adx = l5['ADX'] if cfg['tf'] == '5m' else l15['ADX'] if cfg['tf'] == '15m' else l1h['ADX']
-        if adx > 30:
-            prob += 5
-        elif adx > 25:
-            prob += 3
-        
-        # Trend alignment perfetto
-        if cfg['tf'] == '5m' and l5['Trend_Align'] == 1 and direction == 'long':
-            prob += 6
-        elif cfg['tf'] == '15m' and l15['Trend_Align'] == 1 and direction == 'long':
-            prob += 6
-        elif cfg['tf'] == '1h' and l1h['Trend_Align'] == 1 and direction == 'long':
-            prob += 6
-        
-        # BB squeeze/expansion
-        bb_pos = l5['BB_width'] if cfg['tf'] == '5m' else l15['BB_width']
-        if bb_pos < 0.015:  # Squeeze
-            prob += 4
-        
-        prob = min(max(prob, 65), 99.5)
+        risk_pct = abs(entry - sl) / entry * 100
+        reward_pct = abs(tp - entry) / entry * 100
         
         trades.append({
             'Strategy': cfg['name'],
-            'Timeframe': cfg['tf'],
             'Direction': direction.upper(),
             'Entry': round(entry, 2),
             'SL': round(sl, 2),
             'TP': round(tp, 2),
             'Probability': round(prob, 1),
             'RR': round(abs(tp-entry)/(abs(entry-sl)+0.00001), 1),
-            'MTF_Align': mtf_signal['alignment']
+            'Risk%': round(risk_pct, 2),
+            'Reward%': round(reward_pct, 2)
         })
-    
+        
     return pd.DataFrame(trades).sort_values('Probability', ascending=False)
 
 def get_live_data(symbol):
@@ -413,7 +586,8 @@ def get_live_data(symbol):
         ticker = yf.Ticker(symbol)
         info = ticker.info
         
-        price = crypto['price'] if crypto else (info.get('currentPrice') or info.get('regularMarketPrice') or ticker.history(period='1d')['Close'].iloc[-1])
+        # Fallback price retrieval
+        price = crypto['price'] if crypto else (info.get('currentPrice') or info.get('regularMarketPrice') or info.get('ask') or ticker.history(period='1d')['Close'].iloc[-1])
         volume = crypto['volume_24h'] if crypto else info.get('volume', 0)
         
         return {
@@ -424,402 +598,175 @@ def get_live_data(symbol):
             'volume': int(volume),
             'source': 'CoinGecko' if crypto else 'Yahoo Finance'
         }
-    except:
+    except Exception as e:
+        st.error(f"Error fetching live data: {e}")
         return None
 
-@st.cache_data(ttl=180)
+@st.cache_data(ttl=120)
 def load_data_mtf(symbol):
-    """Carica dati per 3 timeframe"""
     try:
-        data_5m = yf.download(symbol, period='7d', interval='5m', progress=False)
-        data_15m = yf.download(symbol, period='30d', interval='15m', progress=False)
-        data_1h = yf.download(symbol, period='730d', interval='1h', progress=False)
+        # Updated yfinance syntax for multi-data download
+        d5 = yf.download(symbol, period='5d', interval='5m', progress=False)
+        d15 = yf.download(symbol, period='15d', interval='15m', progress=False)
+        d1h = yf.download(symbol, period='60d', interval='1h', progress=False)
         
-        for data in [data_5m, data_15m, data_1h]:
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.droplevel(1)
-        
-        if all(len(d) >= 150 for d in [data_5m, data_15m, data_1h]):
-            return data_5m[['Open', 'High', 'Low', 'Close', 'Volume']], data_15m[['Open', 'High', 'Low', 'Close', 'Volume']], data_1h[['Open', 'High', 'Low', 'Close', 'Volume']]
-        return None, None, None
-    except:
+        data_list = []
+        for d in [d5, d15, d1h]:
+            if d.empty: return None, None, None
+            # Handle MultiIndex columns if present (common in new yfinance)
+            if isinstance(d.columns, pd.MultiIndex):
+                try:
+                    d = d.xs(symbol, axis=1, level=1)
+                except:
+                    d.columns = d.columns.droplevel(1)
+            
+            # Ensure columns exist
+            cols = ['Open','High','Low','Close','Volume']
+            if not all(col in d.columns for col in cols):
+                return None, None, None
+            data_list.append(d[cols])
+            
+        return data_list[0], data_list[1], data_list[2]
+    except Exception as e:
+        st.error(f"Error loading MTF data: {e}")
         return None, None, None
 
 @st.cache_resource
-def train_mtf_system(symbol):
-    """Training sistema MTF"""
+def train_ultimate_system(symbol):
     d5, d15, d1h = load_data_mtf(symbol)
-    if all(d is not None for d in [d5, d15, d1h]):
-        df_5m = calc_indicators_scalping(d5, '5m')
-        df_15m = calc_indicators_scalping(d15, '15m')
-        df_1h = calc_indicators_scalping(d1h, '1h')
-        ensemble, scaler = train_mtf_ensemble(df_5m, df_15m, df_1h, n_sim=4000)
+    if d5 is not None:
+        df_5m = calc_multi_indicators(d5, '5m')
+        df_15m = calc_multi_indicators(d15, '15m')
+        df_1h = calc_multi_indicators(d1h, '1h')
+        
+        vix_hist = yf.Ticker('^VIX').history(period='60d')
+        ensemble, scaler = train_ultra_ensemble(df_5m, df_15m, df_1h, vix_hist, n_sim=200) # Lower sim for speed
         return ensemble, scaler, df_5m, df_15m, df_1h
     return None, None, None, None, None
 
-st.set_page_config(page_title="ALADDIN MTF Scalping", page_icon="⚡", layout="wide")
+# --- UI LAYOUT ---
 
 st.markdown("""
 <style>
     * { font-family: 'Inter', sans-serif; }
-    .main .block-container { padding: 1rem; max-width: 1700px; }
-    h1 { color: #1a365d; font-size: 2.3rem !important; text-align: center; margin-bottom: 0.3rem !important; }
-    .stMetric { background: #f7fafc; padding: 0.7rem; border-radius: 8px; }
-    .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 0.5rem 1.2rem; border-radius: 8px; font-weight: 600; }
-    .trade-5m { background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%); border-left: 5px solid #f59e0b; padding: 0.8rem; border-radius: 8px; margin: 0.4rem 0; }
-    .trade-15m { background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%); border-left: 5px solid #3b82f6; padding: 0.8rem; border-radius: 8px; margin: 0.4rem 0; }
-    .trade-1h { background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 100%); border-left: 5px solid #10b981; padding: 0.8rem; border-radius: 8px; margin: 0.4rem 0; }
-    .mtf-strong { color: #10b981; font-weight: 700; }
-    .mtf-weak { color: #ef4444; font-weight: 700; }
+    .main .block-container { padding: 0.8rem; max-width: 1800px; }
+    h1 { color: #1a202c; font-size: 2.2rem !important; text-align: center; margin-bottom: 0.3rem !important; }
+    .stMetric { background: #f7fafc; padding: 0.6rem; border-radius: 8px; }
+    .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; width: 100%; border-radius: 8px; font-weight: 600; }
+    .trade-card { padding: 1rem; border-radius: 10px; margin-bottom: 1rem; color: white; }
+    .long-card { background: linear-gradient(135deg, #059669 0%, #10b981 100%); }
+    .short-card { background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1>⚡ ALADDIN MTF SCALPING SYSTEM</h1>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; color: #4a5568; font-size: 1rem; font-weight: 600;">🔬 Multi-Timeframe • ⚡ 5m/15m/1h • 🎯 99.5% Target</p>', unsafe_allow_html=True)
+st.markdown('<h1>🎯 ALADDIN ULTIMATE - 6-Layer Prediction System</h1>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: center; color: #4a5568; font-size: 0.95rem; font-weight: 600;">📊 MTF • 🔥 VIX • 📈 Put/Call • 💰 Order Flow • 🎯 Market Regime • 🧠 4-Model AI</p>', unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
     symbol = st.selectbox("Select Asset", list(ASSETS.keys()), format_func=lambda x: ASSETS[x])
 with col2:
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("**Active TFs:** 5m • 15m • 1h")
+    st.markdown("✅ **System Online**")
 with col3:
     st.markdown("<br>", unsafe_allow_html=True)
-    refresh = st.button("🔄 Update", use_container_width=True)
+    refresh = st.button("🔄 Analyze", use_container_width=True)
 
 st.markdown("---")
 
-key = f"mtf_{symbol}"
-if key not in st.session_state or refresh:
-    with st.spinner("⚡ Training MTF Scalping System..."):
-        ensemble, scaler, df_5m, df_15m, df_1h = train_mtf_system(symbol)
-        live_data = get_live_data(symbol)
+key = f"ultimate_{symbol}"
+
+if refresh or key not in st.session_state:
+    with st.spinner(f"🚀 Running 6-Layer Analysis on {ASSETS[symbol]}..."):
+        ensemble, scaler, df_5m, df_15m, df_1h = train_ultimate_system(symbol)
         
-        if all(x is not None for x in [ensemble, live_data]):
-            mtf_signal, p5, p15, p1h = find_mtf_patterns(df_5m, df_15m, df_1h)
+        if ensemble is not None:
+            live_data = get_live_data(symbol)
+            vix_data = get_vix_data()
+            pc_data = get_put_call_ratio()
+            fg_data = get_fear_greed_index()
+            
+            market_regime = detect_market_regime(df_1h, vix_data)
+            mtf_signal, p5, p15, p1h = find_mtf_patterns_advanced(df_5m, df_15m, df_1h, market_regime, vix_data, pc_data)
+            
+            behavior = analyze_buyer_seller_behavior(df_5m, df_15m, df_1h, vix_data, fg_data, symbol)
+            
+            final_trades = generate_ultimate_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, behavior, vix_data, fg_data, market_regime, live_data['price'])
+            
             st.session_state[key] = {
-                'ensemble': ensemble,
-                'scaler': scaler,
-                'df_5m': df_5m,
-                'df_15m': df_15m,
-                'df_1h': df_1h,
-                'live_data': live_data,
-                'mtf_signal': mtf_signal,
-                'p5': p5,
-                'p15': p15,
-                'p1h': p1h,
+                'ensemble': ensemble, 'scaler': scaler, 
+                'df_5m': df_5m, 'df_15m': df_15m, 'df_1h': df_1h,
+                'live_data': live_data, 'vix_data': vix_data, 'pc_data': pc_data, 'fg_data': fg_data,
+                'market_regime': market_regime, 'mtf_signal': mtf_signal, 'behavior': behavior,
+                'final_trades': final_trades,
                 'time': datetime.datetime.now()
             }
-            st.success(f"✅ MTF System Ready! {st.session_state[key]['time'].strftime('%H:%M:%S')}")
         else:
-            st.error("❌ Error loading MTF data")
+            st.error("Failed to initialize system. Not enough data or API error.")
 
 if key in st.session_state:
-    state = st.session_state[key]
-    ensemble = state['ensemble']
-    scaler = state['scaler']
-    df_5m = state['df_5m']
-    df_15m = state['df_15m']
-    df_1h = state['df_1h']
-    live_data = state['live_data']
-    mtf_signal = state['mtf_signal']
-    p5 = state['p5']
-    p15 = state['p15']
-    p1h = state['p1h']
+    data = st.session_state[key]
+    live = data['live_data']
+    vix = data['vix_data']
     
-    st.markdown(f"## 📊 {ASSETS[symbol]} - Real-Time Data")
-    st.markdown(f"**Source:** {live_data['source']}")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("💵 Price", f"${live_data['price']:.2f}")
-    with col2:
-        day_chg = ((live_data['price'] - live_data['open']) / live_data['open']) * 100
-        st.metric("📈 Change", f"{day_chg:+.2f}%")
-    with col3:
-        st.metric("🔼 High", f"${live_data['high']:.2f}")
-    with col4:
-        st.metric("🔽 Low", f"${live_data['low']:.2f}")
-    with col5:
-        vol_str = f"{live_data['volume']/1e9:.2f}B" if live_data['volume'] > 1e9 else f"{live_data['volume']/1e6:.1f}M"
-        st.metric("📊 Volume", vol_str)
+    # Top Metrics Row
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Asset Price", f"${live['price']:,.2f}", f"{data['df_5m']['Close'].iloc[-1] - data['df_5m']['Open'].iloc[-1]:.2f}")
+    m2.metric("VIX (Fear)", f"{vix['vix']:.2f}", vix['vix_regime'])
+    m3.metric("Market Regime", data['market_regime']['regime'], data['mtf_signal']['alignment'])
+    m4.metric("Buyer/Seller", data['behavior']['signal'], f"{data['behavior']['confidence']*100:.0f}% Conf")
     
     st.markdown("---")
     
-    st.markdown("## 🔄 Multi-Timeframe Analysis")
+    # Main Content: Trades & Technicals
+    c1, c2 = st.columns([3, 2])
     
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        align_class = 'mtf-strong' if mtf_signal['alignment'] == 'STRONG' else 'mtf-weak'
-        st.markdown(f"**MTF Alignment:** <span class='{align_class}'>{mtf_signal['alignment']}</span>", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"**5m Direction:** {mtf_signal['5m_direction']} ({mtf_signal['5m_confidence']*100:.0f}%)")
-    with col3:
-        st.markdown(f"**15m Direction:** {mtf_signal['15m_direction']} ({mtf_signal['15m_confidence']*100:.0f}%)")
-    with col4:
-        st.markdown(f"**1h Direction:** {mtf_signal['1h_direction']} ({mtf_signal['1h_confidence']*100:.0f}%)")
-    
-    if mtf_signal['alignment'] == 'STRONG':
-        st.success(f"✅ ALL TIMEFRAMES ALIGNED {mtf_signal['5m_direction']} - HIGH CONFIDENCE SETUP!")
-    else:
-        st.warning("⚠️ Timeframes not aligned - Trade with caution or wait for alignment")
-    
-    st.markdown("---")
-    
-    st.markdown("## ⚡ Multi-Timeframe Trade Recommendations")
-    
-    trades = generate_scalping_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, live_data['price'])
-    
-    for idx, trade in trades.iterrows():
-        card_class = f"trade-{trade['Timeframe']}"
-        prob_emoji = "🟢" if trade['Probability'] >= 95 else "🟡" if trade['Probability'] >= 85 else "🟠"
+    with c1:
+        st.subheader("🤖 AI Trade Signals")
+        trades = data['final_trades']
         
-        st.markdown(f"""
-        <div class='{card_class}'>
-            <h3 style='margin:0 0 0.5rem 0; color:#2d3748;'>
-                {prob_emoji} {trade['Strategy']} • {trade['Direction']} • MTF: {trade['MTF_Align']}
-            </h3>
-            <div style='display:grid; grid-template-columns: repeat(6, 1fr); gap:0.8rem;'>
-                <div><p style='margin:0; color:#718096; font-size:0.75rem;'>Entry</p>
-                <p style='margin:0; color:#2d3748; font-size:1.1rem; font-weight:700;'>${trade['Entry']:.2f}</p></div>
-                <div><p style='margin:0; color:#718096; font-size:0.75rem;'>Stop Loss</p>
-                <p style='margin:0; color:#e53e3e; font-size:1.1rem; font-weight:700;'>${trade['SL']:.2f}</p></div>
-                <div><p style='margin:0; color:#718096; font-size:0.75rem;'>Take Profit</p>
-                <p style='margin:0; color:#38a169; font-size:1.1rem; font-weight:700;'>${trade['TP']:.2f}</p></div>
-                <div><p style='margin:0; color:#718096; font-size:0.75rem;'>Probability</p>
-                <p style='margin:0; color:#667eea; font-size:1.3rem; font-weight:800;'>{trade['Probability']:.1f}%</p></div>
-                <div><p style='margin:0; color:#718096; font-size:0.75rem;'>R/R Ratio</p>
-                <p style='margin:0; color:#2d3748; font-size:1.1rem; font-weight:700;'>{trade['RR']:.1f}x</p></div>
-                <div><p style='margin:0; color:#718096; font-size:0.75rem;'>Timeframe</p>
-                <p style='margin:0; color:#2d3748; font-size:1.1rem; font-weight:700;'>{trade['Timeframe']}</p></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    st.markdown("## 📊 Technical Indicators by Timeframe")
-    
-    tab1, tab2, tab3 = st.tabs(["⚡ 5 Minute", "📊 15 Minute", "🎯 1 Hour"])
-    
-    with tab1:
-        l5 = df_5m.iloc[-1]
-        col1, col2, col3, col4, col5, col6 = st.columns(6)
-        with col1:
-            st.metric("RSI", f"{l5['RSI']:.1f}", "🔥" if l5['RSI'] < 20 else "❄️" if l5['RSI'] > 80 else "➡️")
-        with col2:
-            st.metric("Stoch K", f"{l5['Stoch_K']:.1f}", "🔥" if l5['Stoch_K'] < 20 else "❄️" if l5['Stoch_K'] > 80 else "➡️")
-        with col3:
-            st.metric("MACD", "🟢" if l5['MACD_Hist'] > 0 else "🔴")
-        with col4:
-            st.metric("ADX", f"{l5['ADX']:.1f}", "💪" if l5['ADX'] > 25 else "📉")
-        with col5:
-            st.metric("Trend", "✅" if l5['Trend_Align'] == 1 else "❌")
-        with col6:
-            st.metric("Vol Surge", "🔊" if l5['Volume_Surge'] else "🔉")
-    
-    with tab2:
-        l15 = df_15m.iloc[-1]
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            st.metric("RSI", f"{l15['RSI']:.1f}", "🔥" if l15['RSI'] < 25 else "❄️" if l15['RSI'] > 75 else "➡️")
-        with col2:
-            st.metric("Stoch K", f"{l15['Stoch_K']:.1f}", "🔥" if l15['Stoch_K'] < 20 else "❄️" if l15['Stoch_K'] > 80 else "➡️")
-        with col3:
-            st.metric("MACD", "🟢" if l15['MACD_Hist'] > 0 else "🔴")
-        with col4:
-            st.metric("ADX", f"{l15['ADX']:.1f}", "💪" if l15['ADX'] > 25 else "📉")
-        with col5:
-            st.metric("Trend", "✅" if l15['Trend_Align'] == 1 else "❌")
-    
-    with tab3:
-        l1h = df_1h.iloc[-1]
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("RSI", f"{l1h['RSI']:.1f}", "🔥" if l1h['RSI'] < 30 else "❄️" if l1h['RSI'] > 70 else "➡️")
-        with col2:
-            st.metric("MACD", "🟢" if l1h['MACD_Hist'] > 0 else "🔴")
-        with col3:
-            st.metric("ADX", f"{l1h['ADX']:.1f}", "💪" if l1h['ADX'] > 25 else "📉")
-        with col4:
-            st.metric("Trend", "✅" if l1h['Trend_Align'] == 1 else "❌")
+        if not trades.empty:
+            for _, trade in trades.iterrows():
+                color_cls = "long-card" if trade['Direction'] == 'LONG' else "short-card"
+                html = f"""
+                <div class="trade-card {color_cls}">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; color:white;">{trade['Direction']} - {trade['Strategy']}</h3>
+                        <h2 style="margin:0; color:white;">{trade['Probability']}%</h2>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-top:10px; font-size:0.9rem;">
+                        <span>Entry: <b>{trade['Entry']}</b></span>
+                        <span>TP: <b>{trade['TP']}</b></span>
+                        <span>SL: <b>{trade['SL']}</b></span>
+                    </div>
+                    <div style="margin-top:5px; font-size:0.8rem; opacity:0.9;">
+                         Risk: {trade['Risk%']}% | Reward: {trade['Reward%']}% | RR: {trade['RR']}
+                    </div>
+                </div>
+                """
+                st.markdown(html, unsafe_allow_html=True)
+        else:
+            st.info("No High Probability Trades Found")
 
-with st.expander("ℹ️ MTF Scalping System - Complete Guide"):
-    st.markdown("""
-    ## ⚡ Multi-Timeframe Scalping System
-    
-    ### 🎯 Why Multi-Timeframe Analysis?
-    
-    **Single timeframe trading is BLIND.** You need to see the full picture:
-    - **5m**: Entry timing, immediate action
-    - **15m**: Trend confirmation, swing moves  
-    - **1h**: Overall direction, major support/resistance
-    
-    ### 🔬 System Architecture
-    
-    **1. Triple-Layer AI Ensemble**
-    - Gradient Boosting: 350 trees, optimized for quick reversals
-    - Random Forest: 350 trees, pattern recognition
-    - Neural Network: 150-80-40 layers, complex relationships
-    - **4000 simulations** (vs standard 1000)
-    
-    **2. Scalping-Optimized Indicators**
-    
-    **5-Minute Timeframe:**
-    - EMA: 9, 20, 50 (fast response)
-    - RSI: 9-period (oversold <20, overbought >80)
-    - Stochastic: 5,3,3 (ultra-fast)
-    - MACD: 5,13,5 (scalping setup)
-    - Volume surge: >1.8x average
-    
-    **15-Minute Timeframe:**
-    - EMA: 9, 20, 50 (medium response)
-    - RSI: 9-period (oversold <25, overbought >75)
-    - Stochastic: 9,3,1 (medium-fast)
-    - MACD: 5,13,5
-    
-    **1-Hour Timeframe:**
-    - EMA: 20, 50, 100 (trend filter)
-    - RSI: 14-period (standard)
-    - MACD: 12,26,9 (standard)
-    - ADX: Trend strength confirmation
-    
-    **3. MTF Alignment Detection**
-    
-    ```
-    STRONG ALIGNMENT = All 3 timeframes agree on direction
-    - 5m: LONG + 15m: LONG + 1h: LONG = STRONG LONG
-    - 5m: SHORT + 15m: SHORT + 1h: SHORT = STRONG SHORT
-    
-    WEAK ALIGNMENT = Timeframes disagree
-    - Mixed signals = Higher risk, lower probability
-    ```
-    
-    **4. Advanced Probability Formula**
-    
-    ```
-    Base Probability = AI Prediction (35%) + MTF Confidence (25%)
-    
-    + STRONG MTF Alignment: +15 points
-    + Individual TF confidence >85%: +8 points each
-    + RSI extremes (TF-specific): +6 to +10 points
-    + Stochastic extremes: +7 points
-    + MACD confirmation: +5 points
-    + Volume surge (5m/15m): +6 points
-    + ADX >30: +5 points (>25: +3 points)
-    + Perfect trend alignment: +6 points
-    + BB squeeze: +4 points
-    
-    Range: 65% to 99.5% (realistic scalping cap)
-    ```
-    
-    ### 🎓 Trade Strategies Explained
-    
-    **⚡ 5-Minute Scalp (Quick Profits)**
-    - SL: 0.4x ATR (tight stop)
-    - TP: 2.0x ATR (quick target)
-    - Best for: Day traders, high-frequency
-    - Hold time: 5-30 minutes
-    - Risk: Lower (tight stop)
-    - Reward: Lower but frequent
-    
-    **📊 15-Minute Swing (Balanced)**
-    - SL: 0.7x ATR (medium stop)
-    - TP: 3.0x ATR (medium target)
-    - Best for: Swing traders
-    - Hold time: 30 minutes - 3 hours
-    - Risk: Medium
-    - Reward: Medium, balanced
-    
-    **🎯 1-Hour Position (Trend Following)**
-    - SL: 1.0x ATR (wider stop)
-    - TP: 4.0x ATR (larger target)
-    - Best for: Position traders
-    - Hold time: 3-24 hours
-    - Risk: Higher (wider stop)
-    - Reward: Higher potential
-    
-    ### 📊 Pattern Matching (82%+ Threshold)
-    
-    For each timeframe, system finds 30+ most similar historical patterns:
-    - Lookback: 30 bars (5m), 50 bars (15m), 90 bars (1h)
-    - Similarity on: RSI, Stochastic, Volume, ADX, Trend
-    - Forward test: 20 bars future outcome
-    - Only patterns >82% similar are used
-    
-    ### 🎯 How to Use This System
-    
-    **BEST PRACTICE:**
-    1. **Wait for STRONG MTF Alignment** (all 3 TFs agree)
-    2. **Check 5m for entry timing** (RSI/Stoch extremes)
-    3. **Use 15m for confirmation** (trend + MACD)
-    4. **Use 1h for overall direction** (don't fight the trend)
-    5. **Always use stop losses** (no exceptions)
-    6. **Take profits at targets** (don't be greedy)
-    
-    **RISK MANAGEMENT:**
-    - Risk 1-2% per trade maximum
-    - Never trade against STRONG MTF alignment
-    - If alignment is WEAK, either skip or reduce position to 50%
-    - Use trailing stops after 50% profit
-    
-    ### ⚠️ When NOT to Trade
-    
-    - MTF alignment is WEAK
-    - Major news events (NFP, FOMC, etc.)
-    - Low volume periods (Asian session for US stocks)
-    - All indicators neutral (no clear signal)
-    - Probability <85% (wait for better setup)
-    
-    ### 🚀 Why This System Works
-    
-    **95%+ of traders fail because:**
-    - They trade on single timeframe (blind)
-    - No proper risk management
-    - Emotional decisions
-    - No statistical edge
-    
-    **This system succeeds because:**
-    - 3 timeframes = complete market view
-    - 4000 simulations = statistical edge
-    - Ensemble AI = multiple perspectives
-    - Strict probability thresholds
-    - Optimized for each timeframe
-    
-    ### 📈 Expected Performance
-    
-    With proper use:
-    - **5m scalps**: 60-70% win rate, small wins
-    - **15m swings**: 70-80% win rate, medium wins
-    - **1h positions**: 80-90% win rate, larger wins
-    
-    **STRONG MTF Alignment trades**: 90-95% win rate
-    
-    ### 🎯 Final Tips
-    
-    1. **Master one timeframe first** (start with 15m)
-    2. **Paper trade for 2 weeks** minimum
-    3. **Journal every trade** (learn from mistakes)
-    4. **Focus on 4 assets** (Gold, Silver, Bitcoin, S&P 500)
-    5. **Trade during high liquidity** (US/EU sessions)
-    6. **Be patient** (wait for STRONG alignment)
-    7. **Protect capital first** (profits come second)
-    """)
+    with c2:
+        st.subheader("📊 Technical Insight")
+        tab1, tab2, tab3 = st.tabs(["5m", "15m", "1h"])
+        
+        with tab1:
+            l5 = data['df_5m'].iloc[-1]
+            st.write(f"RSI: {l5['RSI']:.1f}")
+            st.write(f"Stoch K: {l5['Stoch_K']:.1f}")
+            st.write(f"OFI: {l5['OFI']:.4f}")
+            st.progress(min(max(int(l5['RSI']), 0), 100))
+            
+        with tab2:
+            l15 = data['df_15m'].iloc[-1]
+            st.write(f"RSI: {l15['RSI']:.1f}")
+            st.write(f"Trend: {'Aligned' if l15['Trend_Align']>0 else 'Weak'}")
+            
+        with tab3:
+            l1h = data['df_1h'].iloc[-1]
+            st.write(f"Regime: {data['market_regime']['regime']}")
+            st.write(f"OFI Cumulative: {data['behavior']['cumulative_ofi']:.2f}")
 
-st.markdown("---")
-
-current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f"""
-<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px;'>
-    <h3 style='color: white; margin: 0 0 0.5rem 0;'>⚡ ALADDIN MTF SCALPING SYSTEM</h3>
-    <p style='color: white; font-size: 0.9rem; margin: 0.3rem 0; opacity: 0.9;'>
-        Multi-Timeframe • 5m/15m/1h • Ensemble AI • 4000 Simulations • 99.5% Target
-    </p>
-    <p style='color: white; font-size: 0.8rem; margin: 0.5rem 0 0 0; opacity: 0.8;'>
-        ⚠️ Use stop losses ALWAYS. Wait for STRONG MTF alignment. Risk max 2% per trade.
-    </p>
-    <p style='color: white; font-size: 0.75rem; margin: 0.3rem 0 0 0; opacity: 0.7;'>
-        Updated: {current_time} • © 2025 ALADDIN AI
-    </p>
-</div>
-""", unsafe_allow_html=True)
+    st.caption(f"Last Update: {data['time'].strftime('%H:%M:%S')} | Source: {live['source']}")
