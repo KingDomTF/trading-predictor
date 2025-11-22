@@ -209,8 +209,16 @@ def analyze_tf(df, tf):
     patterns = []
     for i in range(lookback + 150, len(df) - lookback - 40):
         hist = df.iloc[i-lookback:i]
-        hist_features = {k: hist[k if k != 'obv' else 'OBV_Signal'].mean() if k != 'volume' else hist['Volume_Surge'].mean() 
-                         for k in features.keys()}
+        
+        hist_features = {
+            'rsi': hist['RSI_14'].mean(),
+            'stoch': hist['Stoch_K'].mean(),
+            'mfi': hist['MFI'].mean(),
+            'obv': hist['OBV_Signal'].mean(),
+            'volume': hist['Volume_Surge'].mean(),
+            'adx': hist['ADX'].mean(),
+            'trend': hist['Trend_Align'].mean()
+        }
         
         similarity = 1 - sum([abs(features[k] - hist_features[k]) / (abs(features[k]) + abs(hist_features[k]) + 0.00001) 
                              for k in features]) / len(features)
