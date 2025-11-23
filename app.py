@@ -12,6 +12,7 @@ warnings.filterwarnings('ignore')
 
 ASSETS = {'GC=F': '🥇 Gold', 'SI=F': '🥈 Silver', 'BTC-USD': '₿ Bitcoin', '^GSPC': '📊 S&P 500'}
 
+@st.cache_data(ttl=60)
 def get_realtime_crypto(symbol):
     try:
         if symbol == 'BTC-USD':
@@ -23,6 +24,7 @@ def get_realtime_crypto(symbol):
         pass
     return None
 
+@st.cache_data(ttl=300)
 def get_vix_data():
     try:
         vix = yf.Ticker('^VIX')
@@ -49,6 +51,7 @@ def get_vix_data():
         st.warning(f"VIX data unavailable: {str(e)}")
     return None
 
+@st.cache_data(ttl=300)
 def get_put_call_ratio():
     try:
         spx = yf.Ticker('^SPX')
@@ -74,27 +77,25 @@ def get_put_call_ratio():
         st.info(f"Put/Call data unavailable: {str(e)}")
     return None
 
+@st.cache_data(ttl=60)
 def get_live_data(symbol):
     try:
         crypto = get_realtime_crypto(symbol) if symbol == 'BTC-USD' else None
         ticker = yf.Ticker(symbol)
         
+        hist = ticker.history(period='1d')
+        if hist.empty:
+            return None
+        
+        price = float(hist['Close'].iloc[-1])
+        volume = int(hist['Volume'].iloc[-1])
+        open_price = float(hist['Open'].iloc[-1])
+        high = float(hist['High'].iloc[-1])
+        low = float(hist['Low'].iloc[-1])
+        
         if crypto:
             price = float(crypto['price'])
             volume = int(crypto['volume_24h'])
-            hist = ticker.history(period='1d')
-            open_price = float(hist['Open'].iloc[-1]) if not hist.empty else price
-            high = float(hist['High'].iloc[-1]) if not hist.empty else price
-            low = float(hist['Low'].iloc[-1]) if not hist.empty else price
-        else:
-            hist = ticker.history(period='1d')
-            if hist.empty:
-                return None
-            price = float(hist['Close'].iloc[-1])
-            volume = int(hist['Volume'].iloc[-1])
-            open_price = float(hist['Open'].iloc[-1])
-            high = float(hist['High'].iloc[-1])
-            low = float(hist['Low'].iloc[-1])
         
         return {
             'price': price,
@@ -120,14 +121,14 @@ def calc_indicators(df, tf='5m'):
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / (loss + 0.00001)
+        rs = gain / (loss + 1e-6)
         df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
     
     # Stochastic
     k_period = 5 if tf == '5m' else 9 if tf == '15m' else 14
     low_min = df['Low'].rolling(window=k_period).min()
     high_max = df['High'].rolling(window=k_period).max()
-    df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min + 0.00001))
+    df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min + 1e-6))
     df['Stoch_D'] = df['Stoch_K'].rolling(window=3).mean()
     
     # MACD
@@ -141,7 +142,7 @@ def calc_indicators(df, tf='5m'):
     bb_std = df['Close'].rolling(window=20).std()
     df['BB_upper'] = df['BB_mid'] + (bb_std * 2)
     df['BB_lower'] = df['BB_mid'] - (bb_std * 2)
-    df['BB_pct'] = (df['Close'] - df['BB_lower']) / (df['BB_upper'] - df['BB_lower'] + 0.00001)
+    df['BB_pct'] = (df['Close'] - df['BB_lower']) / (df['BB_upper'] - df['BB_lower'] + 1e-6)
     
     # ATR
     high_low = df['High'] - df['Low']
@@ -167,25 +168,25 @@ def calc_indicators(df, tf='5m'):
     money_flow = typical_price * df['Volume']
     positive_flow = money_flow.where(typical_price > typical_price.shift(), 0).rolling(14).sum()
     negative_flow = money_flow.where(typical_price < typical_price.shift(), 0).rolling(14).sum()
-    mfi_ratio = positive_flow / (negative_flow + 0.00001)
+    mfi_ratio = positive_flow / (negative_flow + 1e-6)
     df['MFI'] = 100 - (100 / (1 + mfi_ratio))
     
     # ADX
     plus_dm = df['High'].diff().clip(lower=0)
     minus_dm = df['Low'].diff().clip(upper=0).abs()
-    atr = true_range.rolling(14).mean()
-    plus_di = 100 * (plus_dm.rolling(14).mean() / (atr + 0.00001))
-    minus_di = 100 * (minus_dm.rolling(14).mean() / (atr + 0.00001))
-    dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di + 0.00001))
+    atr_adx = true_range.rolling(14).mean()
+    plus_di = 100 * (plus_dm.rolling(14).mean() / (atr_adx + 1e-6))
+    minus_di = 100 * (minus_dm.rolling(14).mean() / (atr_adx + 1e-6))
+    dx = 100 * (np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-6))
     df['ADX'] = dx.rolling(14).mean()
     
     # ROC
-    df['ROC'] = ((df['Close'] - df['Close'].shift(10)) / (df['Close'].shift(10) + 0.00001)) * 100
+    df['ROC'] = ((df['Close'] - df['Close'].shift(10)) / (df['Close'].shift(10) + 1e-6)) * 100
     
     # Williams %R
     hh = df['High'].rolling(14).max()
     ll = df['Low'].rolling(14).min()
-    df['Williams_R'] = -100 * ((hh - df['Close']) / (hh - ll + 0.00001))
+    df['Williams_R'] = -100 * ((hh - df['Close']) / (hh - ll + 1e-6))
     
     # Trend Alignment
     df['Trend_Align'] = ((df['EMA_9'] > df['EMA_20']).astype(int) +
@@ -197,8 +198,8 @@ def calc_indicators(df, tf='5m'):
 def detect_market_regime(df_1h, vix_data):
     try:
         latest = df_1h.iloc[-50:]
-        ema_50_slope = (latest['EMA_50'].iloc[-1] - latest['EMA_50'].iloc[-10]) / (latest['EMA_50'].iloc[-10] + 0.00001) * 100
-        price_vs_ema200 = (latest['Close'].iloc[-1] - latest['EMA_200'].iloc[-1]) / (latest['EMA_200'].iloc[-1] + 0.00001) * 100
+        ema_50_slope = (latest['EMA_50'].iloc[-1] - latest['EMA_50'].iloc[-10]) / (latest['EMA_50'].iloc[-10] + 1e-6) * 100
+        price_vs_ema200 = (latest['Close'].iloc[-1] - latest['EMA_200'].iloc[-1]) / (latest['EMA_200'].iloc[-1] + 1e-6) * 100
         vix_level = vix_data['vix'] if vix_data else 20
         
         if ema_50_slope > 2 and price_vs_ema200 > 5 and vix_level < 20:
@@ -226,37 +227,40 @@ def analyze_tf(df, tf):
         
         latest = df.iloc[-lookback:]
         
-        features = {
-            'rsi': float(latest['RSI_14'].mean()),
-            'stoch': float(latest['Stoch_K'].mean()),
-            'mfi': float(latest['MFI'].mean()),
-            'obv': float(latest['OBV_Signal'].mean()),
-            'volume': float(latest['Volume_Surge'].mean()),
-            'adx': float(latest['ADX'].mean()),
-            'trend': float(latest['Trend_Align'].mean())
-        }
+        features = np.array([
+            latest['RSI_14'].mean(),
+            latest['Stoch_K'].mean(),
+            latest['MFI'].mean(),
+            latest['OBV_Signal'].mean(),
+            latest['Volume_Surge'].mean(),
+            latest['ADX'].mean(),
+            latest['Trend_Align'].mean()
+        ], dtype=np.float32)
         
         patterns = []
-        for i in range(lookback + 150, min(len(df) - lookback - 40, lookback + 500)):
+        max_iter = min(350, len(df) - lookback - 40 - (lookback + 150))  # Limit iterations to 350 max
+        for i in range(lookback + 150, lookback + 150 + max_iter):
+            if i >= len(df):
+                break
             hist = df.iloc[i-lookback:i]
             
-            hist_features = {
-                'rsi': float(hist['RSI_14'].mean()),
-                'stoch': float(hist['Stoch_K'].mean()),
-                'mfi': float(hist['MFI'].mean()),
-                'obv': float(hist['OBV_Signal'].mean()),
-                'volume': float(hist['Volume_Surge'].mean()),
-                'adx': float(hist['ADX'].mean()),
-                'trend': float(hist['Trend_Align'].mean())
-            }
+            hist_features = np.array([
+                hist['RSI_14'].mean(),
+                hist['Stoch_K'].mean(),
+                hist['MFI'].mean(),
+                hist['OBV_Signal'].mean(),
+                hist['Volume_Surge'].mean(),
+                hist['ADX'].mean(),
+                hist['Trend_Align'].mean()
+            ], dtype=np.float32)
             
-            similarity = 1 - sum([abs(features[k] - hist_features[k]) / (abs(features[k]) + abs(hist_features[k]) + 0.00001)
-                                 for k in features]) / len(features)
+            diffs = np.abs(features - hist_features)
+            similarity = 1 - np.mean(diffs / (np.abs(features) + np.abs(hist_features) + 1e-6))
             
             if similarity > 0.85:
                 future = df.iloc[i:i+30]
                 if len(future) >= 30:
-                    ret = (future['Close'].iloc[-1] - future['Close'].iloc[0]) / (future['Close'].iloc[0] + 0.00001)
+                    ret = (future['Close'].iloc[-1] - future['Close'].iloc[0]) / (future['Close'].iloc[0] + 1e-6)
                     direction = 'LONG' if ret > 0.025 else 'SHORT' if ret < -0.025 else 'NEUTRAL'
                     patterns.append({'similarity': float(similarity), 'return': float(ret), 'direction': direction})
         
@@ -310,58 +314,70 @@ def find_mtf_patterns(df_5m, df_15m, df_1h, market_regime, vix_data, pc_data):
             'regime_bias': 0.0
         }
 
-def generate_features(df_5m, df_15m, df_1h, entry, sl, tp, direction, vix_data, pc_data, market_regime):
-    l5, l15, l1h = df_5m.iloc[-1], df_15m.iloc[-1], df_1h.iloc[-1]
+def generate_features(df_5m, df_15m, df_1h, entry, sl, tp, direction, vix_data, pc_data, market_regime, idx_5m=None, idx_15m=None, idx_1h=None):
+    # Use indices to avoid full slicing if provided
+    if idx_5m is not None:
+        l5 = df_5m.iloc[idx_5m]
+    else:
+        l5 = df_5m.iloc[-1]
+    if idx_15m is not None:
+        l15 = df_15m.iloc[idx_15m]
+    else:
+        l15 = df_15m.iloc[-1]
+    if idx_1h is not None:
+        l1h = df_1h.iloc[idx_1h]
+    else:
+        l1h = df_1h.iloc[-1]
     
-    features = [
-        float(abs(tp - entry) / (abs(entry - sl) + 0.00001)),
+    features = np.array([
+        abs(tp - entry) / (abs(entry - sl) + 1e-6),
         1.0 if direction == 'long' else 0.0,
-        float(l5['RSI_14']), float(l5['Stoch_K']), float(l5['MFI']), float(l5['OBV_Signal']), float(l5['Volume_Surge']),
-        float(l5['MACD_Hist']), float(l5['ADX']), float(l5['Trend_Align']), float(l5['BB_pct']), float(l5['Williams_R']),
-        float(l15['RSI_14']), float(l15['Stoch_K']), float(l15['MFI']), float(l15['OBV_Signal']),
-        float(l15['MACD_Hist']), float(l15['ADX']), float(l15['Trend_Align']), float(l15['BB_pct']),
-        float(l1h['RSI_14']), float(l1h['MFI']), float(l1h['MACD_Hist']), float(l1h['ADX']), float(l1h['Trend_Align']),
-        float((l1h['Close'] - l1h['EMA_200']) / (l1h['EMA_200'] + 0.00001) * 100),
-        float(vix_data['vix']) if vix_data else 20.0,
+        l5['RSI_14'], l5['Stoch_K'], l5['MFI'], l5['OBV_Signal'], l5['Volume_Surge'],
+        l5['MACD_Hist'], l5['ADX'], l5['Trend_Align'], l5['BB_pct'], l5['Williams_R'],
+        l15['RSI_14'], l15['Stoch_K'], l15['MFI'], l15['OBV_Signal'],
+        l15['MACD_Hist'], l15['ADX'], l15['Trend_Align'], l15['BB_pct'],
+        l1h['RSI_14'], l1h['MFI'], l1h['MACD_Hist'], l1h['ADX'], l1h['Trend_Align'],
+        (l1h['Close'] - l1h['EMA_200']) / (l1h['EMA_200'] + 1e-6) * 100,
+        vix_data['vix'] if vix_data else 20.0,
         1.0 if vix_data and vix_data['fear_level'] in ['HIGH', 'EXTREME'] else 0.0,
         1.0 if vix_data and vix_data['contrarian_signal'] == 'BUY' else -1.0 if vix_data and vix_data['contrarian_signal'] == 'SELL' else 0.0,
-        float(pc_data['pc_ratio']) if pc_data else 1.0,
+        pc_data['pc_ratio'] if pc_data else 1.0,
         1.0 if pc_data and pc_data['sentiment'] in ['EXTREME_FEAR', 'FEAR'] else -1.0 if pc_data and pc_data['sentiment'] == 'GREED' else 0.0,
-        float(market_regime['bias']),
-        float((l5['RSI_14'] + l15['RSI_14'] + l1h['RSI_14']) / 3),
-        float((l5['Trend_Align'] + l15['Trend_Align'] + l1h['Trend_Align']) / 3),
-        float((l5['MFI'] + l15['MFI'] + l1h['MFI']) / 3)
-    ]
+        market_regime['bias'],
+        (l5['RSI_14'] + l15['RSI_14'] + l1h['RSI_14']) / 3,
+        (l5['Trend_Align'] + l15['Trend_Align'] + l1h['Trend_Align']) / 3,
+        (l5['MFI'] + l15['MFI'] + l1h['MFI']) / 3
+    ], dtype=np.float32)
     
-    return np.array(features, dtype=np.float32)
+    return features
 
-def train_ensemble(df_5m, df_15m, df_1h, n_sim=3000):
+def train_ensemble(df_5m, df_15m, df_1h, n_sim=1000):  # Reduced from 3000 to 1000
     X_list, y_list = [], []
     
     for _ in range(n_sim):
         try:
             idx = np.random.randint(250, len(df_5m) - 150)
             
-            vix_sim = {'vix': float(np.random.uniform(12, 35)), 'fear_level': 'MEDIUM', 'contrarian_signal': 'NEUTRAL'}
+            vix_sim = {'vix': np.random.uniform(12, 35), 'fear_level': 'MEDIUM', 'contrarian_signal': 'NEUTRAL'}
             if vix_sim['vix'] > 30:
                 vix_sim['fear_level'], vix_sim['contrarian_signal'] = 'EXTREME', 'BUY'
             
-            pc_sim = {'pc_ratio': float(np.random.uniform(0.7, 1.3)), 'sentiment': 'NEUTRAL'}
-            regime_sim = {'bias': float(np.random.uniform(-1, 1))}
+            pc_sim = {'pc_ratio': np.random.uniform(0.7, 1.3), 'sentiment': 'NEUTRAL'}
+            regime_sim = {'bias': np.random.uniform(-1, 1)}
             
-            mfi_5m = float(df_5m.iloc[idx-10:idx]['MFI'].mean())
-            obv_5m = float(df_5m.iloc[idx-10:idx]['OBV_Signal'].mean())
+            mfi_5m = df_5m.iloc[idx-10:idx]['MFI'].mean()
+            obv_5m = df_5m.iloc[idx-10:idx]['OBV_Signal'].mean()
             
             if mfi_5m > 65 and obv_5m > 0.6:
                 direction = 'long'
             elif mfi_5m < 35 and obv_5m < 0.4:
                 direction = 'short'
             else:
-                direction = 'long' if float(df_5m.iloc[idx-20:idx]['Trend_Align'].mean()) > 1.5 else 'short'
+                direction = 'long' if df_5m.iloc[idx-20:idx]['Trend_Align'].mean() > 1.5 else 'short'
             
-            entry = float(df_5m.iloc[idx]['Close'])
-            atr = float(df_5m.iloc[idx]['ATR'])
-            sl_mult, tp_mult = float(np.random.uniform(0.4, 1.2)), float(np.random.uniform(2.0, 4.5))
+            entry = df_5m.iloc[idx]['Close']
+            atr = df_5m.iloc[idx]['ATR']
+            sl_mult, tp_mult = np.random.uniform(0.4, 1.2), np.random.uniform(2.0, 4.5)
             
             if direction == 'long':
                 sl, tp = entry - (atr * sl_mult), entry + (atr * tp_mult)
@@ -372,8 +388,8 @@ def train_ensemble(df_5m, df_15m, df_1h, n_sim=3000):
             idx_1h = min(idx // 12, len(df_1h) - 1)
             
             features = generate_features(
-                df_5m.iloc[:idx+1], df_15m.iloc[:idx_15m+1], df_1h.iloc[:idx_1h+1],
-                entry, sl, tp, direction, vix_sim, pc_sim, regime_sim
+                df_5m, df_15m, df_1h, entry, sl, tp, direction, vix_sim, pc_sim, regime_sim,
+                idx_5m=idx, idx_15m=idx_15m, idx_1h=idx_1h
             )
             
             future = df_5m.iloc[idx+1:idx+81]['Close'].values
@@ -398,10 +414,10 @@ def train_ensemble(df_5m, df_15m, df_1h, n_sim=3000):
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
     
-    gb = GradientBoostingClassifier(n_estimators=300, max_depth=7, learning_rate=0.09, subsample=0.85, random_state=42)
-    rf = RandomForestClassifier(n_estimators=300, max_depth=10, min_samples_split=4, random_state=42, n_jobs=-1)
-    ada = AdaBoostClassifier(n_estimators=150, learning_rate=0.9, random_state=42)
-    nn = MLPClassifier(hidden_layer_sizes=(150, 80, 40), max_iter=500, random_state=42, early_stopping=True)
+    gb = GradientBoostingClassifier(n_estimators=200, max_depth=6, learning_rate=0.1, subsample=0.8, random_state=42)  # Reduced estimators and depth
+    rf = RandomForestClassifier(n_estimators=200, max_depth=8, min_samples_split=5, random_state=42, n_jobs=-1)  # Reduced
+    ada = AdaBoostClassifier(n_estimators=100, learning_rate=1.0, random_state=42)  # Reduced
+    nn = MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=300, random_state=42, early_stopping=True)  # Simplified
     
     ensemble = VotingClassifier(estimators=[('gb', gb), ('rf', rf), ('ada', ada), ('nn', nn)], voting='soft', weights=[3, 2.5, 1.5, 2])
     ensemble.fit(X_scaled, y)
@@ -464,12 +480,11 @@ def generate_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, market_r
         elif market_regime['regime'] in ['STRONG_BEAR', 'BEAR'] and direction == 'short':
             prob += 8
         
-        if cfg['tf'] in ['5m', '15m']:
-            l = l5 if cfg['tf'] == '5m' else df_15m.iloc[-1]
-            if l['MFI'] > 75 and l['OBV_Signal'] == 1 and direction == 'long':
-                prob += 12
-            elif l['MFI'] < 25 and l['OBV_Signal'] == 0 and direction == 'short':
-                prob += 12
+        l_tf = l5 if cfg['tf'] == '5m' else df_15m.iloc[-1] if cfg['tf'] == '15m' else df_1h.iloc[-1]
+        if l_tf['MFI'] > 75 and l_tf['OBV_Signal'] == 1 and direction == 'long':
+            prob += 12
+        elif l_tf['MFI'] < 25 and l_tf['OBV_Signal'] == 0 and direction == 'short':
+            prob += 12
         
         if cfg['tf'] == '5m':
             if l5['RSI_9'] < 18 and l5['RSI_14'] < 25 and direction == 'long':
@@ -477,25 +492,22 @@ def generate_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, market_r
             elif l5['RSI_9'] > 82 and l5['RSI_14'] > 75 and direction == 'short':
                 prob += 11
         
-        if cfg['tf'] in ['5m', '15m']:
-            l = l5 if cfg['tf'] == '5m' else df_15m.iloc[-1]
-            if l['Stoch_K'] < 15 and direction == 'long':
-                prob += 8
-            elif l['Stoch_K'] > 85 and direction == 'short':
-                prob += 8
+        if l_tf['Stoch_K'] < 15 and direction == 'long':
+            prob += 8
+        elif l_tf['Stoch_K'] > 85 and direction == 'short':
+            prob += 8
         
-        l = l5 if cfg['tf'] == '5m' else df_15m.iloc[-1] if cfg['tf'] == '15m' else df_1h.iloc[-1]
-        if l['MACD_Hist'] > 0 and direction == 'long':
+        if l_tf['MACD_Hist'] > 0 and direction == 'long':
             prob += 6
-        elif l['MACD_Hist'] < 0 and direction == 'short':
+        elif l_tf['MACD_Hist'] < 0 and direction == 'short':
             prob += 6
         
         if cfg['tf'] in ['5m', '15m'] and l5['Volume_Surge'] == 1:
             prob += 7
         
-        if l['ADX'] > 35:
+        if l_tf['ADX'] > 35:
             prob += 6
-        elif l['ADX'] > 28:
+        elif l_tf['ADX'] > 28:
             prob += 4
         
         prob = min(max(prob, 70), 99.8)
@@ -504,11 +516,11 @@ def generate_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, market_r
             'Strategy': cfg['name'],
             'Timeframe': cfg['tf'],
             'Direction': direction.upper(),
-            'Entry': round(float(entry), 2),
-            'SL': round(float(sl), 2),
-            'TP': round(float(tp), 2),
-            'Probability': round(float(prob), 1),
-            'RR': round(float(abs(tp-entry)/(abs(entry-sl)+0.00001)), 1),
+            'Entry': round(entry, 2),
+            'SL': round(sl, 2),
+            'TP': round(tp, 2),
+            'Probability': round(prob, 1),
+            'RR': round(abs(tp-entry)/(abs(entry-sl)+1e-6), 1),
             'MTF': mtf_signal['alignment'],
             'Regime': market_regime['regime']
         })
@@ -542,7 +554,7 @@ def train_system(symbol):
             df_5m = calc_indicators(d5, '5m')
             df_15m = calc_indicators(d15, '15m')
             df_1h = calc_indicators(d1h, '1h')
-            ensemble, scaler = train_ensemble(df_5m, df_15m, df_1h, n_sim=3000)
+            ensemble, scaler = train_ensemble(df_5m, df_15m, df_1h, n_sim=1000)
             return ensemble, scaler, df_5m, df_15m, df_1h
     except Exception as e:
         st.error(f"Training error: {str(e)}")
@@ -606,7 +618,7 @@ if key in st.session_state:
     with col1:
         st.metric("💵 Price", f"${state['live_data']['price']:.2f}")
     with col2:
-        chg = ((state['live_data']['price'] - state['live_data']['open']) / (state['live_data']['open'] + 0.00001)) * 100
+        chg = ((state['live_data']['price'] - state['live_data']['open']) / (state['live_data']['open'] + 1e-6)) * 100
         st.metric("📈 Change", f"{chg:+.2f}%")
     with col3:
         st.metric("🔼 High", f"${state['live_data']['high']:.2f}")
@@ -767,7 +779,7 @@ with st.expander("ℹ️ System Guide"):
     **3. Market Regime** 🎯 - Trend direction filter
     **4. Order Flow** 💰 - MFI + OBV + Volume analysis
     **5. Multi-Timeframe** 📊 - 5m/15m/1h alignment
-    **6. AI Ensemble** 🧠 - 4 models, 3000 simulations
+    **6. AI Ensemble** 🧠 - 4 models, 1000 simulations (optimized)
     
     ### Best Trades:
     - ✅ Probability >95%
@@ -786,7 +798,7 @@ st.markdown("---")
 current_time = datetime.datetime.now().strftime('%H:%M:%S')
 st.markdown(f"""
 <div style='text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px;'>
-    <h3 style='color: white; margin: 0 0 0.3rem 0; font-size:1.1rem;'>🎯 ALADDIN ULTIMATE</h3>
+    <h3 style='color: white; margin: 0 0 0.3rem 0; font-size:1.1rem;'>🎯 ALADDIN ULTIMATE (Optimized)</h3>
     <p style='color: white; font-size: 0.8rem; margin: 0.2rem 0; opacity: 0.9;'>
         6-Layer • MTF • VIX • Put/Call • Order Flow • Regime • AI • 99.8% Target
     </p>
