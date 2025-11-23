@@ -74,6 +74,40 @@ def get_put_call_ratio():
         st.info(f"Put/Call data unavailable: {str(e)}")
     return None
 
+def get_live_data(symbol):
+    try:
+        crypto = get_realtime_crypto(symbol) if symbol == 'BTC-USD' else None
+        ticker = yf.Ticker(symbol)
+        
+        if crypto:
+            price = float(crypto['price'])
+            volume = int(crypto['volume_24h'])
+            hist = ticker.history(period='1d')
+            open_price = float(hist['Open'].iloc[-1]) if not hist.empty else price
+            high = float(hist['High'].iloc[-1]) if not hist.empty else price
+            low = float(hist['Low'].iloc[-1]) if not hist.empty else price
+        else:
+            hist = ticker.history(period='1d')
+            if hist.empty:
+                return None
+            price = float(hist['Close'].iloc[-1])
+            volume = int(hist['Volume'].iloc[-1])
+            open_price = float(hist['Open'].iloc[-1])
+            high = float(hist['High'].iloc[-1])
+            low = float(hist['Low'].iloc[-1])
+        
+        return {
+            'price': price,
+            'open': open_price,
+            'high': high,
+            'low': low,
+            'volume': volume,
+            'source': 'CoinGecko' if crypto else 'Yahoo Finance'
+        }
+    except Exception as e:
+        st.error(f"Error getting live data: {str(e)}")
+        return None
+
 def calc_indicators(df, tf='5m'):
     df = df.copy()
     
@@ -182,280 +216,6 @@ def detect_market_regime(df_1h, vix_data):
     except Exception as e:
         st.error(f"Error in market regime: {str(e)}")
         return {'regime': 'SIDEWAYS', 'bias': 0.0}
-
-@st.cache_data(ttl=120)
-def load_data_mtf(symbol):
-    try:
-        d5 = yf.download(symbol, period='7d', interval='5m', progress=False)
-        d15 = yf.download(symbol, period='30d', interval='15m', progress=False)
-        d1h = yf.download(symbol, period='730d', interval='1h', progress=False)
-        
-        for d in [d5, d15, d1h]:
-            if isinstance(d.columns, pd.MultiIndex):
-                d.columns = d.columns.droplevel(1)
-        
-        if all(len(d) >= 250 for d in [d5, d15, d1h]):
-            return (d5[['Open','High','Low','Close','Volume']].copy(),
-                   d15[['Open','High','Low','Close','Volume']].copy(),
-                   d1h[['Open','High','Low','Close','Volume']].copy())
-    except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-    return None, None, None
-
-@st.cache_resource
-def train_system(symbol):
-    try:
-        d5, d15, d1h = load_data_mtf(symbol)
-        if all(d is not None for d in [d5, d15, d1h]):
-            df_5m = calc_indicators(d5, '5m')
-            df_15m = calc_indicators(d15, '15m')
-            df_1h = calc_indicators(d1h, '1h')
-            ensemble, scaler = train_ensemble(df_5m, df_15m, df_1h, n_sim=3000)
-            return ensemble, scaler, df_5m, df_15m, df_1h
-    except Exception as e:
-        st.error(f"Training error: {str(e)}")
-    return None, None, None, None, None
-
-st.markdown('<h1>🎯 ALADDIN ULTIMATE - 6-Layer System</h1>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; color: #4a5568; font-size: 0.9rem; font-weight: 600;">📊 MTF • 🔥 VIX • 📈 Put/Call • 💰 Order Flow • 🎯 Regime • 🧠 AI</p>', unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns([2, 1, 1])
-with col1:
-    symbol = st.selectbox("Asset", list(ASSETS.keys()), format_func=lambda x: ASSETS[x])
-with col2:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("**6-Layer Active**")
-with col3:
-    st.markdown("<br>", unsafe_allow_html=True)
-    refresh = st.button("🔄 Update", use_container_width=True)
-
-st.markdown("---")
-
-key = f"ultimate_{symbol}"
-if key not in st.session_state or refresh:
-    with st.spinner("🎯 Initializing System..."):
-        try:
-            ensemble, scaler, df_5m, df_15m, df_1h = train_system(symbol)
-            live_data = get_live_data(symbol)
-            vix_data = get_vix_data()
-            pc_data = get_put_call_ratio()
-            
-            if all(x is not None for x in [ensemble, live_data, df_1h]):
-                market_regime = detect_market_regime(df_1h, vix_data)
-                mtf_signal = find_mtf_patterns(df_5m, df_15m, df_1h, market_regime, vix_data, pc_data)
-                
-                st.session_state[key] = {
-                    'ensemble': ensemble, 'scaler': scaler, 'df_5m': df_5m, 'df_15m': df_15m, 'df_1h': df_1h,
-                    'live_data': live_data, 'vix_data': vix_data, 'pc_data': pc_data, 'market_regime': market_regime,
-                    'mtf_signal': mtf_signal, 'time': datetime.datetime.now()
-                }
-                st.success(f"✅ System Ready! {st.session_state[key]['time'].strftime('%H:%M:%S')}")
-            else:
-                st.error("❌ System initialization failed")
-        except Exception as e:
-            st.error(f"❌ Initialization error: {str(e)}")
-
-if key in st.session_state:
-    state = st.session_state[key]
-    
-    st.markdown(f"## 📊 {ASSETS[symbol]} - Real-Time")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("💵 Price", f"${state['live_data']['price']:.2f}")
-    with col2:
-        chg = ((state['live_data']['price'] - state['live_data']['open']) / (state['live_data']['open'] + 0.00001)) * 100
-        st.metric("📈 Change", f"{chg:+.2f}%")
-    with col3:
-        st.metric("🔼 High", f"${state['live_data']['high']:.2f}")
-    with col4:
-        st.metric("🔽 Low", f"${state['live_data']['low']:.2f}")
-    with col5:
-        vol_str = f"{state['live_data']['volume']/1e9:.2f}B" if state['live_data']['volume'] > 1e9 else f"{state['live_data']['volume']/1e6:.1f}M"
-        st.metric("📊 Volume", vol_str)
-    
-    st.markdown("---")
-    
-    st.markdown("## 🔬 6-Layer Analysis")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("### 🔥 VIX")
-        if state['vix_data']:
-            vix_class = 'vix-high' if state['vix_data']['fear_level'] in ['HIGH', 'EXTREME'] else 'vix-low'
-            st.markdown(f"**Level:** <span class='{vix_class}'>{state['vix_data']['vix']:.1f}</span>", unsafe_allow_html=True)
-            st.markdown(f"**Regime:** {state['vix_data']['regime']}")
-            st.markdown(f"**Signal:** {state['vix_data']['contrarian_signal']}")
-        else:
-            st.warning("VIX unavailable")
-    
-    with col2:
-        st.markdown("### 📈 Put/Call")
-        if state['pc_data']:
-            st.markdown(f"**Ratio:** {state['pc_data']['pc_ratio']:.2f}")
-            st.markdown(f"**Sentiment:** {state['pc_data']['sentiment']}")
-            st.markdown(f"**Signal:** {state['pc_data']['signal']}")
-        else:
-            st.info("P/C unavailable")
-    
-    with col3:
-        st.markdown("### 🎯 Regime")
-        regime_class = 'regime-bull' if 'BULL' in state['market_regime']['regime'] else 'regime-bear' if 'BEAR' in state['market_regime']['regime'] else ''
-        st.markdown(f"**Regime:** <span class='{regime_class}'>{state['market_regime']['regime']}</span>", unsafe_allow_html=True)
-        st.markdown(f"**Bias:** {state['market_regime']['bias']:.2f}")
-    
-    st.markdown("---")
-    
-    st.markdown("## 🔄 Multi-Timeframe")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        align_class = 'regime-bull' if state['mtf_signal']['alignment'] == 'STRONG' else 'regime-bear'
-        st.markdown(f"**MTF:** <span class='{align_class}'>{state['mtf_signal']['alignment']}</span>", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"**5m:** {state['mtf_signal']['5m_direction']} ({state['mtf_signal']['5m_confidence']*100:.0f}%)")
-    with col3:
-        st.markdown(f"**15m:** {state['mtf_signal']['15m_direction']} ({state['mtf_signal']['15m_confidence']*100:.0f}%)")
-    with col4:
-        st.markdown(f"**1h:** {state['mtf_signal']['1h_direction']} ({state['mtf_signal']['1h_confidence']*100:.0f}%)")
-    
-    l5 = state['df_5m'].iloc[-1]
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        mfi_signal = "🟢 Buyers" if l5['MFI'] > 60 else "🔴 Sellers" if l5['MFI'] < 40 else "🟡 Neutral"
-        st.metric("MFI", f"{l5['MFI']:.1f}", mfi_signal)
-    with col2:
-        obv_signal = "🟢 Accum" if l5['OBV_Signal'] == 1 else "🔴 Distrib"
-        st.metric("OBV", obv_signal)
-    with col3:
-        st.metric("Vol Surge", "🔊" if l5['Volume_Surge'] == 1 else "🔉")
-    with col4:
-        st.metric("Trend", f"{int(l5['Trend_Align'])}/3")
-    
-    st.markdown("---")
-    
-    st.markdown("## 🎯 Trade Recommendations")
-    
-    try:
-        trades = generate_trades(
-            state['ensemble'], state['scaler'], state['df_5m'], state['df_15m'], state['df_1h'],
-            state['mtf_signal'], state['market_regime'], state['vix_data'], state['pc_data'],
-            state['live_data']['price']
-        )
-        
-        for idx, trade in trades.iterrows():
-            card_class = f"trade-{trade['Timeframe']}"
-            prob_emoji = "🟢" if trade['Probability'] >= 95 else "🟡" if trade['Probability'] >= 88 else "🟠"
-            
-            st.markdown(f"""
-            <div class='{card_class}'>
-                <h3 style='margin:0 0 0.4rem 0; color:#2d3748; font-size:0.95rem;'>
-                    {prob_emoji} {trade['Strategy']} • {trade['Direction']} • MTF: {trade['MTF']} • {trade['Regime']}
-                </h3>
-                <div style='display:grid; grid-template-columns: repeat(6, 1fr); gap:0.5rem; font-size:0.8rem;'>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Entry</p>
-                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>${trade['Entry']:.2f}</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Stop</p>
-                    <p style='margin:0; color:#e53e3e; font-size:0.95rem; font-weight:700;'>${trade['SL']:.2f}</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Target</p>
-                    <p style='margin:0; color:#38a169; font-size:0.95rem; font-weight:700;'>${trade['TP']:.2f}</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Probability</p>
-                    <p style='margin:0; color:#667eea; font-size:1.1rem; font-weight:800;'>{trade['Probability']:.1f}%</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>R/R</p>
-                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>{trade['RR']:.1f}x</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>TF</p>
-                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>{trade['Timeframe']}</p></div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Error generating trades: {str(e)}")
-    
-    st.markdown("---")
-    
-    tab1, tab2, tab3 = st.tabs(["⚡ 5min", "📊 15min", "🎯 1hour"])
-    
-    with tab1:
-        l = state['df_5m'].iloc[-1]
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            st.metric("RSI", f"{l['RSI_14']:.1f}")
-        with col2:
-            st.metric("Stoch", f"{l['Stoch_K']:.1f}")
-        with col3:
-            st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
-        with col4:
-            st.metric("ADX", f"{l['ADX']:.1f}")
-        with col5:
-            st.metric("MFI", f"{l['MFI']:.1f}")
-    
-    with tab2:
-        l = state['df_15m'].iloc[-1]
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            st.metric("RSI", f"{l['RSI_14']:.1f}")
-        with col2:
-            st.metric("Stoch", f"{l['Stoch_K']:.1f}")
-        with col3:
-            st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
-        with col4:
-            st.metric("ADX", f"{l['ADX']:.1f}")
-        with col5:
-            st.metric("MFI", f"{l['MFI']:.1f}")
-    
-    with tab3:
-        l = state['df_1h'].iloc[-1]
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("RSI", f"{l['RSI_14']:.1f}")
-        with col2:
-            st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
-        with col3:
-            st.metric("ADX", f"{l['ADX']:.1f}")
-        with col4:
-            st.metric("Trend", f"{int(l['Trend_Align'])}/3")
-
-with st.expander("ℹ️ System Guide"):
-    st.markdown("""
-    ## 🎯 6-Layer System
-    
-    **1. VIX** 🔥 - Fear gauge (>30 = extreme fear = BUY signal)
-    **2. Put/Call** 📈 - Institutional sentiment (>1.15 = BUY)
-    **3. Market Regime** 🎯 - Trend direction filter
-    **4. Order Flow** 💰 - MFI + OBV + Volume analysis
-    **5. Multi-Timeframe** 📊 - 5m/15m/1h alignment
-    **6. AI Ensemble** 🧠 - 4 models, 3000 simulations
-    
-    ### Best Trades:
-    - ✅ Probability >95%
-    - ✅ STRONG MTF alignment
-    - ✅ VIX/P/C extreme signals
-    - ✅ Order Flow confirmation
-    
-    ### Risk Management:
-    - Max 2% per trade
-    - Always use stop losses
-    - Wait for best setups
-    """)
-
-st.markdown("---")
-
-current_time = datetime.datetime.now().strftime('%H:%M:%S')
-st.markdown(f"""
-<div style='text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px;'>
-    <h3 style='color: white; margin: 0 0 0.3rem 0; font-size:1.1rem;'>🎯 ALADDIN ULTIMATE</h3>
-    <p style='color: white; font-size: 0.8rem; margin: 0.2rem 0; opacity: 0.9;'>
-        6-Layer • MTF • VIX • Put/Call • Order Flow • Regime • AI • 99.8% Target
-    </p>
-    <p style='color: white; font-size: 0.7rem; margin: 0.3rem 0 0 0; opacity: 0.8;'>
-        ⚠️ Use stop losses • Wait for 95%+ • STRONG MTF only
-    </p>
-    <p style='color: white; font-size: 0.65rem; margin: 0.2rem 0 0 0; opacity: 0.7;'>
-        {current_time} • © 2025 ALADDIN AI
-    </p>
-</div>
-""", unsafe_allow_html=True)
 
 def analyze_tf(df, tf):
     try:
@@ -755,36 +515,286 @@ def generate_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, market_r
     
     return pd.DataFrame(trades).sort_values('Probability', ascending=False)
 
-def get_live_data(symbol):
+@st.cache_data(ttl=120)
+def load_data_mtf(symbol):
     try:
-        crypto = get_realtime_crypto(symbol) if symbol == 'BTC-USD' else None
-        ticker = yf.Ticker(symbol)
+        d5 = yf.download(symbol, period='7d', interval='5m', progress=False)
+        d15 = yf.download(symbol, period='30d', interval='15m', progress=False)
+        d1h = yf.download(symbol, period='730d', interval='1h', progress=False)
         
-        if crypto:
-            price = float(crypto['price'])
-            volume = int(crypto['volume_24h'])
-            hist = ticker.history(period='1d')
-            open_price = float(hist['Open'].iloc[-1]) if not hist.empty else price
-            high = float(hist['High'].iloc[-1]) if not hist.empty else price
-            low = float(hist['Low'].iloc[-1]) if not hist.empty else price
-        else:
-            hist = ticker.history(period='1d')
-            if hist.empty:
-                return None
-            price = float(hist['Close'].iloc[-1])
-            volume = int(hist['Volume'].iloc[-1])
-            open_price = float(hist['Open'].iloc[-1])
-            high = float(hist['High'].iloc[-1])
-            low = float(hist['Low'].iloc[-1])
+        for d in [d5, d15, d1h]:
+            if isinstance(d.columns, pd.MultiIndex):
+                d.columns = d.columns.droplevel(1)
         
-        return {
-            'price': price,
-            'open': open_price,
-            'high': high,
-            'low': low,
-            'volume': volume,
-            'source': 'CoinGecko' if crypto else 'Yahoo Finance'
-        }
+        if all(len(d) >= 250 for d in [d5, d15, d1h]):
+            return (d5[['Open','High','Low','Close','Volume']].copy(),
+                   d15[['Open','High','Low','Close','Volume']].copy(),
+                   d1h[['Open','High','Low','Close','Volume']].copy())
     except Exception as e:
-        st.error(f"Error getting live data: {str(e)}")
-        return None
+        st.error(f"Error loading data: {str(e)}")
+    return None, None, None
+
+@st.cache_resource
+def train_system(symbol):
+    try:
+        d5, d15, d1h = load_data_mtf(symbol)
+        if all(d is not None for d in [d5, d15, d1h]):
+            df_5m = calc_indicators(d5, '5m')
+            df_15m = calc_indicators(d15, '15m')
+            df_1h = calc_indicators(d1h, '1h')
+            ensemble, scaler = train_ensemble(df_5m, df_15m, df_1h, n_sim=3000)
+            return ensemble, scaler, df_5m, df_15m, df_1h
+    except Exception as e:
+        st.error(f"Training error: {str(e)}")
+    return None, None, None, None, None
+
+st.markdown('<style>' +
+            '.vix-high { color: #e53e3e; font-weight: bold; } ' +
+            '.vix-low { color: #38a169; font-weight: bold; } ' +
+            '.regime-bull { color: #38a169; font-weight: bold; } ' +
+            '.regime-bear { color: #e53e3e; font-weight: bold; } ' +
+            '.trade-5m { background: #fef5e7; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; } ' +
+            '.trade-15m { background: #f0fff4; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; } ' +
+            '.trade-1h { background: #ebf8ff; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; } ' +
+            '</style>')
+
+st.markdown('<h1>🎯 ALADDIN ULTIMATE - 6-Layer System</h1>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: center; color: #4a5568; font-size: 0.9rem; font-weight: 600;">📊 MTF • 🔥 VIX • 📈 Put/Call • 💰 Order Flow • 🎯 Regime • 🧠 AI</p>', unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    symbol = st.selectbox("Asset", list(ASSETS.keys()), format_func=lambda x: ASSETS[x])
+with col2:
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("**6-Layer Active**")
+with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    refresh = st.button("🔄 Update", use_container_width=True)
+
+st.markdown("---")
+
+key = f"ultimate_{symbol}"
+if key not in st.session_state or refresh:
+    with st.spinner("🎯 Initializing System..."):
+        try:
+            ensemble, scaler, df_5m, df_15m, df_1h = train_system(symbol)
+            live_data = get_live_data(symbol)
+            vix_data = get_vix_data()
+            pc_data = get_put_call_ratio()
+            
+            if all(x is not None for x in [ensemble, live_data, df_1h]):
+                market_regime = detect_market_regime(df_1h, vix_data)
+                mtf_signal = find_mtf_patterns(df_5m, df_15m, df_1h, market_regime, vix_data, pc_data)
+                
+                st.session_state[key] = {
+                    'ensemble': ensemble, 'scaler': scaler, 'df_5m': df_5m, 'df_15m': df_15m, 'df_1h': df_1h,
+                    'live_data': live_data, 'vix_data': vix_data, 'pc_data': pc_data, 'market_regime': market_regime,
+                    'mtf_signal': mtf_signal, 'time': datetime.datetime.now()
+                }
+                st.success(f"✅ System Ready! {st.session_state[key]['time'].strftime('%H:%M:%S')}")
+            else:
+                st.error("❌ System initialization failed")
+        except Exception as e:
+            st.error(f"❌ Initialization error: {str(e)}")
+
+if key in st.session_state:
+    state = st.session_state[key]
+    
+    st.markdown(f"## 📊 {ASSETS[symbol]} - Real-Time")
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.metric("💵 Price", f"${state['live_data']['price']:.2f}")
+    with col2:
+        chg = ((state['live_data']['price'] - state['live_data']['open']) / (state['live_data']['open'] + 0.00001)) * 100
+        st.metric("📈 Change", f"{chg:+.2f}%")
+    with col3:
+        st.metric("🔼 High", f"${state['live_data']['high']:.2f}")
+    with col4:
+        st.metric("🔽 Low", f"${state['live_data']['low']:.2f}")
+    with col5:
+        vol_str = f"{state['live_data']['volume']/1e9:.2f}B" if state['live_data']['volume'] > 1e9 else f"{state['live_data']['volume']/1e6:.1f}M"
+        st.metric("📊 Volume", vol_str)
+    
+    st.markdown("---")
+    
+    st.markdown("## 🔬 6-Layer Analysis")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("### 🔥 VIX")
+        if state['vix_data']:
+            vix_class = 'vix-high' if state['vix_data']['fear_level'] in ['HIGH', 'EXTREME'] else 'vix-low'
+            st.markdown(f"**Level:** <span class='{vix_class}'>{state['vix_data']['vix']:.1f}</span>", unsafe_allow_html=True)
+            st.markdown(f"**Regime:** {state['vix_data']['regime']}")
+            st.markdown(f"**Signal:** {state['vix_data']['contrarian_signal']}")
+        else:
+            st.warning("VIX unavailable")
+    
+    with col2:
+        st.markdown("### 📈 Put/Call")
+        if state['pc_data']:
+            st.markdown(f"**Ratio:** {state['pc_data']['pc_ratio']:.2f}")
+            st.markdown(f"**Sentiment:** {state['pc_data']['sentiment']}")
+            st.markdown(f"**Signal:** {state['pc_data']['signal']}")
+        else:
+            st.info("P/C unavailable")
+    
+    with col3:
+        st.markdown("### 🎯 Regime")
+        regime_class = 'regime-bull' if 'BULL' in state['market_regime']['regime'] else 'regime-bear' if 'BEAR' in state['market_regime']['regime'] else ''
+        st.markdown(f"**Regime:** <span class='{regime_class}'>{state['market_regime']['regime']}</span>", unsafe_allow_html=True)
+        st.markdown(f"**Bias:** {state['market_regime']['bias']:.2f}")
+    
+    st.markdown("---")
+    
+    st.markdown("## 🔄 Multi-Timeframe")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        align_class = 'regime-bull' if state['mtf_signal']['alignment'] == 'STRONG' else 'regime-bear'
+        st.markdown(f"**MTF:** <span class='{align_class}'>{state['mtf_signal']['alignment']}</span>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"**5m:** {state['mtf_signal']['5m_direction']} ({state['mtf_signal']['5m_confidence']*100:.0f}%)")
+    with col3:
+        st.markdown(f"**15m:** {state['mtf_signal']['15m_direction']} ({state['mtf_signal']['15m_confidence']*100:.0f}%)")
+    with col4:
+        st.markdown(f"**1h:** {state['mtf_signal']['1h_direction']} ({state['mtf_signal']['1h_confidence']*100:.0f}%)")
+    
+    l5 = state['df_5m'].iloc[-1]
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        mfi_signal = "🟢 Buyers" if l5['MFI'] > 60 else "🔴 Sellers" if l5['MFI'] < 40 else "🟡 Neutral"
+        st.metric("MFI", f"{l5['MFI']:.1f}", mfi_signal)
+    with col2:
+        obv_signal = "🟢 Accum" if l5['OBV_Signal'] == 1 else "🔴 Distrib"
+        st.metric("OBV", obv_signal)
+    with col3:
+        st.metric("Vol Surge", "🔊" if l5['Volume_Surge'] == 1 else "🔉")
+    with col4:
+        st.metric("Trend", f"{int(l5['Trend_Align'])}/3")
+    
+    st.markdown("---")
+    
+    st.markdown("## 🎯 Trade Recommendations")
+    
+    try:
+        trades = generate_trades(
+            state['ensemble'], state['scaler'], state['df_5m'], state['df_15m'], state['df_1h'],
+            state['mtf_signal'], state['market_regime'], state['vix_data'], state['pc_data'],
+            state['live_data']['price']
+        )
+        
+        for idx, trade in trades.iterrows():
+            card_class = f"trade-{trade['Timeframe']}"
+            prob_emoji = "🟢" if trade['Probability'] >= 95 else "🟡" if trade['Probability'] >= 88 else "🟠"
+            
+            st.markdown(f"""
+            <div class='{card_class}'>
+                <h3 style='margin:0 0 0.4rem 0; color:#2d3748; font-size:0.95rem;'>
+                    {prob_emoji} {trade['Strategy']} • {trade['Direction']} • MTF: {trade['MTF']} • {trade['Regime']}
+                </h3>
+                <div style='display:grid; grid-template-columns: repeat(6, 1fr); gap:0.5rem; font-size:0.8rem;'>
+                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Entry</p>
+                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>${trade['Entry']:.2f}</p></div>
+                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Stop</p>
+                    <p style='margin:0; color:#e53e3e; font-size:0.95rem; font-weight:700;'>${trade['SL']:.2f}</p></div>
+                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Target</p>
+                    <p style='margin:0; color:#38a169; font-size:0.95rem; font-weight:700;'>${trade['TP']:.2f}</p></div>
+                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Probability</p>
+                    <p style='margin:0; color:#667eea; font-size:1.1rem; font-weight:800;'>{trade['Probability']:.1f}%</p></div>
+                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>R/R</p>
+                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>{trade['RR']:.1f}x</p></div>
+                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>TF</p>
+                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>{trade['Timeframe']}</p></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error generating trades: {str(e)}")
+    
+    st.markdown("---")
+    
+    tab1, tab2, tab3 = st.tabs(["⚡ 5min", "📊 15min", "🎯 1hour"])
+    
+    with tab1:
+        l = state['df_5m'].iloc[-1]
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("RSI", f"{l['RSI_14']:.1f}")
+        with col2:
+            st.metric("Stoch", f"{l['Stoch_K']:.1f}")
+        with col3:
+            st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
+        with col4:
+            st.metric("ADX", f"{l['ADX']:.1f}")
+        with col5:
+            st.metric("MFI", f"{l['MFI']:.1f}")
+    
+    with tab2:
+        l = state['df_15m'].iloc[-1]
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("RSI", f"{l['RSI_14']:.1f}")
+        with col2:
+            st.metric("Stoch", f"{l['Stoch_K']:.1f}")
+        with col3:
+            st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
+        with col4:
+            st.metric("ADX", f"{l['ADX']:.1f}")
+        with col5:
+            st.metric("MFI", f"{l['MFI']:.1f}")
+    
+    with tab3:
+        l = state['df_1h'].iloc[-1]
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("RSI", f"{l['RSI_14']:.1f}")
+        with col2:
+            st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
+        with col3:
+            st.metric("ADX", f"{l['ADX']:.1f}")
+        with col4:
+            st.metric("Trend", f"{int(l['Trend_Align'])}/3")
+
+with st.expander("ℹ️ System Guide"):
+    st.markdown("""
+    ## 🎯 6-Layer System
+    
+    **1. VIX** 🔥 - Fear gauge (>30 = extreme fear = BUY signal)
+    **2. Put/Call** 📈 - Institutional sentiment (>1.15 = BUY)
+    **3. Market Regime** 🎯 - Trend direction filter
+    **4. Order Flow** 💰 - MFI + OBV + Volume analysis
+    **5. Multi-Timeframe** 📊 - 5m/15m/1h alignment
+    **6. AI Ensemble** 🧠 - 4 models, 3000 simulations
+    
+    ### Best Trades:
+    - ✅ Probability >95%
+    - ✅ STRONG MTF alignment
+    - ✅ VIX/P/C extreme signals
+    - ✅ Order Flow confirmation
+    
+    ### Risk Management:
+    - Max 2% per trade
+    - Always use stop losses
+    - Wait for best setups
+    """)
+
+st.markdown("---")
+
+current_time = datetime.datetime.now().strftime('%H:%M:%S')
+st.markdown(f"""
+<div style='text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px;'>
+    <h3 style='color: white; margin: 0 0 0.3rem 0; font-size:1.1rem;'>🎯 ALADDIN ULTIMATE</h3>
+    <p style='color: white; font-size: 0.8rem; margin: 0.2rem 0; opacity: 0.9;'>
+        6-Layer • MTF • VIX • Put/Call • Order Flow • Regime • AI • 99.8% Target
+    </p>
+    <p style='color: white; font-size: 0.7rem; margin: 0.3rem 0 0 0; opacity: 0.8;'>
+        ⚠️ Use stop losses • Wait for 95%+ • STRONG MTF only
+    </p>
+    <p style='color: white; font-size: 0.65rem; margin: 0.2rem 0 0 0; opacity: 0.7;'>
+        {current_time} • © 2025 ALADDIN AI
+    </p>
+</div>
+""", unsafe_allow_html=True)
