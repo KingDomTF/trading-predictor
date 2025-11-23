@@ -473,7 +473,7 @@ st.markdown(f"""
         {current_time} • © 2025 ALADDIN AI
     </p>
 </div>
-""", unsafe_allow_html=True) in market regime: {str(e)}")
+""", unsafe_allow_html=True) in market regime: {str(e)}
         return {'regime': 'SIDEWAYS', 'bias': 0.0}
 
 def analyze_tf(df, tf):
