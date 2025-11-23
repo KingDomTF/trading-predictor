@@ -52,23 +52,24 @@ def get_vix_data():
 def get_put_call_ratio():
     try:
         spx = yf.Ticker('^SPX')
-        options = spx.option_chain()
-        put_volume = float(options.puts['volume'].sum())
-        call_volume = float(options.calls['volume'].sum())
-        
-        if call_volume > 0:
-            pc_ratio = put_volume / call_volume
+        if spx.options:
+            options = spx.option_chain(spx.options[0])  # Use the first expiration date
+            put_volume = float(options.puts['volume'].sum())
+            call_volume = float(options.calls['volume'].sum())
             
-            if pc_ratio > 1.15:
-                sentiment, signal = 'EXTREME_FEAR', 'CONTRARIAN_BUY'
-            elif pc_ratio > 0.95:
-                sentiment, signal = 'FEAR', 'CAUTIOUS_BUY'
-            elif pc_ratio < 0.7:
-                sentiment, signal = 'GREED', 'CAUTIOUS_SELL'
-            else:
-                sentiment, signal = 'NEUTRAL', 'HOLD'
-            
-            return {'pc_ratio': pc_ratio, 'sentiment': sentiment, 'signal': signal}
+            if call_volume > 0:
+                pc_ratio = put_volume / call_volume
+                
+                if pc_ratio > 1.15:
+                    sentiment, signal = 'EXTREME_FEAR', 'CONTRARIAN_BUY'
+                elif pc_ratio > 0.95:
+                    sentiment, signal = 'FEAR', 'CAUTIOUS_BUY'
+                elif pc_ratio < 0.7:
+                    sentiment, signal = 'GREED', 'CAUTIOUS_SELL'
+                else:
+                    sentiment, signal = 'NEUTRAL', 'HOLD'
+                
+                return {'pc_ratio': pc_ratio, 'sentiment': sentiment, 'signal': signal}
     except Exception as e:
         st.info(f"Put/Call data unavailable: {str(e)}")
     return None
@@ -153,8 +154,8 @@ def calc_indicators(df, tf='5m'):
     df['Williams_R'] = -100 * ((hh - df['Close']) / (hh - ll + 0.00001))
     
     # Trend Alignment
-    df['Trend_Align'] = ((df['EMA_9'] > df['EMA_20']).astype(int) + 
-                         (df['EMA_20'] > df['EMA_50']).astype(int) + 
+    df['Trend_Align'] = ((df['EMA_9'] > df['EMA_20']).astype(int) +
+                         (df['EMA_20'] > df['EMA_50']).astype(int) +
                          (df['EMA_50'] > df['EMA_100']).astype(int))
     
     return df.dropna()
@@ -179,8 +180,8 @@ def detect_market_regime(df_1h, vix_data):
         
         return {'regime': regime, 'bias': bias}
     except Exception as e:
-        st.error(f"Error getting live data: {str(e)}")
-        return None
+        st.error(f"Error in market regime: {str(e)}")
+        return {'regime': 'SIDEWAYS', 'bias': 0.0}
 
 @st.cache_data(ttl=120)
 def load_data_mtf(symbol):
@@ -194,8 +195,8 @@ def load_data_mtf(symbol):
                 d.columns = d.columns.droplevel(1)
         
         if all(len(d) >= 250 for d in [d5, d15, d1h]):
-            return (d5[['Open','High','Low','Close','Volume']].copy(), 
-                   d15[['Open','High','Low','Close','Volume']].copy(), 
+            return (d5[['Open','High','Low','Close','Volume']].copy(),
+                   d15[['Open','High','Low','Close','Volume']].copy(),
                    d1h[['Open','High','Low','Close','Volume']].copy())
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
@@ -339,7 +340,7 @@ if key in st.session_state:
     try:
         trades = generate_trades(
             state['ensemble'], state['scaler'], state['df_5m'], state['df_15m'], state['df_1h'],
-            state['mtf_signal'], state['market_regime'], state['vix_data'], state['pc_data'], 
+            state['mtf_signal'], state['market_regime'], state['vix_data'], state['pc_data'],
             state['live_data']['price']
         )
         
@@ -454,8 +455,7 @@ st.markdown(f"""
         {current_time} • © 2025 ALADDIN AI
     </p>
 </div>
-""", unsafe_allow_html=True) in market regime: {str(e)}")
-        return {'regime': 'SIDEWAYS', 'bias': 0.0}
+""", unsafe_allow_html=True)
 
 def analyze_tf(df, tf):
     try:
@@ -490,7 +490,7 @@ def analyze_tf(df, tf):
                 'trend': float(hist['Trend_Align'].mean())
             }
             
-            similarity = 1 - sum([abs(features[k] - hist_features[k]) / (abs(features[k]) + abs(hist_features[k]) + 0.00001) 
+            similarity = 1 - sum([abs(features[k] - hist_features[k]) / (abs(features[k]) + abs(hist_features[k]) + 0.00001)
                                  for k in features]) / len(features)
             
             if similarity > 0.85:
@@ -763,21 +763,28 @@ def get_live_data(symbol):
         if crypto:
             price = float(crypto['price'])
             volume = int(crypto['volume_24h'])
+            hist = ticker.history(period='1d')
+            open_price = float(hist['Open'].iloc[-1]) if not hist.empty else price
+            high = float(hist['High'].iloc[-1]) if not hist.empty else price
+            low = float(hist['Low'].iloc[-1]) if not hist.empty else price
         else:
             hist = ticker.history(period='1d')
             if hist.empty:
                 return None
             price = float(hist['Close'].iloc[-1])
             volume = int(hist['Volume'].iloc[-1])
+            open_price = float(hist['Open'].iloc[-1])
+            high = float(hist['High'].iloc[-1])
+            low = float(hist['Low'].iloc[-1])
         
-        info = ticker.info
         return {
             'price': price,
-            'open': float(info.get('open', price)),
-            'high': float(info.get('dayHigh', price)),
-            'low': float(info.get('dayLow', price)),
+            'open': open_price,
+            'high': high,
+            'low': low,
             'volume': volume,
             'source': 'CoinGecko' if crypto else 'Yahoo Finance'
         }
     except Exception as e:
-        st.error(f"Error
+        st.error(f"Error getting live data: {str(e)}")
+        return None
