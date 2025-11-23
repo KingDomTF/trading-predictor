@@ -215,25 +215,6 @@ def train_system(symbol):
         st.error(f"Training error: {str(e)}")
     return None, None, None, None, None
 
-st.set_page_config(page_title="ALADDIN ULTIMATE", page_icon="🎯", layout="wide")
-
-st.markdown("""
-<style>
-    * { font-family: 'Inter', sans-serif; }
-    .main .block-container { padding: 0.8rem; max-width: 1800px; }
-    h1 { color: #1a202c; font-size: 2rem !important; text-align: center; margin-bottom: 0.3rem !important; }
-    .stMetric { background: #f7fafc; padding: 0.6rem; border-radius: 8px; }
-    .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; }
-    .trade-5m { background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%); border-left: 5px solid #f59e0b; padding: 0.7rem; border-radius: 8px; margin: 0.3rem 0; }
-    .trade-15m { background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%); border-left: 5px solid #3b82f6; padding: 0.7rem; border-radius: 8px; margin: 0.3rem 0; }
-    .trade-1h { background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 100%); border-left: 5px solid #10b981; padding: 0.7rem; border-radius: 8px; margin: 0.3rem 0; }
-    .vix-high { color: #dc2626; font-weight: 700; }
-    .vix-low { color: #16a34a; font-weight: 700; }
-    .regime-bull { color: #10b981; font-weight: 700; }
-    .regime-bear { color: #ef4444; font-weight: 700; }
-</style>
-""", unsafe_allow_html=True)
-
 st.markdown('<h1>🎯 ALADDIN ULTIMATE - 6-Layer System</h1>', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; color: #4a5568; font-size: 0.9rem; font-weight: 600;">📊 MTF • 🔥 VIX • 📈 Put/Call • 💰 Order Flow • 🎯 Regime • 🧠 AI</p>', unsafe_allow_html=True)
 
