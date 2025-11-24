@@ -1,149 +1,43 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import VotingClassifier, GradientBoostingClassifier, RandomForestClassifier, AdaBoostClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import RobustScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 import datetime
 import warnings
-import requests
 
-# Configurazione Iniziale
 warnings.filterwarnings('ignore')
-st.set_page_config(page_title="ALADDIN ULTIMATE", page_icon="🎯", layout="wide")
 
-ASSETS = {'GC=F': '🥇 Gold', 'SI=F': '🥈 Silver', 'BTC-USD': '₿ Bitcoin', '^GSPC': '📊 S&P 500'}
+# ==================== FUNZIONI CORE ====================
 
-# --- FUNZIONI DI DATA FETCHING ---
-
-def get_realtime_crypto(symbol):
-    try:
-        if symbol == 'BTC-USD':
-            r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_vol=true&include_24hr_change=true", timeout=5)
-            if r.status_code == 200:
-                data = r.json()['bitcoin']
-                return {
-                    'price': data['usd'], 
-                    'volume': data.get('usd_24h_vol', 0),
-                    'change': data.get('usd_24h_change', 0),
-                    'high': data['usd'] * 1.02, # Stima approssimativa se API limitata
-                    'low': data['usd'] * 0.98,
-                    'open': data['usd'] / (1 + (data.get('usd_24h_change', 0)/100))
-                }
-    except:
-        pass
-    return None
-
-def get_live_data(symbol):
-    """Ottiene dati in tempo reale per Crypto o Stocks"""
-    # Prova prima come crypto
-    if 'BTC' in symbol:
-        crypto_data = get_realtime_crypto(symbol)
-        if crypto_data:
-            return crypto_data
-    
-    # Altrimenti usa yfinance
-    try:
-        ticker = yf.Ticker(symbol)
-        # Scarica dati intraday recenti per avere info accurate
-        df = ticker.history(period='2d', interval='5m')
-        
-        if not df.empty:
-            last_row = df.iloc[-1]
-            prev_close = df['Close'].iloc[-2] if len(df) > 1 else df['Open'].iloc[-1]
-            
-            return {
-                'price': float(last_row['Close']),
-                'open': float(prev_close),
-                'high': float(df['High'].max()), # High della sessione scaricata
-                'low': float(df['Low'].min()),   # Low della sessione scaricata
-                'volume': float(last_row['Volume'])
-            }
-    except Exception as e:
-        st.warning(f"Errore recupero dati live: {e}")
-    
-    return {'price': 0.0, 'open': 0.0, 'high': 0.0, 'low': 0.0, 'volume': 0}
-
-def get_vix_data():
-    try:
-        vix = yf.Ticker('^VIX')
-        hist = vix.history(period='5d')
-        if not hist.empty and len(hist) > 0:
-            current_vix = float(hist['Close'].iloc[-1])
-            if current_vix < 15:
-                regime, fear_level = 'COMPLACENCY', 'LOW'
-            elif current_vix < 20:
-                regime, fear_level = 'NORMAL', 'MEDIUM'
-            elif current_vix < 30:
-                regime, fear_level = 'ELEVATED', 'HIGH'
-            else:
-                regime, fear_level = 'PANIC', 'EXTREME'
-            return {
-                'vix': current_vix,
-                'regime': regime,
-                'fear_level': fear_level,
-                'contrarian_signal': 'BUY' if current_vix > 30 else 'SELL' if current_vix < 12 else 'NEUTRAL'
-            }
-    except Exception as e:
-        st.warning(f"VIX data unavailable: {str(e)}")
-    return None
-
-def get_put_call_ratio():
-    try:
-        spx = yf.Ticker('^SPX')
-        # Nota: Option chain richiede spesso proxy o permessi specifici, 
-        # qui usiamo try/except robusto
-        options = spx.option_chain()
-        put_volume = float(options.puts['volume'].sum())
-        call_volume = float(options.calls['volume'].sum())
-        if call_volume > 0:
-            pc_ratio = put_volume / call_volume
-            if pc_ratio > 1.15:
-                sentiment, signal = 'EXTREME_FEAR', 'CONTRARIAN_BUY'
-            elif pc_ratio > 0.95:
-                sentiment, signal = 'FEAR', 'CAUTIOUS_BUY'
-            elif pc_ratio < 0.7:
-                sentiment, signal = 'GREED', 'CAUTIOUS_SELL'
-            else:
-                sentiment, signal = 'NEUTRAL', 'HOLD'
-            return {'pc_ratio': pc_ratio, 'sentiment': sentiment, 'signal': signal}
-    except Exception as e:
-        # st.info(f"Put/Call data unavailable (normal without premium API): {str(e)}")
-        pass
-    return None
-
-# --- INDICATORI E ANALISI TECNICA ---
-
-def calc_indicators(df, tf='5m'):
+def calculate_technical_indicators(df):
+    """Calcola indicatori tecnici."""
     df = df.copy()
+   
     # EMA
-    for p in [9, 20, 50, 100, 200]:
-        df[f'EMA_{p}'] = df['Close'].ewm(span=p, adjust=False).mean()
+    df['EMA_20'] = df['Close'].ewm(span=20).mean()
+    df['EMA_50'] = df['Close'].ewm(span=50).mean()
+   
     # RSI
-    for period in [9, 14]:
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / (loss + 0.00001)
-        df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
-    # Stochastic
-    k_period = 5 if tf == '5m' else 9 if tf == '15m' else 14
-    low_min = df['Low'].rolling(window=k_period).min()
-    high_max = df['High'].rolling(window=k_period).max()
-    df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min + 0.00001))
-    df['Stoch_D'] = df['Stoch_K'].rolling(window=3).mean()
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+   
     # MACD
-    fast, slow = (5, 13) if tf in ['5m', '15m'] else (12, 26)
-    df['MACD'] = df['Close'].ewm(span=fast, adjust=False).mean() - df['Close'].ewm(span=slow, adjust=False).mean()
-    df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
+    exp1 = df['Close'].ewm(span=12).mean()   # <<< QUI ERA L'ERRORE: tolto ")."
+    exp2 = df['Close'].ewm(span=26).mean()
+    df['MACD'] = exp1 - exp2
+    df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
+   
     # Bollinger Bands
-    df['BB_mid'] = df['Close'].rolling(window=20).mean()
+    df['BB_middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
-    df['BB_upper'] = df['BB_mid'] + (bb_std * 2)
-    df['BB_lower'] = df['BB_mid'] - (bb_std * 2)
-    df['BB_pct'] = (df['Close'] - df['BB_lower']) / (df['BB_upper'] - df['BB_lower'] + 0.00001)
+    df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
+    df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
+   
     # ATR
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
@@ -151,588 +45,763 @@ def calc_indicators(df, tf='5m'):
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = np.max(ranges, axis=1)
     df['ATR'] = true_range.rolling(14).mean()
-    df['Volatility'] = df['Close'].pct_change().rolling(window=20).std() * 100
+   
     # Volume
     df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
-    df['Volume_Ratio'] = df['Volume'] / (df['Volume_MA'] + 1)
-    df['Volume_Surge'] = (df['Volume_Ratio'] > 2.0).astype(int)
-    # OBV
-    df['OBV'] = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
-    df['OBV_MA'] = df['OBV'].rolling(window=20).mean()
-    df['OBV_Signal'] = (df['OBV'] > df['OBV_MA']).astype(int)
-    # MFI
-    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-    money_flow = typical_price * df['Volume']
-    positive_flow = money_flow.where(typical_price > typical_price.shift(), 0).rolling(14).sum()
-    negative_flow = money_flow.where(typical_price < typical_price.shift(), 0).rolling(14).sum()
-    mfi_ratio = positive_flow / (negative_flow + 0.00001)
-    df['MFI'] = 100 - (100 / (1 + mfi_ratio))
-    # ADX
-    plus_dm = df['High'].diff().clip(lower=0)
-    minus_dm = df['Low'].diff().clip(upper=0).abs()
-    atr = true_range.rolling(14).mean()
-    plus_di = 100 * (plus_dm.rolling(14).mean() / (atr + 0.00001))
-    minus_di = 100 * (minus_dm.rolling(14).mean() / (atr + 0.00001))
-    dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di + 0.00001))
-    df['ADX'] = dx.rolling(14).mean()
-    # ROC
-    df['ROC'] = ((df['Close'] - df['Close'].shift(10)) / (df['Close'].shift(10) + 0.00001)) * 100
-    # Williams %R
-    hh = df['High'].rolling(14).max()
-    ll = df['Low'].rolling(14).min()
-    df['Williams_R'] = -100 * ((hh - df['Close']) / (hh - ll + 0.00001))
-    # Trend Alignment
-    df['Trend_Align'] = ((df['EMA_9'] > df['EMA_20']).astype(int) + 
-                         (df['EMA_20'] > df['EMA_50']).astype(int) + 
-                         (df['EMA_50'] > df['EMA_100']).astype(int))
-    return df.dropna()
+   
+    # Trend
+    df['Price_Change'] = df['Close'].pct_change()
+    df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x[-1] > x[0] else 0)
+   
+    df = df.dropna()
+    return df
 
-def detect_market_regime(df_1h, vix_data):
-    try:
-        latest = df_1h.iloc[-50:]
-        ema_50_slope = (latest['EMA_50'].iloc[-1] - latest['EMA_50'].iloc[-10]) / (latest['EMA_50'].iloc[-10] + 0.00001) * 100
-        price_vs_ema200 = (latest['Close'].iloc[-1] - latest['EMA_200'].iloc[-1]) / (latest['EMA_200'].iloc[-1] + 0.00001) * 100
-        vix_level = vix_data['vix'] if vix_data else 20
-        if ema_50_slope > 2 and price_vs_ema200 > 5 and vix_level < 20:
-            regime, bias = 'STRONG_BULL', 1.0
-        elif ema_50_slope > 0 and price_vs_ema200 > 0:
-            regime, bias = 'BULL', 0.7
-        elif ema_50_slope < -2 and price_vs_ema200 < -5:
-            regime, bias = 'STRONG_BEAR', -1.0
-        elif ema_50_slope < 0 and price_vs_ema200 < 0:
-            regime, bias = 'BEAR', -0.7
+
+def generate_features(df_ind, entry, sl, tp, direction, main_tf):
+    """Genera features per la predizione."""
+    latest = df_ind.iloc[-1]
+   
+    rr_ratio = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 1.0
+    sl_distance = abs(entry - sl) / entry * 100
+    tp_distance = abs(tp - entry) / entry * 100
+   
+    features = {
+        'sl_distance_pct': sl_distance,
+        'tp_distance_pct': tp_distance,
+        'rr_ratio': rr_ratio,
+        'direction': 1 if direction == 'long' else 0,
+        'main_tf': main_tf,
+        'rsi': latest['RSI'],
+        'macd': latest['MACD'],
+        'macd_signal': latest['MACD_signal'],
+        'atr': latest['ATR'],
+        'ema_diff': (latest['EMA_20'] - latest['EMA_50']) / latest['Close'] * 100,
+        'bb_position': (latest['Close'] - latest['BB_lower']) / (latest['BB_upper'] - latest['BB_lower']),
+        'volume_ratio': latest['Volume'] / latest['Volume_MA'] if latest['Volume_MA'] > 0 else 1.0,
+        'price_change': latest['Price_Change'] * 100,
+        'trend': latest['Trend']
+    }
+   
+    return np.array(list(features.values()), dtype=np.float32)
+
+
+def simulate_historical_trades(df_ind, n_trades=500):
+    """Simula trade storici per training."""
+    X_list = []
+    y_list = []
+   
+    for _ in range(n_trades):
+        if len(df_ind) <= 100:
+            break
+
+        idx = np.random.randint(50, len(df_ind) - 50)
+        row = df_ind.iloc[idx]
+       
+        direction = np.random.choice(['long', 'short'])
+        entry = row['Close']
+        sl_pct = np.random.uniform(0.5, 2.0)
+        tp_pct = np.random.uniform(1.0, 4.0)
+       
+        if direction == 'long':
+            sl = entry * (1 - sl_pct / 100)
+            tp = entry * (1 + tp_pct / 100)
         else:
-            regime, bias = 'SIDEWAYS', 0.0
-        return {'regime': regime, 'bias': bias}
-    except Exception as e:
-        # st.error(f"Error detect_market_regime: {str(e)}")
-        return {'regime': 'SIDEWAYS', 'bias': 0.0}
-
-def analyze_tf(df, tf):
-    try:
-        lookback = 30 if tf == '5m' else 50 if tf == '15m' else 90
-        if len(df) < lookback + 200:
-            return pd.Series()
-        latest = df.iloc[-lookback:]
-        features = {
-            'rsi': float(latest['RSI_14'].mean()),
-            'stoch': float(latest['Stoch_K'].mean()),
-            'mfi': float(latest['MFI'].mean()),
-            'obv': float(latest['OBV_Signal'].mean()),
-            'volume': float(latest['Volume_Surge'].mean()),
-            'adx': float(latest['ADX'].mean()),
-            'trend': float(latest['Trend_Align'].mean())
-        }
-        patterns = []
-        # Simplified scanning
-        scan_range = range(lookback + 150, min(len(df) - lookback - 40, lookback + 500))
-        for i in scan_range:
-            hist = df.iloc[i-lookback:i]
-            hist_features = {
-                'rsi': float(hist['RSI_14'].mean()),
-                'stoch': float(hist['Stoch_K'].mean()),
-                'mfi': float(hist['MFI'].mean()),
-                'obv': float(hist['OBV_Signal'].mean()),
-                'volume': float(hist['Volume_Surge'].mean()),
-                'adx': float(hist['ADX'].mean()),
-                'trend': float(hist['Trend_Align'].mean())
-            }
-            similarity = 1 - sum([abs(features[k] - hist_features[k]) / (abs(features[k]) + abs(hist_features[k]) + 0.00001) 
-                                 for k in features]) / len(features)
-            if similarity > 0.85:
-                future = df.iloc[i:i+30]
-                if len(future) >= 30:
-                    ret = (future['Close'].iloc[-1] - future['Close'].iloc[0]) / (future['Close'].iloc[0] + 0.00001)
-                    direction = 'LONG' if ret > 0.025 else 'SHORT' if ret < -0.025 else 'NEUTRAL'
-                    patterns.append({'similarity': float(similarity), 'return': float(ret), 'direction': direction})
-        if patterns:
-            df_p = pd.DataFrame(patterns)
-            if not df_p.empty:
-                direction = df_p['direction'].value_counts().index[0]
-                return pd.Series({'direction': direction, 'avg_similarity': float(df_p['similarity'].mean())})
-        return pd.Series()
-    except Exception as e:
-        # st.warning(f"Pattern analysis error for {tf}: {str(e)}")
-        return pd.Series()
-
-def find_mtf_patterns(df_5m, df_15m, df_1h, market_regime, vix_data, pc_data):
-    try:
-        patterns_5m = analyze_tf(df_5m, '5m')
-        patterns_15m = analyze_tf(df_15m, '15m')
-        patterns_1h = analyze_tf(df_1h, '1h')
-        
-        vix_boost = 12 if vix_data and vix_data['contrarian_signal'] == 'BUY' else -8 if vix_data and vix_data['contrarian_signal'] == 'SELL' else 0
-        pc_boost = 10 if pc_data and pc_data['signal'] == 'CONTRARIAN_BUY' else 5 if pc_data and pc_data['signal'] == 'CAUTIOUS_BUY' else 0
-        
-        all_aligned = (not patterns_5m.empty and not patterns_15m.empty and not patterns_1h.empty and
-                       patterns_5m.get('direction') == patterns_15m.get('direction') == patterns_1h.get('direction') and
-                       patterns_5m.get('direction') in ['LONG', 'SHORT'])
-        
-        return {
-            '5m_direction': patterns_5m.get('direction', 'NEUTRAL') if not patterns_5m.empty else 'NEUTRAL',
-            '15m_direction': patterns_15m.get('direction', 'NEUTRAL') if not patterns_15m.empty else 'NEUTRAL',
-            '1h_direction': patterns_1h.get('direction', 'NEUTRAL') if not patterns_1h.empty else 'NEUTRAL',
-            '5m_confidence': float(patterns_5m.get('avg_similarity', 0)) if not patterns_5m.empty else 0.0,
-            '15m_confidence': float(patterns_15m.get('avg_similarity', 0)) if not patterns_15m.empty else 0.0,
-            '1h_confidence': float(patterns_1h.get('avg_similarity', 0)) if not patterns_1h.empty else 0.0,
-            'alignment': 'STRONG' if all_aligned else 'WEAK',
-            'vix_boost': vix_boost,
-            'pc_boost': pc_boost,
-            'regime_bias': market_regime['bias']
-        }
-    except Exception as e:
-        st.error(f"MTF pattern error: {str(e)}")
-        return {
-            '5m_direction': 'NEUTRAL', '15m_direction': 'NEUTRAL', '1h_direction': 'NEUTRAL',
-            '5m_confidence': 0.0, '15m_confidence': 0.0, '1h_confidence': 0.0,
-            'alignment': 'WEAK', 'vix_boost': 0, 'pc_boost': 0, 'regime_bias': 0.0
-        }
-
-# --- MACHINE LEARNING & FEATURE ENGINEERING ---
-
-def generate_features(df_5m, df_15m, df_1h, entry, sl, tp, direction, vix_data, pc_data, market_regime):
-    l5, l15, l1h = df_5m.iloc[-1], df_15m.iloc[-1], df_1h.iloc[-1]
-    features = [
-        float(abs(tp - entry) / (abs(entry - sl) + 0.00001)),
-        1.0 if direction == 'long' else 0.0,
-        float(l5['RSI_14']), float(l5['Stoch_K']), float(l5['MFI']), float(l5['OBV_Signal']), float(l5['Volume_Surge']),
-        float(l5['MACD_Hist']), float(l5['ADX']), float(l5['Trend_Align']), float(l5['BB_pct']), float(l5['Williams_R']),
-        float(l15['RSI_14']), float(l15['Stoch_K']), float(l15['MFI']), float(l15['OBV_Signal']),
-        float(l15['MACD_Hist']), float(l15['ADX']), float(l15['Trend_Align']), float(l15['BB_pct']),
-        float(l1h['RSI_14']), float(l1h['MFI']), float(l1h['MACD_Hist']), float(l1h['ADX']), float(l1h['Trend_Align']),
-        float((l1h['Close'] - l1h['EMA_200']) / (l1h['EMA_200'] + 0.00001) * 100),
-        float(vix_data['vix']) if vix_data else 20.0,
-        1.0 if vix_data and vix_data.get('fear_level') in ['HIGH', 'EXTREME'] else 0.0,
-        1.0 if vix_data and vix_data.get('contrarian_signal') == 'BUY' else -1.0 if vix_data and vix_data.get('contrarian_signal') == 'SELL' else 0.0,
-        float(pc_data['pc_ratio']) if pc_data else 1.0,
-        1.0 if pc_data and pc_data.get('sentiment') in ['EXTREME_FEAR', 'FEAR'] else -1.0 if pc_data and pc_data.get('sentiment') == 'GREED' else 0.0,
-        float(market_regime.get('bias', 0)),
-        float((l5['RSI_14'] + l15['RSI_14'] + l1h['RSI_14']) / 3),
-        float((l5['Trend_Align'] + l15['Trend_Align'] + l1h['Trend_Align']) / 3),
-        float((l5['MFI'] + l15['MFI'] + l1h['MFI']) / 3)
-    ]
-    return np.array(features, dtype=np.float32)
-
-def train_ensemble(df_5m, df_15m, df_1h, n_sim=3000):
-    X_list, y_list = [], []
-    for _ in range(n_sim):
-        try:
-            if len(df_5m) < 300: break
-            idx = np.random.randint(250, len(df_5m) - 150)
-            
-            # Simulation of external data
-            vix_sim = {'vix': float(np.random.uniform(12, 35)), 'fear_level': 'MEDIUM', 'contrarian_signal': 'NEUTRAL'}
-            if vix_sim['vix'] > 30: vix_sim['fear_level'], vix_sim['contrarian_signal'] = 'EXTREME', 'BUY'
-            pc_sim = {'pc_ratio': float(np.random.uniform(0.7, 1.3)), 'sentiment': 'NEUTRAL'}
-            regime_sim = {'bias': float(np.random.uniform(-1, 1))}
-            
-            mfi_5m = float(df_5m.iloc[idx-10:idx]['MFI'].mean())
-            obv_5m = float(df_5m.iloc[idx-10:idx]['OBV_Signal'].mean())
-            
-            if mfi_5m > 65 and obv_5m > 0.6: direction = 'long'
-            elif mfi_5m < 35 and obv_5m < 0.4: direction = 'short'
-            else: direction = 'long' if float(df_5m.iloc[idx-20:idx]['Trend_Align'].mean()) > 1.5 else 'short'
-            
-            entry = float(df_5m.iloc[idx]['Close'])
-            atr = float(df_5m.iloc[idx]['ATR'])
-            sl_mult, tp_mult = float(np.random.uniform(0.4, 1.2)), float(np.random.uniform(2.0, 4.5))
-            
+            sl = entry * (1 + sl_pct / 100)
+            tp = entry * (1 - tp_pct / 100)
+       
+        features = generate_features(df_ind.iloc[:idx+1], entry, sl, tp, direction, 60)
+       
+        # Simula outcome
+        future_prices = df_ind.iloc[idx+1:idx+51]['Close'].values
+        if len(future_prices) > 0:
             if direction == 'long':
-                sl, tp = entry - (atr * sl_mult), entry + (atr * tp_mult)
+                hit_tp = np.any(future_prices >= tp)
+                hit_sl = np.any(future_prices <= sl)
             else:
-                sl, tp = entry + (atr * sl_mult), entry - (atr * tp_mult)
-            
-            idx_15m = min(idx // 3, len(df_15m) - 1)
-            idx_1h = min(idx // 12, len(df_1h) - 1)
-            
-            features = generate_features(
-                df_5m.iloc[:idx+1], df_15m.iloc[:idx_15m+1], df_1h.iloc[:idx_1h+1],
-                entry, sl, tp, direction, vix_sim, pc_sim, regime_sim
-            )
-            
-            future = df_5m.iloc[idx+1:idx+81]['Close'].values
-            if len(future) > 0:
-                if direction == 'long':
-                    hit_tp = np.any(future >= tp)
-                    hit_sl = np.any(future <= sl)
-                else:
-                    hit_tp = np.any(future <= tp)
-                    hit_sl = np.any(future >= sl)
-                
-                success = 1 if hit_tp and not hit_sl else 0
-                X_list.append(features)
-                y_list.append(success)
-        except Exception as e:
-            continue
-            
-    if len(X_list) < 50:
-        # Fallback for insufficient data
-        st.warning("Training data insufficient, using mock model")
+                hit_tp = np.any(future_prices <= tp)
+                hit_sl = np.any(future_prices >= sl)
+           
+            success = 1 if hit_tp and not hit_sl else 0
+           
+            X_list.append(features)
+            y_list.append(success)
+   
+    return np.array(X_list), np.array(y_list)
+
+
+def train_model(X_train, y_train):
+    """Addestra il modello Random Forest."""
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_train)
+   
+    model = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=10,
+        min_samples_split=5,
+        random_state=42,
+        n_jobs=-1
+    )
+    model.fit(X_scaled, y_train)
+   
+    return model, scaler
+
+
+def predict_success(model, scaler, features):
+    """Predice probabilità di successo."""
+    features_scaled = scaler.transform(features.reshape(1, -1))
+    prob = model.predict_proba(features_scaled)[0][1]
+    return prob * 100
+
+
+def get_dominant_factors(model, features):
+    """Identifica fattori dominanti."""
+    feature_names = [
+        'SL Distance %', 'TP Distance %', 'R/R Ratio', 'Direction', 'TimeFrame',
+        'RSI', 'MACD', 'MACD Signal', 'ATR', 'EMA Diff %',
+        'BB Position', 'Volume Ratio', 'Price Change %', 'Trend'
+    ]
+   
+    importances = model.feature_importances_
+    indices = np.argsort(importances)[-5:][::-1]
+   
+    factors = []
+    for i in indices:
+        if i < len(feature_names):
+            factors.append(f"{feature_names[i]}: {features[i]:.2f} (importanza: {importances[i]:.2%})")
+   
+    return factors
+
+
+def get_sentiment(text):
+    """Semplice analisi sentiment basata su parole chiave."""
+    positive_words = ['rally', 'up', 'bullish', 'gain', 'positive', 'strong', 'rise', 'surge', 'boom']
+    negative_words = ['down', 'bearish', 'loss', 'negative', 'weak', 'slip', 'fall', 'drop', 'crash']
+    score = sum(word in text.lower() for word in positive_words) - sum(word in text.lower() for word in negative_words)
+    if score > 0:
+        return 'Positive', score
+    elif score < 0:
+        return 'Negative', score
+    else:
+        return 'Neutral', 0
+
+
+def predict_price(df_ind, steps=5):
+    """Previsione prezzo semplice basata su EMA."""
+    try:
+        last_price = df_ind['Close'].iloc[-1]
+        ema = df_ind['Close'].ewm(span=steps).mean().iloc[-1]
+        forecast_values = [last_price + (ema - last_price) * (i / steps) for i in range(1, steps + 1)]
+        forecast = np.array(forecast_values)
+        return forecast.mean(), forecast
+    except Exception:
         return None, None
 
-    X, y = np.array(X_list), np.array(y_list)
-    scaler = RobustScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    gb = GradientBoostingClassifier(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42)
-    rf = RandomForestClassifier(n_estimators=100, max_depth=7, random_state=42, n_jobs=-1)
-    ada = AdaBoostClassifier(n_estimators=50, random_state=42)
-    nn = MLPClassifier(hidden_layer_sizes=(50, 25), max_iter=300, random_state=42)
-    
-    ensemble = VotingClassifier(estimators=[('gb', gb), ('rf', rf), ('ada', ada), ('nn', nn)], voting='soft')
-    ensemble.fit(X_scaled, y)
-    return ensemble, scaler
 
-def generate_trades(ensemble, scaler, df_5m, df_15m, df_1h, mtf_signal, market_regime, vix_data, pc_data, live_price):
-    l5 = df_5m.iloc[-1]
-    entry, atr = float(live_price), float(l5['ATR'])
+def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
+    """Analisi approfondita della psicologia dell'investitore con comparazione storica, bias comportamentali e focus specifici su asset come Bitcoin, Argento, Oro e S&P 500."""
+    latest = df_ind.iloc[-1]
+    trend = 'bullish' if latest['Trend'] == 1 else 'bearish'
     
-    # Logic for initial direction
-    if mtf_signal['alignment'] == 'STRONG':
-        direction = 'long' if mtf_signal['5m_direction'] == 'LONG' else 'short'
-        base_conf = 30
-    elif l5['MFI'] > 70 and l5['OBV_Signal'] == 1:
-        direction, base_conf = 'long', 20
-    elif l5['MFI'] < 30 and l5['OBV_Signal'] == 0:
-        direction, base_conf = 'short', 20
+    # Analisi generale attuale (2025)
+    current_analysis = f"""
+    **🌍 Contesto Globale (Ottobre 2025)**
+    
+    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente (al 3.5% negli USA), tensioni geopolitiche (es. Medio Oriente e Ucraina) e un boom dell'IA che ha spinto il NASDAQ oltre i 20,000 punti. La psicologia degli investitori è segnata da un mix di ottimismo tecnologico e ansia macroeconomica, con il VIX a livelli elevati (intorno a 25), indicando volatilità. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive, amplificate da social media e AI-driven trading.
+    """
+    
+    # Bias comportamentali
+    biases_analysis = """
+    ### 🧠 Analisi Approfondita dei Bias Comportamentali negli Investimenti (2025)
+    
+    I bias comportamentali causano spesso un gap tra ritorni del mercato e ritorni degli investitori retail stimato al 2-4% annuo.
+    
+    | Bias Cognitivo | Definizione | Esempio Generale |
+    |---------------|-------------|------------------|
+    | **Avversione alle Perdite** | Perdite percepite 2x più dolorose dei guadagni. | Mantenere asset in calo sperando in recuperi. |
+    | **Eccessiva Fiducia** | Sovrastima abilità predittive. | Overtrading in asset volatili. |
+    | **Effetto Gregge** | Seguire la massa. | Comprare dopo grandi rally. |
+    | **Bias di Conferma** | Cercare conferme a convinzioni. | Ignorare segnali negativi sul proprio asset. |
+    | **Bias di Ancoraggio** | Ancorarsi al prezzo di acquisto. | Non voler vendere in perdita. |
+    | **Recency Bias** | Dare troppo peso agli eventi recenti. | Credere che l’ultimo trend continuerà all’infinito. |
+    """
+    
+    # Analisi specifica per asset
+    if symbol == 'GC=F':
+        asset_specific = """
+        ### 🥇 Focus su Oro (GC=F / XAU/USD)
+        
+        L'oro nel 2025 mantiene un ruolo di bene rifugio in contesti di inflazione e tensioni geopolitiche.  
+        Bias chiave:
+        - **Safe-Haven Bias**: rifugio emotivo nelle crisi.
+        - **Loss Aversion**: difficoltà a vendere durante drawdown prolungati.
+        - **FOMO**: ingresso tardivo dopo grandi rally.
+        """
+    elif symbol == 'BTC-USD':
+        asset_specific = """
+        ### ₿ Focus su Bitcoin (BTC-USD)
+        
+        Bitcoin è ancora fortemente guidato da sentiment e narrativa.  
+        Bias chiave:
+        - **Herding**: movimenti di massa dopo notizie/ETF/halving.
+        - **Overconfidence**: convinzione di “capire il ciclo” meglio del mercato.
+        - **Disposition Effect**: prendere profitti troppo presto sui gain e tenere le perdite.
+        """
+    elif symbol == 'SI=F':
+        asset_specific = """
+        ### 🥈 Focus su Argento (SI=F / XAG/USD)
+        
+        Argento = metallo metà industriale, metà rifugio: alta volatilità.  
+        Bias chiave:
+        - **FOMO** su “silver squeeze”.
+        - **Recency Bias** su rally legati alla domanda industriale.
+        """
+    elif symbol == '^GSPC':
+        asset_specific = """
+        ### 📊 Focus su S&P 500 (^GSPC)
+        
+        L’S&P 500 riflette il sentiment macro-usa e il boom tech/AI.  
+        Bias chiave:
+        - **Home Bias** (per investitori USA).
+        - **Overconfidence** in bull market prolungati.
+        - **Panic Selling** nei crolli improvvisi.
+        """
     else:
-        direction = 'long' if l5['Trend_Align'] >= 2 else 'short'
-        base_conf = 15
+        asset_specific = f"""
+        ### 📈 Analisi Specifica per {symbol}
         
-    if market_regime['regime'] == 'STRONG_BULL' and direction == 'short': base_conf -= 10
-    elif market_regime['regime'] == 'STRONG_BEAR' and direction == 'long': base_conf -= 10
+        La psicologia su questo asset seguirà comunque pattern universali: paura nei ribassi, avidità nei rally, e forte influenza di bias come effetto gregge e recency bias.
+        """
     
-    trades = []
-    configs = [
-        {'name': '⚡ 5min Scalp', 'sl': 0.8, 'tp': 2.0, 'tf': '5m', 'strategy': 'Scalp'},
-        {'name': '📊 15min Swing', 'sl': 1.2, 'tp': 3.0, 'tf': '15m', 'strategy': 'Swing'},
-        {'name': '🎯 1hour Position', 'sl': 1.5, 'tp': 4.0, 'tf': '1h', 'strategy': 'Position'}
-    ]
+    historical_comparison = """
+    ### 📚 Comparazione Storica Generale
     
-    for cfg in configs:
-        if direction == 'long':
-            sl, tp = entry - (atr * cfg['sl']), entry + (atr * cfg['tp'])
-            rr = (tp - entry) / (entry - sl)
-        else:
-            sl, tp = entry + (atr * cfg['sl']), entry - (atr * cfg['tp'])
-            rr = (entry - tp) / (sl - entry)
-            
-        features = generate_features(df_5m, df_15m, df_1h, entry, sl, tp, direction, vix_data, pc_data, market_regime)
-        
-        prob = base_conf # Default fallback
-        if ensemble and scaler:
-            try:
-                features_scaled = scaler.transform(features.reshape(1, -1))
-                base_prob = float(ensemble.predict_proba(features_scaled)[0][1]) * 100
-                prob = base_prob * 0.30 + base_conf
-            except:
-                pass
+    - **2008 Crisi Finanziaria**: panico e sell-off massicci, poi grande rally per chi è rimasto investito.
+    - **2020 COVID**: crollo rapidissimo seguito da recupero a V.
+    - **Dot-com 2000**: euforia tech seguita da crollo, simile ad alcune dinamiche attuali sul tema IA.
+    """
+    
+    return current_analysis + biases_analysis + asset_specific + historical_comparison
 
-        # Adjust probability based on MTF signals
-        if mtf_signal['alignment'] == 'STRONG':
-            prob += 18
-            if cfg['tf'] == '5m' and mtf_signal['5m_confidence'] > 0.85: prob += 9
-            if cfg['tf'] == '15m' and mtf_signal['15m_confidence'] > 0.85: prob += 9
-            if cfg['tf'] == '1h' and mtf_signal['1h_confidence'] > 0.85: prob += 9
-            
-        prob += mtf_signal.get('vix_boost', 0)
-        prob += mtf_signal.get('pc_boost', 0)
-        
-        # Cap probability
-        prob = min(99.9, max(1.0, prob))
-        
-        trades.append({
-            'Strategy': cfg['name'],
-            'Direction': 'BUY' if direction == 'long' else 'SELL',
-            'Entry': entry,
-            'SL': sl,
-            'TP': tp,
-            'RR': rr,
-            'Probability': prob,
-            'Timeframe': cfg['tf'],
-            'MTF': mtf_signal['alignment'],
-            'Regime': market_regime['regime']
-        })
-        
-    return pd.DataFrame(trades)
 
-@st.cache_data(ttl=120)
-def load_data_mtf(symbol):
+def get_web_signals(symbol, df_ind):
+    """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
     try:
-        # Increased periods slightly to ensure enough data for calculations
-        d5 = yf.download(symbol, period='7d', interval='5m', progress=False)
-        d15 = yf.download(symbol, period='20d', interval='15m', progress=False)
-        d1h = yf.download(symbol, period='60d', interval='1h', progress=False)
+        ticker = yf.Ticker(symbol)
         
-        datasets = []
-        for d in [d5, d15, d1h]:
-            if d.empty:
-                return None, None, None
-            # Fix MultiIndex columns if present (common in new yfinance)
-            if isinstance(d.columns, pd.MultiIndex):
-                try:
-                    d.columns = d.columns.droplevel(1)
-                except:
-                    pass
-            datasets.append(d[['Open','High','Low','Close','Volume']].copy())
-            
-        if all(len(d) >= 100 for d in datasets):
-            return datasets[0], datasets[1], datasets[2]
+        # Prezzo corrente (ultimo close disponibile)
+        hist = ticker.history(period='1d')
+        if hist.empty:
+            return []
+        current_price = hist['Close'].iloc[-1]
+        
+        # News recenti
+        news = getattr(ticker, "news", None)
+        news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente disponibile.'
+        
+        # Sentiment
+        sentiment_label, sentiment_score = get_sentiment(news_summary)
+        
+        # Calcolo stagionalità
+        hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
+        if len(hist_monthly) < 12:
+            seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
+        else:
+            hist_monthly['Return'] = hist_monthly['Close'].pct_change()
+            hist_monthly['Month'] = hist_monthly.index.month
+            monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
+            current_month = datetime.datetime.now().month
+            avg_current = monthly_returns.get(current_month, 0) * 100
+            seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%.'
+        
+        # Previsione prezzo (usa df_ind per timeframe specifico)
+        _, forecast_series = predict_price(df_ind, steps=5)
+        forecast_note = f'Previsione media per i prossimi 5 periodi: {forecast_series.mean():.2f}' if forecast_series is not None else 'Previsione non disponibile.'
+        
+        # Genera suggerimenti precisi basati su sentiment e trend
+        latest = df_ind.iloc[-1]
+        atr = latest['ATR']
+        trend = latest['Trend']
+        suggestions = []
+        directions = ['Long', 'Short'] if '=X' not in symbol else ['Buy', 'Sell']
+        
+        for dir_ in directions:
+            is_positive_dir = (dir_ in ['Long', 'Buy'] and (sentiment_score > 0 or trend == 1)) or (dir_ in ['Short', 'Sell'] and (sentiment_score < 0 or trend == 0))
+            prob = 70 if is_positive_dir else 60
+            entry = round(current_price, 2)
+            sl_mult = 1.0 if is_positive_dir else 1.5
+            tp_mult = 2.5 if is_positive_dir else 2.0
+            if dir_ in ['Long', 'Buy']:
+                sl = round(entry - atr * sl_mult, 2)
+                tp = round(entry + atr * tp_mult, 2)
+            else:
+                sl = round(entry + atr * sl_mult, 2)
+                tp = round(entry - atr * tp_mult, 2)
+            suggestions.append({
+                'Direction': dir_,
+                'Entry': entry,
+                'SL': sl,
+                'TP': tp,
+                'Probability': prob,
+                'Seasonality_Note': seasonality_note,
+                'News_Summary': news_summary,
+                'Sentiment': sentiment_label,
+                'Forecast_Note': forecast_note
+            })
+        
+        # Aggiungi un terzo suggerimento se sentiment neutrale
+        if sentiment_score == 0:
+            dir_ = directions[0] if trend == 1 else directions[1]
+            entry = round(current_price, 2)
+            sl_mult = 1.2
+            tp_mult = 2.2
+            if dir_ in ['Long', 'Buy']:
+                sl = round(entry - atr * sl_mult, 2)
+                tp = round(entry + atr * tp_mult, 2)
+            else:
+                sl = round(entry + atr * sl_mult, 2)
+                tp = round(entry - atr * tp_mult, 2)
+            suggestions.append({
+                'Direction': dir_,
+                'Entry': entry,
+                'SL': sl,
+                'TP': tp,
+                'Probability': 65,
+                'Seasonality_Note': seasonality_note,
+                'News_Summary': news_summary,
+                'Sentiment': sentiment_label,
+                'Forecast_Note': forecast_note
+            })
+        
+        return suggestions
     except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-    return None, None, None
+        st.error(f"Errore nel recupero dati web: {e}")
+        return []
+
+
+# ==================== PREZZO LIVE ====================
+
+@st.cache_data(ttl=60)
+def fetch_live_price(symbol: str):
+    """
+    Recupera il prezzo 'live' (ultimo disponibile) da Yahoo Finance.
+    ttl=60 => al massimo un aggiornamento al minuto per evitare rate limit.
+    """
+    ticker = yf.Ticker(symbol)
+    last_price = None
+    prev_close = None
+
+    # 1) Prova con fast_info
+    try:
+        fast_info = getattr(ticker, "fast_info", None)
+        if fast_info is not None:
+            last_price = fast_info.get("lastPrice", None)
+            prev_close = fast_info.get("previousClose", None)
+    except Exception:
+        pass
+
+    # 2) Fallback: intraday 1m
+    if last_price is None:
+        try:
+            hist = ticker.history(period="1d", interval="1m")
+            if not hist.empty:
+                last_price = float(hist["Close"].iloc[-1])
+                if len(hist) > 1:
+                    prev_close = float(hist["Close"].iloc[-2])
+        except Exception:
+            pass
+
+    # 3) Fallback finale: ultimo daily close
+    if last_price is None:
+        try:
+            hist = ticker.history(period="2d", interval="1d")
+            if not hist.empty:
+                last_price = float(hist["Close"].iloc[-1])
+                if len(hist) > 1:
+                    prev_close = float(hist["Close"].iloc[-2])
+        except Exception:
+            pass
+
+    return last_price, prev_close
+
+
+# ==================== STREAMLIT APP ====================
+
+@st.cache_data
+def load_sample_data(symbol, interval='1h'):
+    """Carica dati reali da yfinance."""
+    period_map = {
+        '5m': '60d',
+        '15m': '60d',
+        '1h': '730d'
+    }
+    period = period_map.get(interval, '730d')
+    try:
+        data = yf.download(symbol, period=period, interval=interval, progress=False)
+       
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)
+       
+        if len(data) < 100:
+            raise Exception("Dati insufficienti")
+       
+        data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+        return data
+    except Exception as e:
+        st.error(f"Errore nel caricamento dati: {e}")
+        return None
+
 
 @st.cache_resource
-def train_system(symbol):
-    try:
-        d5, d15, d1h = load_data_mtf(symbol)
-        if all(d is not None for d in [d5, d15, d1h]):
-            df_5m = calc_indicators(d5, '5m')
-            df_15m = calc_indicators(d15, '15m')
-            df_1h = calc_indicators(d1h, '1h')
-            # Reduce sims for speed in demo
-            ensemble, scaler = train_ensemble(df_5m, df_15m, df_1h, n_sim=1000)
-            return ensemble, scaler, df_5m, df_15m, df_1h
-    except Exception as e:
-        st.error(f"Training error: {str(e)}")
-    return None, None, None, None, None
+def train_or_load_model(symbol, interval='1h'):
+    """Addestra il modello."""
+    data = load_sample_data(symbol, interval)
+    if data is None:
+        return None, None, None
+    df_ind = calculate_technical_indicators(data)
+    X, y = simulate_historical_trades(df_ind, n_trades=500)
+    if X.size == 0 or y.size == 0:
+        return None, None, None
+    model, scaler = train_model(X, y)
+    return model, scaler, df_ind
 
-# --- UI LAYOUT ---
 
+# Mappatura nomi propri
+proper_names = {
+    'GC=F': 'XAU/USD (Gold)',
+    'EURUSD=X': 'EUR/USD',
+    'SI=F': 'XAG/USD (Silver)',
+    'BTC-USD': 'BTC/USD',
+    '^GSPC': 'S&P 500',
+}
+
+# Configurazione pagina
+st.set_page_config(
+    page_title="Trading Predictor AI - Enhanced",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# CSS personalizzato
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     * { font-family: 'Inter', sans-serif; }
-    .main .block-container { padding: 0.8rem; max-width: 1800px; }
-    h1 { color: #1a202c; font-size: 2rem !important; text-align: center; margin-bottom: 0.3rem !important; }
-    .stMetric { background: #f7fafc; padding: 0.6rem; border-radius: 8px; }
-    .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; }
-    .trade-5m { background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%); border-left: 5px solid #f59e0b; padding: 0.7rem; border-radius: 8px; margin: 0.3rem 0; }
-    .trade-15m { background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%); border-left: 5px solid #3b82f6; padding: 0.7rem; border-radius: 8px; margin: 0.3rem 0; }
-    .trade-1h { background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 100%); border-left: 5px solid #10b981; padding: 0.7rem; border-radius: 8px; margin: 0.3rem 0; }
-    .vix-high { color: #dc2626; font-weight: 700; }
-    .vix-low { color: #16a34a; font-weight: 700; }
-    .regime-bull { color: #10b981; font-weight: 700; }
-    .regime-bear { color: #ef4444; font-weight: 700; }
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        max-width: 1600px;
+    }
+    h1 {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 700;
+        font-size: 3rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    .stMetric {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        padding: 1.2rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s ease;
+    }
+    .stMetric:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 600;
+        box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+    }
+    section[data-testid="stSidebar"] { display: none; }
+    .trade-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+        border-left: 4px solid #667eea;
+        transition: all 0.2s ease;
+    }
+    .trade-card:hover {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+        transform: translateX(4px);
+    }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1>🎯 ALADDIN ULTIMATE - 6-Layer System</h1>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; color: #4a5568; font-size: 0.9rem; font-weight: 600;">📊 MTF • 🔥 VIX • 📈 Put/Call • 💰 Order Flow • 🎯 Regime • 🧠 AI</p>', unsafe_allow_html=True)
+# Header
+st.title("📊 Trading Success Predictor AI")
+st.markdown("""
+<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;'>
+    <p style='color: white; font-size: 1.1rem; margin: 0; text-align: center; font-weight: 500;'>
+        🤖 Analisi predittiva avanzata con Machine Learning • 📈 Indicatori tecnici real-time • 🧠 Psicologia dell'investitore
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
+# Parametri
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
-    symbol = st.selectbox("Asset", list(ASSETS.keys()), format_func=lambda x: ASSETS[x])
+    symbol = st.text_input(
+        "🔍 Seleziona Strumento (Ticker)",
+        value="GC=F",
+        help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)"
+    )
+    proper_name = proper_names.get(symbol, symbol)
+    st.markdown(f"**Strumento selezionato:** `{proper_name}`")
+
 with col2:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("**6-Layer Active**")
+    data_interval = st.selectbox("⏰ Timeframe", ['5m', '15m', '1h'], index=2)
+
 with col3:
     st.markdown("<br>", unsafe_allow_html=True)
-    refresh = st.button("🔄 Update", use_container_width=True)
+    refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
+
+# PREZZO LIVE CORRENTE
+live_price, prev_close = fetch_live_price(symbol)
+col_live1, col_live2 = st.columns([1, 1])
+with col_live1:
+    if live_price is not None:
+        delta_str = None
+        if prev_close is not None and prev_close != 0:
+            delta_pct = (live_price - prev_close) / prev_close * 100
+            delta_str = f"{delta_pct:+.2f}%"
+        display_price = f"{live_price:.4f}" if live_price < 10 else f"{live_price:.2f}"
+        st.metric("💹 Prezzo live", display_price, delta_str)
+    else:
+        st.metric("💹 Prezzo live", "N/D")
+
+with col_live2:
+    st.caption(
+        f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} "
+        "(dati Yahoo Finance, possono essere ritardati)"
+    )
 
 st.markdown("---")
 
-key = f"ultimate_{symbol}"
-if key not in st.session_state or refresh:
-    with st.spinner("🎯 Initializing System..."):
-        try:
-            ensemble, scaler, df_5m, df_15m, df_1h = train_system(symbol)
-            live_data = get_live_data(symbol)
-            vix_data = get_vix_data()
-            pc_data = get_put_call_ratio()
-            
-            if all(x is not None for x in [df_5m, df_15m, df_1h]):
-                market_regime = detect_market_regime(df_1h, vix_data)
-                mtf_signal = find_mtf_patterns(df_5m, df_15m, df_1h, market_regime, vix_data, pc_data)
-                st.session_state[key] = {
-                    'ensemble': ensemble, 'scaler': scaler, 'df_5m': df_5m, 'df_15m': df_15m, 'df_1h': df_1h,
-                    'live_data': live_data, 'vix_data': vix_data, 'pc_data': pc_data, 'market_regime': market_regime,
-                    'mtf_signal': mtf_signal, 'time': datetime.datetime.now()
-                }
-                st.success(f"✅ System Ready! {st.session_state[key]['time'].strftime('%H:%M:%S')}")
+# Inizializzazione modello
+session_key = f"model_{symbol}_{data_interval}"
+if session_key not in st.session_state or refresh_data:
+    with st.spinner("🧠 Caricamento AI e analisi dati..."):
+        model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=data_interval)
+        if model is not None:
+            st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
+            st.success("✅ Sistema pronto! Modello addestrato con successo.")
+        else:
+            st.error("❌ Impossibile caricare dati. Verifica il ticker e riprova.")
+
+if session_key in st.session_state:
+    state = st.session_state[session_key]
+    model = state['model']
+    scaler = state['scaler']
+    df_ind = state['df_ind']
+    
+    # Previsione prezzo
+    avg_forecast, forecast_series = predict_price(df_ind, steps=5)
+    
+    # Segnali web
+    web_signals_list = get_web_signals(symbol, df_ind)
+    
+    col_left, col_right = st.columns([1.2, 0.8])
+   
+    with col_left:
+        st.markdown("### 💡 Suggerimenti Trade Intelligenti")
+        if web_signals_list:
+            suggestions_df = pd.DataFrame(web_signals_list)
+            suggestions_df = suggestions_df.sort_values(by='Probability', ascending=False)
+           
+            st.markdown("**📋 Clicca su un trade per analisi approfondita AI:**")
+           
+            for idx, row in suggestions_df.iterrows():
+                sentiment_emoji = "🟢" if row['Sentiment'] == 'Positive' else "🔴" if row['Sentiment'] == 'Negative' else "🟡"
+                
+                c_trade, c_btn = st.columns([5, 1])
+                with c_trade:
+                    st.markdown(f"""
+                    <div class='trade-card'>
+                        <strong style='font-size: 1.1rem; color: #667eea;'>{row['Direction'].upper()}</strong> 
+                        <span style='color: #4a5568;'>• Entry: <strong>{row['Entry']:.2f}</strong> • SL: {row['SL']:.2f} • TP: {row['TP']:.2f}</span><br>
+                        <span style='color: #2d3748;'>📊 Probabilità: <strong>{row['Probability']:.0f}%</strong> {sentiment_emoji} Sentiment: <strong>{row['Sentiment']}</strong></span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c_btn:
+                    if st.button("🔍", key=f"analyze_{idx}", help="Analizza con AI"):
+                        st.session_state.selected_trade = row
+           
+            with st.expander("📊 Dettagli Supplementari (Stagionalità, News, Previsioni)"):
+                st.markdown("#### 📅 Analisi Stagionalità")
+                st.info(suggestions_df.iloc[0]['Seasonality_Note'])
+                
+                st.markdown("#### 📰 News Recenti")
+                st.write(suggestions_df.iloc[0]['News_Summary'])
+                
+                st.markdown("#### 😊 Sentiment Aggregato")
+                sentiment = suggestions_df.iloc[0]['Sentiment']
+                if sentiment == 'Positive':
+                    st.success(f"🟢 {sentiment} - Il mercato mostra segnali positivi")
+                elif sentiment == 'Negative':
+                    st.error(f"🔴 {sentiment} - Il mercato mostra segnali negativi")
+                else:
+                    st.warning(f"🟡 {sentiment} - Il mercato è neutrale")
+                
+                st.markdown("#### 🔮 Previsione Prezzo")
+                st.info(suggestions_df.iloc[0]['Forecast_Note'])
+        else:
+            st.info("ℹ️ Nessun suggerimento web disponibile per questo strumento al momento.")
+   
+    with col_right:
+        st.markdown("### 🚀 Asset con Potenziale 2025")
+        st.markdown("*Basato su analisi storica e trend macro*")
+        
+        data_watch = [
+            {"Asset": "🥇 Gold", "Ticker": "GC=F", "Score": "⭐⭐⭐⭐⭐"},
+            {"Asset": "🥈 Silver", "Ticker": "SI=F", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "₿ Bitcoin", "Ticker": "BTC-USD", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "💎 Nvidia", "Ticker": "NVDA", "Score": "⭐⭐⭐⭐⭐"},
+            {"Asset": "🖥️ Broadcom", "Ticker": "AVGO", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🔍 Palantir", "Ticker": "PLTR", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🏦 JPMorgan", "Ticker": "JPM", "Score": "⭐⭐⭐"},
+            {"Asset": "☁️ Microsoft", "Ticker": "MSFT", "Score": "⭐⭐⭐⭐⭐"},
+            {"Asset": "📦 Amazon", "Ticker": "AMZN", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🚗 Tesla", "Ticker": "TSLA", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "🔋 Lithium ETF", "Ticker": "LIT", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "📊 S&P 500", "Ticker": "^GSPC", "Score": "⭐⭐⭐⭐"}
+        ]
+
+        rows = []
+        for row in data_watch:
+            price, prev = fetch_live_price(row["Ticker"])
+            if price is not None and prev is not None and prev != 0:
+                change_pct = (price - prev) / prev * 100
+                change_str = f"{change_pct:+.2f}%"
             else:
-                st.error("❌ System initialization failed - Data unavailable")
-        except Exception as e:
-            st.error(f"❌ Initialization error: {str(e)}")
+                change_str = "N/D"
 
-if key in st.session_state:
-    state = st.session_state[key]
-    st.markdown(f"## 📊 {ASSETS[symbol]} - Real-Time")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("💵 Price", f"${state['live_data']['price']:.2f}")
-    with col2:
-        prev = state['live_data']['open']
-        curr = state['live_data']['price']
-        chg = ((curr - prev) / (prev + 0.00001)) * 100
-        st.metric("📈 Change", f"{chg:+.2f}%")
-    with col3:
-        st.metric("🔼 High", f"${state['live_data']['high']:.2f}")
-    with col4:
-        st.metric("🔽 Low", f"${state['live_data']['low']:.2f}")
-    with col5:
-        vol = state['live_data']['volume']
-        vol_str = f"{vol/1e9:.2f}B" if vol > 1e9 else f"{vol/1e6:.1f}M"
-        st.metric("📊 Volume", vol_str)
+            if price is not None:
+                price_str = f"{price:.4f}" if price < 10 else f"{price:.2f}"
+            else:
+                price_str = "N/D"
 
-    st.markdown("---")
-    st.markdown("## 🔬 6-Layer Analysis")
-    col1, col2, col3 = st.columns(3)
+            rows.append({
+                "Asset": row["Asset"],
+                "Ticker": row["Ticker"],
+                "Score": row["Score"],
+                "Live Price": price_str,
+                "Δ % (vs close prec.)": change_str,
+            })
+
+        growth_df = pd.DataFrame(rows)
+        st.dataframe(growth_df, use_container_width=True, hide_index=True)
     
-    with col1:
-        st.markdown("### 🔥 VIX")
-        if state['vix_data']:
-            vix_class = 'vix-high' if state['vix_data']['fear_level'] in ['HIGH', 'EXTREME'] else 'vix-low'
-            st.markdown(f"**Level:** <span class='{vix_class}'>{state['vix_data']['vix']:.1f}</span>", unsafe_allow_html=True)
-            st.markdown(f"**Regime:** {state['vix_data']['regime']}")
-            st.markdown(f"**Signal:** {state['vix_data']['contrarian_signal']}")
-        else:
-            st.warning("VIX unavailable")
+    # Analisi del trade selezionato
+    if 'selected_trade' in st.session_state:
+        trade = st.session_state.selected_trade
+       
+        with st.spinner("🔮 Analisi AI in corso..."):
+            direction = 'long' if trade['Direction'].lower() in ['long', 'buy'] else 'short'
+            entry = trade['Entry']
+            sl = trade['SL']
+            tp = trade['TP']
+           
+            features = generate_features(df_ind, entry, sl, tp, direction, 60)
+            success_prob = predict_success(model, scaler, features)
+            factors = get_dominant_factors(model, features)
+           
+            st.markdown("---")
+            st.markdown("### 📊 Dashboard Statistiche Real-Time")
+            latest = df_ind.iloc[-1]
             
-    with col2:
-        st.markdown("### 📈 Put/Call")
-        if state['pc_data']:
-            st.markdown(f"**Ratio:** {state['pc_data']['pc_ratio']:.2f}")
-            st.markdown(f"**Sentiment:** {state['pc_data']['sentiment']}")
-            st.markdown(f"**Signal:** {state['pc_data']['signal']}")
-        else:
-            st.info("P/C unavailable")
+            ca, cb, cc, cd, ce = st.columns(5)
+            with ca:
+                st.metric("💵 Prezzo Attuale", f"{latest['Close']:.2f}")
+            with cb:
+                rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
+                st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
+            with cc:
+                st.metric("📏 ATR", f"{latest['ATR']:.2f}")
+            with cd:
+                trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
+                trend_text = "Bullish" if latest['Trend'] == 1 else "Bearish"
+                st.metric(f"{trend_emoji} Trend", trend_text)
+            with ce:
+                if avg_forecast is not None:
+                    forecast_change = ((avg_forecast - latest['Close']) / latest['Close']) * 100
+                    st.metric("🔮 Previsione", f"{avg_forecast:.2f}", f"{forecast_change:+.1f}%")
+                else:
+                    st.metric("🔮 Previsione", "N/A")
             
-    with col3:
-        st.markdown("### 🎯 Regime")
-        regime_class = 'regime-bull' if 'BULL' in state['market_regime']['regime'] else 'regime-bear' if 'BEAR' in state['market_regime']['regime'] else ''
-        st.markdown(f"**Regime:** <span class='{regime_class}'>{state['market_regime']['regime']}</span>", unsafe_allow_html=True)
-        st.markdown(f"**Bias:** {state['market_regime']['bias']:.2f}")
-
-    st.markdown("---")
-    st.markdown("## 🔄 Multi-Timeframe")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        align_class = 'regime-bull' if state['mtf_signal']['alignment'] == 'STRONG' else 'regime-bear'
-        st.markdown(f"**MTF:** <span class='{align_class}'>{state['mtf_signal']['alignment']}</span>", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"**5m:** {state['mtf_signal']['5m_direction']} ({state['mtf_signal']['5m_confidence']*100:.0f}%)")
-    with col3:
-        st.markdown(f"**15m:** {state['mtf_signal']['15m_direction']} ({state['mtf_signal']['15m_confidence']*100:.0f}%)")
-    with col4:
-        st.markdown(f"**1h:** {state['mtf_signal']['1h_direction']} ({state['mtf_signal']['1h_confidence']*100:.0f}%)")
-
-    l5 = state['df_5m'].iloc[-1]
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        mfi_signal = "🟢 Buyers" if l5['MFI'] > 60 else "🔴 Sellers" if l5['MFI'] < 40 else "🟡 Neutral"
-        st.metric("MFI", f"{l5['MFI']:.1f}", mfi_signal)
-    with col2:
-        obv_signal = "🟢 Accum" if l5['OBV_Signal'] == 1 else "🔴 Distrib"
-        st.metric("OBV", obv_signal)
-    with col3:
-        st.metric("Vol Surge", "🔊" if l5['Volume_Surge'] == 1 else "🔉")
-    with col4:
-        st.metric("Trend", f"{int(l5['Trend_Align'])}/3")
-
-    st.markdown("---")
-    st.markdown("## 🎯 Trade Recommendations")
-    
-    try:
-        trades = generate_trades(
-            state['ensemble'], state['scaler'], state['df_5m'], state['df_15m'], state['df_1h'],
-            state['mtf_signal'], state['market_regime'], state['vix_data'], state['pc_data'], 
-            state['live_data']['price']
-        )
-        
-        for idx, trade in trades.iterrows():
-            card_class = f"trade-{trade['Timeframe']}"
-            prob_emoji = "🟢" if trade['Probability'] >= 90 else "🟡" if trade['Probability'] >= 75 else "🟠"
+            st.markdown("---")
+            st.markdown("## 🎯 Risultati Analisi AI Avanzata")
+           
+            c1r, c2r, c3r, c4r = st.columns(4)
+            with c1r:
+                delta = success_prob - trade['Probability']
+                st.metric(
+                    "🎲 Probabilità AI",
+                    f"{success_prob:.1f}%",
+                    delta=f"{delta:+.1f}%" if delta != 0 else None,
+                    help=f"Analisi Web: {trade['Probability']:.0f}%"
+                )
+            with c2r:
+                rr = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0.0
+                rr_emoji = "🟢" if rr >= 2 else "🟡" if rr >= 1.5 else "🔴"
+                st.metric(f"{rr_emoji} Risk/Reward", f"{rr:.2f}x")
+            with c3r:
+                risk_pct = abs(entry - sl) / entry * 100 if entry != 0 else 0.0
+                st.metric("📉 Rischio %", f"{risk_pct:.2f}%")
+            with c4r:
+                reward_pct = abs(tp - entry) / entry * 100 if entry != 0 else 0.0
+                st.metric("📈 Reward %", f"{reward_pct:.2f}%")
+           
+            st.markdown("---")
+            st.markdown("### 🔍 Fattori Chiave dell'Analisi AI")
+            for i, factor in enumerate(factors, 1):
+                emoji = ["🥇", "🥈", "🥉", "🏅", "🎖️"][i-1]
+                st.markdown(f"{emoji} **{i}.** {factor}")
             
-            st.markdown(f"""
-            <div class='{card_class}'>
-                <h3 style='margin:0 0 0.4rem 0; color:#2d3748; font-size:0.95rem;'>
-                    {prob_emoji} {trade['Strategy']} • {trade['Direction']} • MTF: {trade['MTF']} • {trade['Regime']}
-                </h3>
-                <div style='display:grid; grid-template-columns: repeat(6, 1fr); gap:0.5rem; font-size:0.8rem;'>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Entry</p>
-                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>${trade['Entry']:.2f}</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Stop</p>
-                    <p style='margin:0; color:#e53e3e; font-size:0.95rem; font-weight:700;'>${trade['SL']:.2f}</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Target</p>
-                    <p style='margin:0; color:#38a169; font-size:0.95rem; font-weight:700;'>${trade['TP']:.2f}</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>Probability</p>
-                    <p style='margin:0; color:#667eea; font-size:1.1rem; font-weight:800;'>{trade['Probability']:.1f}%</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>R/R</p>
-                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>{trade['RR']:.1f}x</p></div>
-                    <div><p style='margin:0; color:#718096; font-size:0.7rem;'>TF</p>
-                    <p style='margin:0; color:#2d3748; font-size:0.95rem; font-weight:700;'>{trade['Timeframe']}</p></div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-    except Exception as e:
-        st.error(f"Error generating trades: {str(e)}")
+            st.markdown("---")
+            st.markdown("### 🧠 Analisi Psicologica dell'Investitore")
+            st.markdown("*Approfondimento comportamentale con focus su " + proper_name + "*")
+            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
+            st.markdown(psych_analysis)
+else:
+    st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
 
-    st.markdown("---")
-    
-    tab1, tab2, tab3 = st.tabs(["⚡ 5min", "📊 15min", "🎯 1hour"])
-    
-    with tab1:
-        l = state['df_5m'].iloc[-1]
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1: st.metric("RSI", f"{l['RSI_14']:.1f}")
-        with col2: st.metric("Stoch", f"{l['Stoch_K']:.1f}")
-        with col3: st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
-        with col4: st.metric("ADX", f"{l['ADX']:.1f}")
-        with col5: st.metric("MFI", f"{l['MFI']:.1f}")
-        
-    with tab2:
-        l = state['df_15m'].iloc[-1]
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1: st.metric("RSI", f"{l['RSI_14']:.1f}")
-        with col2: st.metric("Stoch", f"{l['Stoch_K']:.1f}")
-        with col3: st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
-        with col4: st.metric("ADX", f"{l['ADX']:.1f}")
-        with col5: st.metric("MFI", f"{l['MFI']:.1f}")
-        
-    with tab3:
-        l = state['df_1h'].iloc[-1]
-        col1, col2, col3, col4 = st.columns(4)
-        with col1: st.metric("RSI", f"{l['RSI_14']:.1f}")
-        with col2: st.metric("MACD", "🟢" if l['MACD_Hist'] > 0 else "🔴")
-        with col3: st.metric("ADX", f"{l['ADX']:.1f}")
-        with col4: st.metric("Trend", f"{int(l['Trend_Align'])}/3")
-
-with st.expander("ℹ️ System Guide"):
+# Info
+with st.expander("ℹ️ Come Funziona Questo Sistema"):
     st.markdown("""
-    ## 🎯 6-Layer System
-    **1. VIX** 🔥 - Fear gauge (>30 = extreme fear = BUY signal)
-    **2. Put/Call** 📈 - Institutional sentiment (>1.15 = BUY)
-    **3. Market Regime** 🎯 - Trend direction filter
-    **4. Order Flow** 💰 - MFI + OBV + Volume analysis
-    **5. Multi-Timeframe** 📊 - 5m/15m/1h alignment
-    **6. AI Ensemble** 🧠 - 4 models, 3000 simulations
-    ### Best Trades:
-    - ✅ Probability >90%
-    - ✅ STRONG MTF alignment
-    - ✅ VIX/P/C extreme signals
-    - ✅ Order Flow confirmation
-    ### Risk Management:
-    - Max 2% per trade
-    - Always use stop losses
-    - Wait for best setups
+    ### 🤖 Tecnologia AI Avanzata
+    
+    - 📊 14 indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR, Volume, Trend)
+    - 📈 500+ setup storici simulati per addestrare il modello
+    - 🌐 Segnali web: news, sentiment, stagionalità
+    - 🧠 Focus sulla psicologia comportamentale dell'investitore
+    
+    ⚠️ Questo strumento è a scopo educativo e non costituisce consulenza finanziaria.
     """)
 
+# Footer
 st.markdown("---")
-current_time = datetime.datetime.now().strftime('%H:%M:%S')
-st.markdown(f"""
-<div style='text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px;'>
-    <h3 style='color: white; margin: 0 0 0.3rem 0; font-size:1.1rem;'>🎯 ALADDIN ULTIMATE</h3>
-    <p style='color: white; font-size: 0.8rem; margin: 0.2rem 0; opacity: 0.9;'>
-        6-Layer • MTF • VIX • Put/Call • Order Flow • Regime • AI
+st.markdown("""
+<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; margin-top: 2rem;'>
+    <p style='color: #4a5568; font-size: 0.95rem; margin: 0;'>
+        ⚠️ <strong>Disclaimer Importante:</strong> Questo è uno strumento educativo e di ricerca. Non costituisce consiglio finanziario.<br>
+        Consulta sempre un professionista qualificato prima di prendere decisioni di investimento.
     </p>
-    <p style='color: white; font-size: 0.7rem; margin: 0.3rem 0 0 0; opacity: 0.8;'>
-        ⚠️ Use stop losses • Wait for 90%+ • STRONG MTF only
-    </p>
-    <p style='color: white; font-size: 0.65rem; margin: 0.2rem 0 0 0; opacity: 0.7;'>
-        {current_time} • © 2025 ALADDIN AI
+    <p style='color: #718096; font-size: 0.85rem; margin-top: 0.5rem;'>
+        Sviluppato con ❤️ utilizzando Machine Learning • © 2025
     </p>
 </div>
 """, unsafe_allow_html=True)
