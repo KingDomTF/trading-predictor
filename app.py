@@ -81,7 +81,18 @@ def generate_features(df_ind, entry, sl, tp, direction, main_tf):
         'price_change': latest['Price_Change'] * 100,
         'trend': latest['Trend']
     }
-   
+   with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
+
+# ==================== NUOVO CODICE: PULSANTE RICERCA LIVE ====================
+# Questo pulsante forza l'aggiornamento del prezzo scavalcando la cache
+if st.button("🔎 Ricerca Prezzo Live", use_container_width=True, help="Forza una nuova ricerca su Yahoo Finance per il prezzo attuale"):
+    fetch_live_price.clear()  # Cancella la cache per scaricare il dato fresco
+# =============================================================================
+
+# PREZZO LIVE CORRENTE
+live_price, prev_close = fetch_live_price(symbol)
     return np.array(list(features.values()), dtype=np.float32)
 
 
@@ -588,9 +599,6 @@ with col_live2:
         f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} "
         "(dati Yahoo Finance, possono essere ritardati)"
     )
-    if st.button("🔁 Aggiorna prezzo live"):
-        fetch_live_price.clear()
-        st.experimental_rerun()
 
 st.markdown("---")
 
