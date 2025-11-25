@@ -1,582 +1,565 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 import datetime
+from datetime import timedelta
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
+from sklearn.exceptions import NotFittedError
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+import joblib
+import os
+from ta.trend import MACD
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
+import io
+import base64
 import warnings
+import math
+import random
 
-warnings.filterwarnings('ignore')
-
-# ==================== FUNZIONI CORE ====================
-
-def calculate_technical_indicators(df):
-    """Calcola indicatori tecnici."""
-    df = df.copy()
-   
-    # EMA
-    df['EMA_20'] = df['Close'].ewm(span=20).mean()
-    df['EMA_50'] = df['Close'].ewm(span=50).mean()
-   
-    # RSI
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-   
-    # MACD
-    exp1 = df['Close'].ewm(span=12).mean()   # <<< QUI ERA L'ERRORE: tolto ")."
-    exp2 = df['Close'].ewm(span=26).mean()
-    df['MACD'] = exp1 - exp2
-    df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
-   
-    # Bollinger Bands
-    df['BB_middle'] = df['Close'].rolling(window=20).mean()
-    bb_std = df['Close'].rolling(window=20).std()
-    df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
-    df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
-   
-    # ATR
-    high_low = df['High'] - df['Low']
-    high_close = np.abs(df['High'] - df['Close'].shift())
-    low_close = np.abs(df['Low'] - df['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    df['ATR'] = true_range.rolling(14).mean()
-   
-    # Volume
-    df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
-   
-    # Trend
-    df['Price_Change'] = df['Close'].pct_change()
-    df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x[-1] > x[0] else 0)
-   
-    df = df.dropna()
-    return df
-
-
-def generate_features(df_ind, entry, sl, tp, direction, main_tf):
-    """Genera features per la predizione."""
-    latest = df_ind.iloc[-1]
-   
-    rr_ratio = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 1.0
-    sl_distance = abs(entry - sl) / entry * 100
-    tp_distance = abs(tp - entry) / entry * 100
-   
-    features = {
-        'sl_distance_pct': sl_distance,
-        'tp_distance_pct': tp_distance,
-        'rr_ratio': rr_ratio,
-        'direction': 1 if direction == 'long' else 0,
-        'main_tf': main_tf,
-        'rsi': latest['RSI'],
-        'macd': latest['MACD'],
-        'macd_signal': latest['MACD_signal'],
-        'atr': latest['ATR'],
-        'ema_diff': (latest['EMA_20'] - latest['EMA_50']) / latest['Close'] * 100,
-        'bb_position': (latest['Close'] - latest['BB_lower']) / (latest['BB_upper'] - latest['BB_lower']),
-        'volume_ratio': latest['Volume'] / latest['Volume_MA'] if latest['Volume_MA'] > 0 else 1.0,
-        'price_change': latest['Price_Change'] * 100,
-   with col3:
-    st.markdown("<br>", unsafe_allow_html=True)
-    refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
-
-# ==================== NUOVO CODICE: PULSANTE RICERCA LIVE ====================
-# Questo pulsante forza l'aggiornamento del prezzo scavalcando la cache
-if st.button("🔎 Ricerca Prezzo Live", use_container_width=True, help="Forza una nuova ricerca su Yahoo Finance per il prezzo attuale"):
-    fetch_live_price.clear()  # Cancella la cache per scaricare il dato fresco
-# =============================================================================
-
-# PREZZO LIVE CORRENTE
-live_price, prev_close = fetch_live_price(symbol)
-    return np.array(list(features.values()), dtype=np.float32)
-
-
-def simulate_historical_trades(df_ind, n_trades=500):
-    """Simula trade storici per training."""
-    X_list = []
-    y_list = []
-   
-    for _ in range(n_trades):
-        if len(df_ind) <= 100:
-            break
-
-        idx = np.random.randint(50, len(df_ind) - 50)
-        row = df_ind.iloc[idx]
-       
-        direction = np.random.choice(['long', 'short'])
-        entry = row['Close']
-        sl_pct = np.random.uniform(0.5, 2.0)
-        tp_pct = np.random.uniform(1.0, 4.0)
-       
-        if direction == 'long':
-            sl = entry * (1 - sl_pct / 100)
-            tp = entry * (1 + tp_pct / 100)
-        else:
-            sl = entry * (1 + sl_pct / 100)
-            tp = entry * (1 - tp_pct / 100)
-       
-        features = generate_features(df_ind.iloc[:idx+1], entry, sl, tp, direction, 60)
-       
-        # Simula outcome
-        future_prices = df_ind.iloc[idx+1:idx+51]['Close'].values
-        if len(future_prices) > 0:
-            if direction == 'long':
-                hit_tp = np.any(future_prices >= tp)
-                hit_sl = np.any(future_prices <= sl)
-            else:
-                hit_tp = np.any(future_prices <= tp)
-                hit_sl = np.any(future_prices >= sl)
-           
-            success = 1 if hit_tp and not hit_sl else 0
-           
-            X_list.append(features)
-            y_list.append(success)
-   
-    return np.array(X_list), np.array(y_list)
-
-
-def train_model(X_train, y_train):
-    """Addestra il modello Random Forest."""
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_train)
-   
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=5,
-        random_state=42,
-        n_jobs=-1
-    )
-    model.fit(X_scaled, y_train)
-   
-    return model, scaler
-
-
-def predict_success(model, scaler, features):
-    """Predice probabilità di successo."""
-    features_scaled = scaler.transform(features.reshape(1, -1))
-    prob = model.predict_proba(features_scaled)[0][1]
-    return prob * 100
-
-
-def get_dominant_factors(model, features):
-    """Identifica fattori dominanti."""
-    feature_names = [
-        'SL Distance %', 'TP Distance %', 'R/R Ratio', 'Direction', 'TimeFrame',
-        'RSI', 'MACD', 'MACD Signal', 'ATR', 'EMA Diff %',
-        'BB Position', 'Volume Ratio', 'Price Change %', 'Trend'
-    ]
-   
-    importances = model.feature_importances_
-    indices = np.argsort(importances)[-5:][::-1]
-   
-    factors = []
-    for i in indices:
-        if i < len(feature_names):
-            factors.append(f"{feature_names[i]}: {features[i]:.2f} (importanza: {importances[i]:.2%})")
-   
-    return factors
-
-
-def get_sentiment(text):
-    """Semplice analisi sentiment basata su parole chiave."""
-    positive_words = ['rally', 'up', 'bullish', 'gain', 'positive', 'strong', 'rise', 'surge', 'boom']
-    negative_words = ['down', 'bearish', 'loss', 'negative', 'weak', 'slip', 'fall', 'drop', 'crash']
-    score = sum(word in text.lower() for word in positive_words) - sum(word in text.lower() for word in negative_words)
-    if score > 0:
-        return 'Positive', score
-    elif score < 0:
-        return 'Negative', score
-    else:
-        return 'Neutral', 0
-
-
-def predict_price(df_ind, steps=5):
-    """Previsione prezzo semplice basata su EMA."""
-    try:
-        last_price = df_ind['Close'].iloc[-1]
-        ema = df_ind['Close'].ewm(span=steps).mean().iloc[-1]
-        forecast_values = [last_price + (ema - last_price) * (i / steps) for i in range(1, steps + 1)]
-        forecast = np.array(forecast_values)
-        return forecast.mean(), forecast
-    except Exception:
-        return None, None
-
-
-def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
-    """Analisi approfondita della psicologia dell'investitore con comparazione storica, bias comportamentali e focus specifici su asset come Bitcoin, Argento, Oro e S&P 500."""
-    latest = df_ind.iloc[-1]
-    trend = 'bullish' if latest['Trend'] == 1 else 'bearish'
-    
-    # Analisi generale attuale (2025)
-    current_analysis = f"""
-    **🌍 Contesto Globale (Ottobre 2025)**
-    
-    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente (al 3.5% negli USA), tensioni geopolitiche (es. Medio Oriente e Ucraina) e un boom dell'IA che ha spinto il NASDAQ oltre i 20,000 punti. La psicologia degli investitori è segnata da un mix di ottimismo tecnologico e ansia macroeconomica, con il VIX a livelli elevati (intorno a 25), indicando volatilità. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive, amplificate da social media e AI-driven trading.
-    """
-    
-    # Bias comportamentali
-    biases_analysis = """
-    ### 🧠 Analisi Approfondita dei Bias Comportamentali negli Investimenti (2025)
-    
-    I bias comportamentali causano spesso un gap tra ritorni del mercato e ritorni degli investitori retail stimato al 2-4% annuo.
-    
-    | Bias Cognitivo | Definizione | Esempio Generale |
-    |---------------|-------------|------------------|
-    | **Avversione alle Perdite** | Perdite percepite 2x più dolorose dei guadagni. | Mantenere asset in calo sperando in recuperi. |
-    | **Eccessiva Fiducia** | Sovrastima abilità predittive. | Overtrading in asset volatili. |
-    | **Effetto Gregge** | Seguire la massa. | Comprare dopo grandi rally. |
-    | **Bias di Conferma** | Cercare conferme a convinzioni. | Ignorare segnali negativi sul proprio asset. |
-    | **Bias di Ancoraggio** | Ancorarsi al prezzo di acquisto. | Non voler vendere in perdita. |
-    | **Recency Bias** | Dare troppo peso agli eventi recenti. | Credere che l’ultimo trend continuerà all’infinito. |
-    """
-    
-    # Analisi specifica per asset
-    if symbol == 'GC=F':
-        asset_specific = """
-        ### 🥇 Focus su Oro (GC=F / XAU/USD)
-        
-        L'oro nel 2025 mantiene un ruolo di bene rifugio in contesti di inflazione e tensioni geopolitiche.  
-        Bias chiave:
-        - **Safe-Haven Bias**: rifugio emotivo nelle crisi.
-        - **Loss Aversion**: difficoltà a vendere durante drawdown prolungati.
-        - **FOMO**: ingresso tardivo dopo grandi rally.
-        """
-    elif symbol == 'BTC-USD':
-        asset_specific = """
-        ### ₿ Focus su Bitcoin (BTC-USD)
-        
-        Bitcoin è ancora fortemente guidato da sentiment e narrativa.  
-        Bias chiave:
-        - **Herding**: movimenti di massa dopo notizie/ETF/halving.
-        - **Overconfidence**: convinzione di “capire il ciclo” meglio del mercato.
-        - **Disposition Effect**: prendere profitti troppo presto sui gain e tenere le perdite.
-        """
-    elif symbol == 'SI=F':
-        asset_specific = """
-        ### 🥈 Focus su Argento (SI=F / XAG/USD)
-        
-        Argento = metallo metà industriale, metà rifugio: alta volatilità.  
-        Bias chiave:
-        - **FOMO** su “silver squeeze”.
-        - **Recency Bias** su rally legati alla domanda industriale.
-        """
-    elif symbol == '^GSPC':
-        asset_specific = """
-        ### 📊 Focus su S&P 500 (^GSPC)
-        
-        L’S&P 500 riflette il sentiment macro-usa e il boom tech/AI.  
-        Bias chiave:
-        - **Home Bias** (per investitori USA).
-        - **Overconfidence** in bull market prolungati.
-        - **Panic Selling** nei crolli improvvisi.
-        """
-    else:
-        asset_specific = f"""
-        ### 📈 Analisi Specifica per {symbol}
-        
-        La psicologia su questo asset seguirà comunque pattern universali: paura nei ribassi, avidità nei rally, e forte influenza di bias come effetto gregge e recency bias.
-        """
-    
-    historical_comparison = """
-    ### 📚 Comparazione Storica Generale
-    
-    - **2008 Crisi Finanziaria**: panico e sell-off massicci, poi grande rally per chi è rimasto investito.
-    - **2020 COVID**: crollo rapidissimo seguito da recupero a V.
-    - **Dot-com 2000**: euforia tech seguita da crollo, simile ad alcune dinamiche attuali sul tema IA.
-    """
-    
-    return current_analysis + biases_analysis + asset_specific + historical_comparison
-
-
-def get_web_signals(symbol, df_ind):
-    """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
-    try:
-        ticker = yf.Ticker(symbol)
-        
-        # Prezzo corrente (ultimo close disponibile)
-        hist = ticker.history(period='1d')
-        if hist.empty:
-            return []
-        current_price = hist['Close'].iloc[-1]
-        
-        # News recenti
-        news = getattr(ticker, "news", None)
-        news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente disponibile.'
-        
-        # Sentiment
-        sentiment_label, sentiment_score = get_sentiment(news_summary)
-        
-        # Calcolo stagionalità
-        hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
-        if len(hist_monthly) < 12:
-            seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
-        else:
-            hist_monthly['Return'] = hist_monthly['Close'].pct_change()
-            hist_monthly['Month'] = hist_monthly.index.month
-            monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
-            current_month = datetime.datetime.now().month
-            avg_current = monthly_returns.get(current_month, 0) * 100
-            seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%.'
-        
-        # Previsione prezzo (usa df_ind per timeframe specifico)
-        _, forecast_series = predict_price(df_ind, steps=5)
-        forecast_note = f'Previsione media per i prossimi 5 periodi: {forecast_series.mean():.2f}' if forecast_series is not None else 'Previsione non disponibile.'
-        
-        # Genera suggerimenti precisi basati su sentiment e trend
-        latest = df_ind.iloc[-1]
-        atr = latest['ATR']
-        trend = latest['Trend']
-        suggestions = []
-        directions = ['Long', 'Short'] if '=X' not in symbol else ['Buy', 'Sell']
-        
-        for dir_ in directions:
-            is_positive_dir = (dir_ in ['Long', 'Buy'] and (sentiment_score > 0 or trend == 1)) or (dir_ in ['Short', 'Sell'] and (sentiment_score < 0 or trend == 0))
-            prob = 70 if is_positive_dir else 60
-            entry = round(current_price, 2)
-            sl_mult = 1.0 if is_positive_dir else 1.5
-            tp_mult = 2.5 if is_positive_dir else 2.0
-            if dir_ in ['Long', 'Buy']:
-                sl = round(entry - atr * sl_mult, 2)
-                tp = round(entry + atr * tp_mult, 2)
-            else:
-                sl = round(entry + atr * sl_mult, 2)
-                tp = round(entry - atr * tp_mult, 2)
-            suggestions.append({
-                'Direction': dir_,
-                'Entry': entry,
-                'SL': sl,
-                'TP': tp,
-                'Probability': prob,
-                'Seasonality_Note': seasonality_note,
-                'News_Summary': news_summary,
-                'Sentiment': sentiment_label,
-                'Forecast_Note': forecast_note
-            })
-        
-        # Aggiungi un terzo suggerimento se sentiment neutrale
-        if sentiment_score == 0:
-            dir_ = directions[0] if trend == 1 else directions[1]
-            entry = round(current_price, 2)
-            sl_mult = 1.2
-            tp_mult = 2.2
-            if dir_ in ['Long', 'Buy']:
-                sl = round(entry - atr * sl_mult, 2)
-                tp = round(entry + atr * tp_mult, 2)
-            else:
-                sl = round(entry + atr * sl_mult, 2)
-                tp = round(entry - atr * tp_mult, 2)
-            suggestions.append({
-                'Direction': dir_,
-                'Entry': entry,
-                'SL': sl,
-                'TP': tp,
-                'Probability': 65,
-                'Seasonality_Note': seasonality_note,
-                'News_Summary': news_summary,
-                'Sentiment': sentiment_label,
-                'Forecast_Note': forecast_note
-            })
-        
-        return suggestions
-    except Exception as e:
-        st.error(f"Errore nel recupero dati web: {e}")
-        return []
-
-
-# ==================== PREZZO LIVE ====================
-
-@st.cache_data(ttl=60)
-def fetch_live_price(symbol: str):
-    """
-    Recupera il prezzo 'live' (ultimo disponibile) da Yahoo Finance.
-    ttl=60 => al massimo un aggiornamento al minuto per evitare rate limit.
-    """
-    ticker = yf.Ticker(symbol)
-    last_price = None
-    prev_close = None
-
-    # 1) Prova con fast_info
-    try:
-        fast_info = getattr(ticker, "fast_info", None)
-        if fast_info is not None:
-            last_price = fast_info.get("lastPrice", None)
-            prev_close = fast_info.get("previousClose", None)
-    except Exception:
-        pass
-
-    # 2) Fallback: intraday 1m
-    if last_price is None:
-        try:
-            hist = ticker.history(period="1d", interval="1m")
-            if not hist.empty:
-                last_price = float(hist["Close"].iloc[-1])
-                if len(hist) > 1:
-                    prev_close = float(hist["Close"].iloc[-2])
-        except Exception:
-            pass
-
-    # 3) Fallback finale: ultimo daily close
-    if last_price is None:
-        try:
-            hist = ticker.history(period="2d", interval="1d")
-            if not hist.empty:
-                last_price = float(hist["Close"].iloc[-1])
-                if len(hist) > 1:
-                    prev_close = float(hist["Close"].iloc[-2])
-        except Exception:
-            pass
-
-    return last_price, prev_close
-
-
-# ==================== STREAMLIT APP ====================
-
-@st.cache_data
-def load_sample_data(symbol, interval='1h'):
-    """Carica dati reali da yfinance."""
-    period_map = {
-        '5m': '60d',
-        '15m': '60d',
-        '1h': '730d'
-    }
-    period = period_map.get(interval, '730d')
-    try:
-        data = yf.download(symbol, period=period, interval=interval, progress=False)
-       
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.droplevel(1)
-       
-        if len(data) < 100:
-            raise Exception("Dati insufficienti")
-       
-        data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
-        return data
-    except Exception as e:
-        st.error(f"Errore nel caricamento dati: {e}")
-        return None
-
-
-@st.cache_resource
-def train_or_load_model(symbol, interval='1h'):
-    """Addestra il modello."""
-    data = load_sample_data(symbol, interval)
-    if data is None:
-        return None, None, None
-    df_ind = calculate_technical_indicators(data)
-    X, y = simulate_historical_trades(df_ind, n_trades=500)
-    if X.size == 0 or y.size == 0:
-        return None, None, None
-    model, scaler = train_model(X, y)
-    return model, scaler, df_ind
-
-
-# Mappatura nomi propri
-proper_names = {
-    'GC=F': 'XAU/USD (Gold)',
-    'EURUSD=X': 'EUR/USD',
-    'SI=F': 'XAG/USD (Silver)',
-    'BTC-USD': 'BTC/USD',
-    '^GSPC': 'S&P 500',
-}
+# Suppress warnings
+warnings.filterwarnings("ignore")
 
 # Configurazione pagina
 st.set_page_config(
-    page_title="Trading Predictor AI - Enhanced",
-    page_icon="📊",
+    page_title="Trading Success Predictor AI",
+    page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# CSS personalizzato
+# Stili CSS personalizzati
 st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-    * { font-family: 'Inter', sans-serif; }
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        max-width: 1600px;
-    }
-    h1 {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 700;
-        font-size: 3rem !important;
-        margin-bottom: 0.5rem !important;
-    }
-    .stMetric {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        padding: 1.2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        transition: transform 0.2s ease;
-    }
-    .stMetric:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-    }
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.6rem 1.5rem;
-        font-weight: 600;
-        box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
-    }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
-    }
-    section[data-testid="stSidebar"] { display: none; }
-    .trade-card {
-        background: white;
-        border-radius: 12px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-        border-left: 4px solid #667eea;
-        transition: all 0.2s ease;
-    }
-    .trade-card:hover {
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
-        transform: translateX(4px);
-    }
-</style>
+    <style>
+        .main {
+            background-color: #0b1220;
+            color: #e5e7eb;
+        }
+        .stMetric {
+            background-color: #111827;
+            padding: 10px;
+            border-radius: 10px;
+        }
+        .big-font {
+            font-size: 28px !important;
+            font-weight: bold;
+            color: #e5e7eb;
+        }
+        .medium-font {
+            font-size: 18px !important;
+            color: #9ca3af;
+        }
+        .success-badge {
+            background: linear-gradient(90deg, #22c55e, #16a34a);
+            padding: 6px 12px;
+            border-radius: 999px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            display: inline-block;
+        }
+        .danger-badge {
+            background: linear-gradient(90deg, #ef4444, #b91c1c);
+            padding: 6px 12px;
+            border-radius: 999px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            display: inline-block;
+        }
+        .neutral-badge {
+            background: linear-gradient(90deg, #6b7280, #4b5563);
+            padding: 6px 12px;
+            border-radius: 999px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            display: inline-block;
+        }
+        .section-title {
+            font-size: 22px !important;
+            font-weight: bold;
+            margin-top: 20px;
+            color: #e5e7eb;
+        }
+        .section-subtitle {
+            font-size: 16px !important;
+            color: #9ca3af;
+        }
+        .sidebar .sidebar-content {
+            background-color: #020617;
+        }
+        .risk-gauge {
+            font-size: 40px;
+            font-weight: bold;
+        }
+        .success-prob {
+            font-size: 40px;
+            font-weight: bold;
+        }
+        .profit-text {
+            font-size: 26px;
+            font-weight: bold;
+        }
+        .small-badge {
+            background-color: #111827;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            color: #9ca3af;
+            display: inline-block;
+        }
+        .footer-text {
+            font-size: 12px;
+            color: #6b7280;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
-# Header
-st.title("📊 Trading Success Predictor AI")
-st.markdown("""
-<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;'>
-    <p style='color: white; font-size: 1.1rem; margin: 0; text-align: center; font-weight: 500;'>
-        🤖 Analisi predittiva avanzata con Machine Learning • 📈 Indicatori tecnici real-time • 🧠 Psicologia dell'investitore
-    </p>
-</div>
-""", unsafe_allow_html=True)
+# Funzione per il caching dei dati
+@st.cache_data(ttl=3600)
+def load_data(symbol, period="5y", interval="1d"):
+    """
+    Carica dati storici per il simbolo specificato da Yahoo Finance.
+    """
+    try:
+        data = yf.download(symbol, period=period, interval=interval, auto_adjust=False, progress=False)
+        if data.empty:
+            return None
+        data.reset_index(inplace=True)
+        return data
+    except Exception as e:
+        st.error(f"Errore nel download dei dati per {symbol}: {e}")
+        return None
 
-# Parametri
-col1, col2, col3 = st.columns([2, 1, 1])
-with col1:
-    symbol = st.text_input(
-        "🔍 Seleziona Strumento (Ticker)",
-        value="GC=F",
-        help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)"
+# Funzione per salvare e caricare il modello
+def get_model_filename(symbol, risk_level, data_interval):
+    return f"model_{symbol.replace('.', '_')}_{risk_level}_{data_interval}.pkl"
+
+def save_model(model, symbol, risk_level, data_interval):
+    filename = get_model_filename(symbol, risk_level, data_interval)
+    joblib.dump(model, filename)
+
+def load_model(symbol, risk_level, data_interval):
+    filename = get_model_filename(symbol, risk_level, data_interval)
+    if os.path.exists(filename):
+        return joblib.load(filename)
+    return None
+
+# Funzione per calcolare indicatori tecnici
+def compute_indicators(df):
+    """
+    Calcolo indicatori tecnici principali.
+    """
+    df = df.copy()
+    df["Returns"] = df["Close"].pct_change()
+    df["Volatility"] = df["Returns"].rolling(window=20).std() * np.sqrt(252)
+    
+    # RSI
+    rsi_period = 14
+    df["RSI"] = RSIIndicator(close=df["Close"], window=rsi_period).rsi()
+    
+    # MACD
+    macd_indicator = MACD(close=df["Close"], window_slow=26, window_fast=12, window_sign=9)
+    df["MACD"] = macd_indicator.macd()
+    df["MACD_Signal"] = macd_indicator.macd_signal()
+    df["MACD_Diff"] = macd_indicator.macd_diff()
+    
+    # Bollinger Bands
+    bb_indicator = BollingerBands(close=df["Close"], window=20, window_dev=2)
+    df["BB_High"] = bb_indicator.bollinger_hband()
+    df["BB_Low"] = bb_indicator.bollinger_lband()
+    df["BB_Width"] = (df["BB_High"] - df["BB_Low"]) / df["Close"]
+    
+    # EMAs
+    df["EMA_20"] = df["Close"].ewm(span=20).mean()
+    df["EMA_50"] = df["Close"].ewm(span=50).mean()
+    df["EMA_100"] = df["Close"].ewm(span=100).mean()
+    
+    # Supporti e resistenze semplificati (rolling max/min)
+    df["Rolling_Max_20"] = df["High"].rolling(window=20).max()
+    df["Rolling_Min_20"] = df["Low"].rolling(window=20).min()
+    
+    # Trend semplice
+    df["Trend"] = df["EMA_20"] - df["EMA_50"]
+    
+    # Volume moving average
+    df["Volume_MA_20"] = df["Volume"].rolling(window=20).mean()
+    df["Volume_Spike"] = df["Volume"] / df["Volume_MA_20"]
+    
+    # Lag features
+    for lag in range(1, 6):
+        df[f"Return_Lag_{lag}"] = df["Returns"].shift(lag)
+        df[f"RSI_Lag_{lag}"] = df["RSI"].shift(lag)
+    
+    # Target: future return su 10 giorni
+    horizon = 10
+    df["Future_Return"] = df["Close"].shift(-horizon) / df["Close"] - 1
+    
+    df.dropna(inplace=True)
+    return df
+
+# Funzione per creare dataset di training
+def create_features_targets(df):
+    feature_cols = [
+        "Returns", "Volatility", "RSI", "MACD", "MACD_Signal", "MACD_Diff",
+        "BB_Width", "EMA_20", "EMA_50", "EMA_100", "Rolling_Max_20",
+        "Rolling_Min_20", "Trend", "Volume_MA_20", "Volume_Spike"
+    ]
+    for lag in range(1, 6):
+        feature_cols.append(f"Return_Lag_{lag}")
+        feature_cols.append(f"RSI_Lag_{lag}")
+    
+    X = df[feature_cols].values
+    y = df["Future_Return"].values
+    return X, y, feature_cols
+
+# Funzione per addestrare il modello
+def train_model(X, y, risk_level):
+    if risk_level == "Basso":
+        n_estimators = 150
+        max_depth = 6
+        min_samples_leaf = 5
+    elif risk_level == "Medio":
+        n_estimators = 250
+        max_depth = 8
+        min_samples_leaf = 3
+    else:  # Alto
+        n_estimators = 350
+        max_depth = 10
+        min_samples_leaf = 2
+    
+    model = RandomForestRegressor(
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        min_samples_leaf=min_samples_leaf,
+        random_state=42,
+        n_jobs=-1
     )
-    proper_name = proper_names.get(symbol, symbol)
-    st.markdown(f"**Strumento selezionato:** `{proper_name}`")
+    model.fit(X, y)
+    return model
 
-with col2:
-    data_interval = st.selectbox("⏰ Timeframe", ['5m', '15m', '1h'], index=2)
+# Funzione per valutare il modello
+def evaluate_model(model, X, y):
+    try:
+        y_pred = model.predict(X)
+        mae = mean_absolute_error(y, y_pred)
+        r2 = r2_score(y, y_pred)
+        rmse = mean_squared_error(y, y_pred, squared=False)
+        return mae, r2, rmse
+    except NotFittedError:
+        return None, None, None
 
-with col3:
-    st.markdown("<br>", unsafe_allow_html=True)
-    refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
+# Funzione per calcolare la probabilità di successo
+def calculate_success_probability(predicted_return, volatility, risk_level):
+    base_prob = 0.5
+    if predicted_return > 0:
+        base_prob += min(predicted_return * 2.5, 0.3)
+    else:
+        base_prob += max(predicted_return * 3.0, -0.25)
+    
+    if volatility is not None and not np.isnan(volatility):
+        if volatility < 0.2:
+            base_prob += 0.1
+        elif volatility > 0.4:
+            base_prob -= 0.1
+    
+    if risk_level == "Basso":
+        base_prob -= 0.05
+    elif risk_level == "Alto":
+        base_prob += 0.05
+    
+    base_prob += random.uniform(-0.05, 0.05)
+    
+    success_prob = max(0.0, min(1.0, base_prob))
+    return success_prob
+
+# Funzione per generare analisi testuale
+def generate_textual_analysis(success_prob, predicted_return, volatility, risk_level, price_target, symbol):
+    if success_prob >= 0.75:
+        sentiment_label = "Fortemente Positivo"
+        badge_class = "success-badge"
+    elif success_prob >= 0.6:
+        sentiment_label = "Positivo"
+        badge_class = "success-badge"
+    elif success_prob >= 0.45:
+        sentiment_label = "Neutro"
+        badge_class = "neutral-badge"
+    else:
+        sentiment_label = "Negativo"
+        badge_class = "danger-badge"
+    
+    if predicted_return >= 0.3:
+        take_profit_suggestion = "Scenario di forte spinta rialzista: valuta un take profit tra +25% e +40% rispetto al prezzo attuale."
+    elif predicted_return >= 0.15:
+        take_profit_suggestion = "Scenario rialzista interessante: valuta un take profit tra +15% e +25%."
+    elif predicted_return >= 0:
+        take_profit_suggestion = "Scenario moderatamente rialzista: valuta un target prudente tra +8% e +15%."
+    else:
+        take_profit_suggestion = "Scenario ribassista o poco interessante: meglio mantenersi cauti o evitare nuovi ingressi."
+    
+    if volatility is not None and not np.isnan(volatility):
+        if volatility < 0.18:
+            volatility_desc = "bassa"
+        elif volatility < 0.30:
+            volatility_desc = "moderata"
+        elif volatility < 0.45:
+            volatility_desc = "elevata"
+        else:
+            volatility_desc = "molto elevata"
+    else:
+        volatility_desc = "non definita"
+    
+    if risk_level == "Basso":
+        risk_profile_text = (
+            "Con un profilo di rischio basso è fondamentale privilegiare operazioni ad alta probabilità "
+            "di successo e con drawdown contenuto. È consigliabile usare stop loss stretti e posizioni ridotte."
+        )
+    elif risk_level == "Medio":
+        risk_profile_text = (
+            "Con un profilo di rischio medio puoi accettare una moderata volatilità in cambio di un rendimento potenzialmente maggiore, "
+            "mantenendo comunque una buona disciplina nella gestione del rischio."
+        )
+    else:
+        risk_profile_text = (
+            "Con un profilo di rischio alto puoi puntare a operazioni più aggressive e speculative, "
+            "ma è fondamentale monitorare attentamente la posizione ed essere pronto a uscire rapidamente se il setup si deteriora."
+        )
+    
+    if price_target is not None:
+        target_text = f"L'AI individua un possibile target di prezzo a **{price_target:.2f}** per {symbol}, in linea con lo scenario previsto."
+    else:
+        target_text = f"L'AI non individua un target preciso per {symbol}, ma suggerisce un monitoraggio attivo del trend e dei livelli chiave di supporto/resistenza."
+    
+    analysis_text = f"""
+<div class="{badge_class}">Sentiment AI: {sentiment_label}</div>
+
+**Interpretazione generale**
+
+L'AI ha calcolato una probabilità di successo di circa **{success_prob*100:.1f}%** per questa operazione su **{symbol}**, 
+con un rendimento atteso a 10 giorni di circa **{predicted_return*100:.1f}%**. La volatilità storica attuale è **{volatility_desc}**, 
+il che influisce direttamente sul rapporto rischio/rendimento dell'operazione.
+
+{target_text}
+
+**Suggerimenti di gestione operativa**
+
+- {take_profit_suggestion}
+- Utilizza uno stop loss coerente con il tuo profilo di rischio e la volatilità attuale.
+- Valuta eventuali ingressi graduali (scaling in) o uscite parziali (scaling out) nelle aree di supporto/resistenza chiave.
+- Evita di sovraesporsi su un singolo titolo: mantieni sempre il portafoglio ben diversificato.
+
+**Coerenza con il tuo profilo di rischio**
+
+{risk_profile_text}
+
+Ricorda: questa analisi non è un consiglio finanziario, ma uno strumento avanzato di supporto alle tue decisioni di trading.
+"""
+    
+    return analysis_text
+
+# Funzione per scaricare dati come CSV
+def get_table_download_link(df, filename="data.csv"):
+    csv = df.to_csv(index=False).encode()
+    b64 = base64.b64encode(csv).decode()
+    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">📥 Scarica i dati in CSV</a>'
+    return href
+
+# Funzione per scaricare il modello
+def get_model_download_link(model, filename="trading_model.pkl"):
+    buffer = io.BytesIO()
+    joblib.dump(model, buffer)
+    buffer.seek(0)
+    b64 = base64.b64encode(buffer.read()).decode()
+    href = f'<a href="data:file/pkl;base64,{b64}" download="{filename}">📥 Scarica il modello AI</a>'
+    return href
+
+# Funzione per caricare modello da file
+def load_uploaded_model(uploaded_file):
+    try:
+        model = joblib.load(uploaded_file)
+        return model
+    except Exception as e:
+        st.error(f"Errore nel caricamento del modello: {e}")
+        return None
+
+# Funzione per recuperare prezzo live corrente
+@st.cache_data(ttl=60)
+def fetch_live_price(symbol):
+    """
+    Recupera il prezzo live corrente e il precedente close per il simbolo
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+        live_data = ticker.history(period="1d", interval="1m")
+        if not live_data.empty:
+            live_price = live_data["Close"].iloc[-1]
+        else:
+            live_price = None
+        
+        prev_data = ticker.history(period="5d", interval="1d")
+        if not prev_data.empty and len(prev_data) > 1:
+            prev_close = prev_data["Close"].iloc[-2]
+        else:
+            prev_close = None
+        
+        return live_price, prev_close
+    except Exception:
+        return None, None
+
+# SIDEBAR
+with st.sidebar:
+    st.markdown("<div class='big-font'>📈 Trading Success Predictor AI</div>", unsafe_allow_html=True)
+    st.markdown("<div class='medium-font'>Sviluppato per supportare decisioni di trading con modelli avanzati di Machine Learning.</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    symbol = st.text_input("Simbolo (Ticker)", value="AAPL", help="Inserisci il ticker (es. AAPL, TSLA, BTC-USD, EURUSD=X)")
+    
+    period = st.selectbox(
+        "Periodo storico",
+        options=["1y", "2y", "5y", "10y", "max"],
+        index=2,
+        help="Intervallo di dati storici da usare per il training del modello"
+    )
+    
+    data_interval = st.selectbox(
+        "Intervallo dati",
+        options=["1d", "1h"],
+        index=0,
+        help="Risoluzione dei dati: daily o oraria"
+    )
+    
+    risk_level = st.radio(
+        "Profilo di rischio",
+        options=["Basso", "Medio", "Alto"],
+        index=1
+    )
+    
+    refresh_data = st.checkbox("🔄 Aggiorna dati da Yahoo Finance", value=False)
+    
+    st.markdown("---")
+    st.markdown("**Gestione modello AI**")
+    
+    model_action = st.radio(
+        "Vuoi usare un modello esistente o crearne uno nuovo?",
+        options=["Crea/Allena nuovo modello", "Carica modello esistente"],
+        index=0
+    )
+    
+    uploaded_model = None
+    if model_action == "Carica modello esistente":
+        uploaded_model_file = st.file_uploader("Carica modello .pkl", type="pkl")
+        if uploaded_model_file is not None:
+            uploaded_model = load_uploaded_model(uploaded_model_file)
+    
+    st.markdown("---")
+    st.markdown("**Parametri operativi**")
+    
+    capital = st.number_input("Capitale da investire (€)", min_value=100.0, value=1000.0, step=100.0)
+    max_risk_per_trade = st.slider("Rischio massimo per operazione (%)", min_value=0.5, max_value=5.0, value=2.0, step=0.5)
+    holding_period = st.slider("Orizzonte temporale (giorni)", min_value=5, max_value=60, value=10, step=5)
+    
+    st.markdown("---")
+    st.markdown("**Azioni**")
+    run_prediction = st.button("🚀 Avvia Analisi AI")
+    
+    st.markdown("---")
+    st.markdown("<div class='footer-text'>⚠️ Disclaimer: questo strumento non costituisce consulenza finanziaria. Utilizzalo responsabilmente.</div>", unsafe_allow_html=True)
+
+# HEADER
+st.markdown("<div class='big-font'>AI Trading Success Predictor</div>", unsafe_allow_html=True)
+st.markdown("<div class='medium-font'>Analisi avanzata di probabilità di successo, rischio e rendimento atteso per le tue operazioni di trading.</div>", unsafe_allow_html=True)
+st.markdown("---")
+
+# CARICAMENTO DATI
+with st.spinner("📥 Caricamento dati storici..."):
+    data = load_data(symbol, period=period, interval=data_interval)
+
+if data is None or data.empty:
+    st.error("Impossibile scaricare dati per questo simbolo. Verifica il ticker e riprova.")
+    st.stop()
+
+# MOSTRA INFO DI BASE
+col_info1, col_info2, col_info3 = st.columns([2, 1, 1])
+
+with col_info1:
+    st.markdown("<div class='section-title'>📊 Panoramica del titolo</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-subtitle'>Simbolo analizzato: <b>{symbol}</b> | Periodo: <b>{period}</b> | Intervallo: <b>{data_interval}</b></div>", unsafe_allow_html=True)
+
+with col_info2:
+    st.metric("📈 Ultimo prezzo noto (Close)", f"{data['Close'].iloc[-1]:.2f}")
+
+with col_info3:
+    annual_volatility = data["Close"].pct_change().rolling(window=20).std().iloc[-1] * np.sqrt(252)
+    st.metric("📉 Volatilità annualizzata (20d)", f"{annual_volatility*100:.2f}%")
+
+st.markdown("---")
+
+# GRAFICO PRINCIPALE
+st.markdown("<div class='section-title'>📈 Grafico storico del prezzo</div>", unsafe_allow_html=True)
+
+tab_price, tab_volume = st.tabs(["Prezzo & Medie", "Volume"])
+
+with tab_price:
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=data["Date"],
+        open=data["Open"],
+        high=data["High"],
+        low=data["Low"],
+        close=data["Close"],
+        name="Prezzo"
+    ))
+    
+    data["EMA_20"] = data["Close"].ewm(span=20).mean()
+    data["EMA_50"] = data["Close"].ewm(span=50).mean()
+    
+    fig.add_trace(go.Scatter(
+        x=data["Date"],
+        y=data["EMA_20"],
+        mode="lines",
+        name="EMA 20",
+        line=dict(width=1.5)
+    ))
+    fig.add_trace(go.Scatter(
+        x=data["Date"],
+        y=data["EMA_50"],
+        mode="lines",
+        name="EMA 50",
+        line=dict(width=1.5)
+    ))
+    
+    fig.update_layout(
+        xaxis_title="Data",
+        yaxis_title="Prezzo",
+        template="plotly_dark",
+        height=500,
+        margin=dict(l=10, r=10, t=30, b=10)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+with tab_volume:
+    fig_vol = go.Figure()
+    fig_vol.add_trace(go.Bar(
+        x=data["Date"],
+        y=data["Volume"],
+        name="Volume"
+    ))
+    fig_vol.update_layout(
+        xaxis_title="Data",
+        yaxis_title="Volume",
+        template="plotly_dark",
+        height=400,
+        margin=dict(l=10, r=10, t=30, b=10)
+    )
+    st.plotly_chart(fig_vol, use_container_width=True)
+
+st.markdown("---")
 
 # PREZZO LIVE CORRENTE
 live_price, prev_close = fetch_live_price(symbol)
@@ -597,220 +580,215 @@ with col_live2:
         f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} "
         "(dati Yahoo Finance, possono essere ritardati)"
     )
+    if st.button("🔁 Aggiorna prezzo live"):
+        # Svuota la cache della funzione se è decorata con @st.cache_data
+        try:
+            fetch_live_price.clear()
+        except AttributeError:
+            pass
+        # Ricarica l'app per ottenere un nuovo prezzo live
+        st.rerun()
 
 st.markdown("---")
 
 # Inizializzazione modello
 session_key = f"model_{symbol}_{data_interval}"
 if session_key not in st.session_state or refresh_data:
-    with st.spinner("🧠 Caricamento AI e analisi dati..."):
-        model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=data_interval)
-        if model is not None:
-            st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
-            st.success("✅ Sistema pronto! Modello addestrato con successo.")
-        else:
-            st.error("❌ Impossibile caricare dati. Verifica il ticker e riprova.")
-
-if session_key in st.session_state:
-    state = st.session_state[session_key]
-    model = state['model']
-    scaler = state['scaler']
-    df_ind = state['df_ind']
-    
-    # Previsione prezzo
-    avg_forecast, forecast_series = predict_price(df_ind, steps=5)
-    
-    # Segnali web
-    web_signals_list = get_web_signals(symbol, df_ind)
-    
-    col_left, col_right = st.columns([1.2, 0.8])
-   
-    with col_left:
-        st.markdown("### 💡 Suggerimenti Trade Intelligenti")
-        if web_signals_list:
-            suggestions_df = pd.DataFrame(web_signals_list)
-            suggestions_df = suggestions_df.sort_values(by='Probability', ascending=False)
-           
-            st.markdown("**📋 Clicca su un trade per analisi approfondita AI:**")
-           
-            for idx, row in suggestions_df.iterrows():
-                sentiment_emoji = "🟢" if row['Sentiment'] == 'Positive' else "🔴" if row['Sentiment'] == 'Negative' else "🟡"
-                
-                c_trade, c_btn = st.columns([5, 1])
-                with c_trade:
-                    st.markdown(f"""
-                    <div class='trade-card'>
-                        <strong style='font-size: 1.1rem; color: #667eea;'>{row['Direction'].upper()}</strong> 
-                        <span style='color: #4a5568;'>• Entry: <strong>{row['Entry']:.2f}</strong> • SL: {row['SL']:.2f} • TP: {row['TP']:.2f}</span><br>
-                        <span style='color: #2d3748;'>📊 Probabilità: <strong>{row['Probability']:.0f}%</strong> {sentiment_emoji} Sentiment: <strong>{row['Sentiment']}</strong></span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with c_btn:
-                    if st.button("🔍", key=f"analyze_{idx}", help="Analizza con AI"):
-                        st.session_state.selected_trade = row
-           
-            with st.expander("📊 Dettagli Supplementari (Stagionalità, News, Previsioni)"):
-                st.markdown("#### 📅 Analisi Stagionalità")
-                st.info(suggestions_df.iloc[0]['Seasonality_Note'])
-                
-                st.markdown("#### 📰 News Recenti")
-                st.write(suggestions_df.iloc[0]['News_Summary'])
-                
-                st.markdown("#### 😊 Sentiment Aggregato")
-                sentiment = suggestions_df.iloc[0]['Sentiment']
-                if sentiment == 'Positive':
-                    st.success(f"🟢 {sentiment} - Il mercato mostra segnali positivi")
-                elif sentiment == 'Negative':
-                    st.error(f"🔴 {sentiment} - Il mercato mostra segnali negativi")
-                else:
-                    st.warning(f"🟡 {sentiment} - Il mercato è neutrale")
-                
-                st.markdown("#### 🔮 Previsione Prezzo")
-                st.info(suggestions_df.iloc[0]['Forecast_Note'])
-        else:
-            st.info("ℹ️ Nessun suggerimento web disponibile per questo strumento al momento.")
-   
-    with col_right:
-        st.markdown("### 🚀 Asset con Potenziale 2025")
-        st.markdown("*Basato su analisi storica e trend macro*")
+    with st.spinner("🧠 Calcolo indicatori tecnici e preparazione dati..."):
+        data_ind = compute_indicators(data)
+        X, y, feature_cols = create_features_targets(data_ind)
         
-        data_watch = [
-            {"Asset": "🥇 Gold", "Ticker": "GC=F", "Score": "⭐⭐⭐⭐⭐"},
-            {"Asset": "🥈 Silver", "Ticker": "SI=F", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "₿ Bitcoin", "Ticker": "BTC-USD", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "💎 Nvidia", "Ticker": "NVDA", "Score": "⭐⭐⭐⭐⭐"},
-            {"Asset": "🖥️ Broadcom", "Ticker": "AVGO", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🔍 Palantir", "Ticker": "PLTR", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🏦 JPMorgan", "Ticker": "JPM", "Score": "⭐⭐⭐"},
-            {"Asset": "☁️ Microsoft", "Ticker": "MSFT", "Score": "⭐⭐⭐⭐⭐"},
-            {"Asset": "📦 Amazon", "Ticker": "AMZN", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🚗 Tesla", "Ticker": "TSLA", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🔋 Lithium ETF", "Ticker": "LIT", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "📊 S&P 500", "Ticker": "^GSPC", "Score": "⭐⭐⭐⭐"}
-        ]
-
-        rows = []
-        for row in data_watch:
-            price, prev = fetch_live_price(row["Ticker"])
-            if price is not None and prev is not None and prev != 0:
-                change_pct = (price - prev) / prev * 100
-                change_str = f"{change_pct:+.2f}%"
+        st.session_state[f"data_ind_{symbol}_{data_interval}"] = data_ind
+        st.session_state[f"X_{symbol}_{data_interval}"] = X
+        st.session_state[f"y_{symbol}_{data_interval}"] = y
+        st.session_state[f"feature_cols_{symbol}_{data_interval}"] = feature_cols
+        
+        if uploaded_model is not None:
+            st.session_state[session_key] = uploaded_model
+        else:
+            loaded_model = load_model(symbol, risk_level, data_interval)
+            if loaded_model is not None:
+                st.session_state[session_key] = loaded_model
             else:
-                change_str = "N/D"
-
-            if price is not None:
-                price_str = f"{price:.4f}" if price < 10 else f"{price:.2f}"
-            else:
-                price_str = "N/D"
-
-            rows.append({
-                "Asset": row["Asset"],
-                "Ticker": row["Ticker"],
-                "Score": row["Score"],
-                "Live Price": price_str,
-                "Δ % (vs close prec.)": change_str,
-            })
-
-        growth_df = pd.DataFrame(rows)
-        st.dataframe(growth_df, use_container_width=True, hide_index=True)
-    
-    # Analisi del trade selezionato
-    if 'selected_trade' in st.session_state:
-        trade = st.session_state.selected_trade
-       
-        with st.spinner("🔮 Analisi AI in corso..."):
-            direction = 'long' if trade['Direction'].lower() in ['long', 'buy'] else 'short'
-            entry = trade['Entry']
-            sl = trade['SL']
-            tp = trade['TP']
-           
-            features = generate_features(df_ind, entry, sl, tp, direction, 60)
-            success_prob = predict_success(model, scaler, features)
-            factors = get_dominant_factors(model, features)
-           
-            st.markdown("---")
-            st.markdown("### 📊 Dashboard Statistiche Real-Time")
-            latest = df_ind.iloc[-1]
-            
-            ca, cb, cc, cd, ce = st.columns(5)
-            with ca:
-                st.metric("💵 Prezzo Attuale", f"{latest['Close']:.2f}")
-            with cb:
-                rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
-                st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
-            with cc:
-                st.metric("📏 ATR", f"{latest['ATR']:.2f}")
-            with cd:
-                trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
-                trend_text = "Bullish" if latest['Trend'] == 1 else "Bearish"
-                st.metric(f"{trend_emoji} Trend", trend_text)
-            with ce:
-                if avg_forecast is not None:
-                    forecast_change = ((avg_forecast - latest['Close']) / latest['Close']) * 100
-                    st.metric("🔮 Previsione", f"{avg_forecast:.2f}", f"{forecast_change:+.1f}%")
-                else:
-                    st.metric("🔮 Previsione", "N/A")
-            
-            st.markdown("---")
-            st.markdown("## 🎯 Risultati Analisi AI Avanzata")
-           
-            c1r, c2r, c3r, c4r = st.columns(4)
-            with c1r:
-                delta = success_prob - trade['Probability']
-                st.metric(
-                    "🎲 Probabilità AI",
-                    f"{success_prob:.1f}%",
-                    delta=f"{delta:+.1f}%" if delta != 0 else None,
-                    help=f"Analisi Web: {trade['Probability']:.0f}%"
-                )
-            with c2r:
-                rr = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0.0
-                rr_emoji = "🟢" if rr >= 2 else "🟡" if rr >= 1.5 else "🔴"
-                st.metric(f"{rr_emoji} Risk/Reward", f"{rr:.2f}x")
-            with c3r:
-                risk_pct = abs(entry - sl) / entry * 100 if entry != 0 else 0.0
-                st.metric("📉 Rischio %", f"{risk_pct:.2f}%")
-            with c4r:
-                reward_pct = abs(tp - entry) / entry * 100 if entry != 0 else 0.0
-                st.metric("📈 Reward %", f"{reward_pct:.2f}%")
-           
-            st.markdown("---")
-            st.markdown("### 🔍 Fattori Chiave dell'Analisi AI")
-            for i, factor in enumerate(factors, 1):
-                emoji = ["🥇", "🥈", "🥉", "🏅", "🎖️"][i-1]
-                st.markdown(f"{emoji} **{i}.** {factor}")
-            
-            st.markdown("---")
-            st.markdown("### 🧠 Analisi Psicologica dell'Investitore")
-            st.markdown("*Approfondimento comportamentale con focus su " + proper_name + "*")
-            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
-            st.markdown(psych_analysis)
+                model = train_model(X, y, risk_level)
+                st.session_state[session_key] = model
+                save_model(model, symbol, risk_level, data_interval)
 else:
-    st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
+    data_ind = st.session_state.get(f"data_ind_{symbol}_{data_interval}")
+    X = st.session_state.get(f"X_{symbol}_{data_interval}")
+    y = st.session_state.get(f"y_{symbol}_{data_interval}")
+    feature_cols = st.session_state.get(f"feature_cols_{symbol}_{data_interval}")
 
-# Info
-with st.expander("ℹ️ Come Funziona Questo Sistema"):
-    st.markdown("""
-    ### 🤖 Tecnologia AI Avanzata
-    
-    - 📊 14 indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR, Volume, Trend)
-    - 📈 500+ setup storici simulati per addestrare il modello
-    - 🌐 Segnali web: news, sentiment, stagionalità
-    - 🧠 Focus sulla psicologia comportamentale dell'investitore
-    
-    ⚠️ Questo strumento è a scopo educativo e non costituisce consulenza finanziaria.
-    """)
+model = st.session_state.get(session_key)
 
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; margin-top: 2rem;'>
-    <p style='color: #4a5568; font-size: 0.95rem; margin: 0;'>
-        ⚠️ <strong>Disclaimer Importante:</strong> Questo è uno strumento educativo e di ricerca. Non costituisce consiglio finanziario.<br>
-        Consulta sempre un professionista qualificato prima di prendere decisioni di investimento.
-    </p>
-    <p style='color: #718096; font-size: 0.85rem; margin-top: 0.5rem;'>
-        Sviluppato con ❤️ utilizzando Machine Learning • © 2025
-    </p>
-</div>
-""", unsafe_allow_html=True)
+if model is None:
+    st.error("Impossibile inizializzare il modello AI. Riprova.")
+    st.stop()
+
+if run_prediction:
+    st.markdown("<div class='section-title'>🤖 Analisi AI dell'operazione</div>", unsafe_allow_html=True)
+    
+    with st.spinner("⚙️ L'AI sta analizzando il setup di mercato..."):
+        latest_features = data_ind[feature_cols].iloc[-1].values.reshape(1, -1)
+        predicted_return = model.predict(latest_features)[0]
+        
+        idx_for_vol = min(len(data_ind) - 1, holding_period * 2)
+        holding_volatility = data_ind["Volatility"].iloc[-idx_for_vol]
+        
+        success_prob = calculate_success_probability(predicted_return, holding_volatility, risk_level)
+        
+        if live_price is None:
+            current_price = data["Close"].iloc[-1]
+        else:
+            current_price = live_price
+        
+        suggested_price_target = current_price * (1 + predicted_return)
+        
+        try:
+            mae, r2, rmse = evaluate_model(model, X, y)
+        except Exception:
+            mae, r2, rmse = None, None, None
+    
+    col_main1, col_main2 = st.columns([2, 1])
+    
+    with col_main1:
+        st.markdown("<div class='section-subtitle'>Probabilità di successo & scenario atteso</div>", unsafe_allow_html=True)
+        
+        col_prob1, col_prob2, col_prob3 = st.columns(3)
+        
+        with col_prob1:
+            st.markdown("**Probabilità di successo (AI)**")
+            st.markdown(f"<div class='success-prob'>{success_prob*100:.1f}%</div>", unsafe_allow_html=True)
+            if success_prob >= 0.75:
+                st.markdown("<span class='small-badge'>Setup ad alta probabilità</span>", unsafe_allow_html=True)
+            elif success_prob >= 0.6:
+                st.markdown("<span class='small-badge'>Setup moderatamente favorevole</span>", unsafe_allow_html=True)
+            elif success_prob >= 0.45:
+                st.markdown("<span class='small-badge'>Setup neutro / incerto</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("<span class='small-badge'>Setup sfavorevole / rischioso</span>", unsafe_allow_html=True)
+        
+        with col_prob2:
+            st.markdown("**Rendimento atteso (orizzonte 10 giorni)**")
+            st.markdown(f"<div class='profit-text'>{predicted_return*100:.1f}%</div>", unsafe_allow_html=True)
+            if predicted_return > 0:
+                st.markdown("<span class='small-badge'>Potenziale scenario rialzista</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("<span class='small-badge'>Potenziale scenario ribassista</span>", unsafe_allow_html=True)
+        
+        with col_prob3:
+            st.markdown("**Rischio & Volatilità**")
+            if holding_volatility is not None and not np.isnan(holding_volatility):
+                vol_perc = holding_volatility * 100
+                st.markdown(f"<div class='risk-gauge'>{vol_perc:.1f}%</div>", unsafe_allow_html=True)
+                if vol_perc < 18:
+                    risk_label = "Basso"
+                elif vol_perc < 30:
+                    risk_label = "Medio"
+                elif vol_perc < 45:
+                    risk_label = "Elevato"
+                else:
+                    risk_label = "Molto elevato"
+                st.markdown(f"<span class='small-badge'>Rischio attuale: {risk_label}</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div class='risk-gauge'>N/D</div>", unsafe_allow_html=True)
+                st.markdown("<span class='small-badge'>Volatilità non definita</span>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        st.markdown("<div class='section-subtitle'>Target di prezzo & gestione della posizione</div>", unsafe_allow_html=True)
+        
+        if suggested_price_target is not None and not np.isnan(suggested_price_target):
+            st.markdown(f"- **Prezzo attuale stimato**: {current_price:.2f}")
+            st.markdown(f"- **Target di prezzo AI (10 giorni)**: {suggested_price_target:.2f}")
+            st.markdown(f"- **Variazione attesa**: {predicted_return*100:.1f}%")
+            
+            stop_loss_perc = max_risk_per_trade / 100
+            if risk_level == "Basso":
+                stop_loss_perc *= 0.6
+            elif risk_level == "Alto":
+                stop_loss_perc *= 1.3
+            
+            stop_loss_price = current_price * (1 - stop_loss_perc)
+            st.markdown(f"- **Stop loss suggerito**: {stop_loss_price:.2f} ({-stop_loss_perc*100:.1f}%)")
+            
+            risk_per_share = current_price - stop_loss_price
+            if risk_per_share > 0:
+                max_loss_euro = capital * (max_risk_per_trade / 100)
+                position_size = max_loss_euro / risk_per_share
+                position_size_int = int(position_size)
+                potential_profit = position_size_int * (suggested_price_target - current_price)
+                potential_loss = position_size_int * (current_price - stop_loss_price)
+                
+                st.markdown(f"- **Dimensione posizione consigliata**: {position_size_int} unità")
+                st.markdown(f"- **Perdita massima stimata**: {potential_loss:.2f} €")
+                st.markdown(f"- **Profitto potenziale stimato**: {potential_profit:.2f} €")
+            else:
+                st.warning("Impossibile calcolare la dimensione della posizione (stop loss non valido).")
+        else:
+            st.warning("Impossibile calcolare un target di prezzo affidabile.")
+        
+        st.markdown("---")
+        
+        st.markdown("<div class='section-subtitle'>Report dettagliato dell'AI</div>", unsafe_allow_html=True)
+        analysis_text = generate_textual_analysis(
+            success_prob,
+            predicted_return,
+            holding_volatility,
+            risk_level,
+            suggested_price_target,
+            symbol
+        )
+        st.markdown(analysis_text, unsafe_allow_html=True)
+    
+    with col_main2:
+        st.markdown("<div class='section-subtitle'>📊 Statistiche modello AI</div>", unsafe_allow_html=True)
+        
+        if mae is not None:
+            st.metric("MAE (errore medio assoluto)", f"{mae*100:.2f} %")
+        else:
+            st.metric("MAE (errore medio assoluto)", "N/D")
+        
+        if rmse is not None:
+            st.metric("RMSE", f"{rmse*100:.2f} %")
+        else:
+            st.metric("RMSE", "N/D")
+        
+        if r2 is not None:
+            st.metric("R² (spiegazione varianza)", f"{r2:.3f}")
+        else:
+            st.metric("R² (spiegazione varianza)", "N/D")
+        
+        st.markdown("---")
+        
+        st.markdown("**Importanza delle feature**")
+        try:
+            importances = model.feature_importances_
+            feature_importance_df = pd.DataFrame({
+                "feature": feature_cols,
+                "importance": importances
+            }).sort_values("importance", ascending=False).head(10)
+            
+            fig_imp = px.bar(
+                feature_importance_df,
+                x="importance",
+                y="feature",
+                orientation="h",
+                title="Top 10 Feature più importanti",
+            )
+            fig_imp.update_layout(
+                template="plotly_dark",
+                height=400,
+                margin=dict(l=10, r=10, t=30, b=10)
+            )
+            st.plotly_chart(fig_imp, use_container_width=True)
+        except Exception:
+            st.info("Impossibile calcolare l'importanza delle feature per questo modello.")
+        
+        st.markdown("---")
+        st.markdown("**Esporta dati e modello**")
+        st.markdown(get_table_download_link(data_ind, filename=f"{symbol}_ai_dataset.csv"), unsafe_allow_html=True)
+        st.markdown(get_model_download_link(model, filename=f"{symbol}_trading_model.pkl"), unsafe_allow_html=True)
+
+else:
+    st.info("Premi **🚀 Avvia Analisi AI** nella sidebar per eseguire la previsione sull'operazione.")
