@@ -582,7 +582,6 @@ with col_live1:
         st.metric("💹 Prezzo live", display_price, delta_str)
     else:
         st.metric("💹 Prezzo live", "N/D")
-
 with col_live2:
     st.caption(
         f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} "
