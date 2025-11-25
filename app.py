@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -321,20 +322,15 @@ def get_web_signals(symbol, df_ind):
         return []
 
 
-# ==================== PREZZO LIVE ====================
+# ==================== PREZZO LIVE (MODIFICATO) ====================
 
-# MODIFICA 1: Ridotto TTL per consentire aggiornamenti frequenti
-@st.cache_data(ttl=2) 
+@st.cache_data(ttl=1) 
 def fetch_live_price(symbol: str):
-    """
-    Recupera il prezzo 'live' (ultimo disponibile) da Yahoo Finance.
-    ttl=2 => permette aggiornamenti quasi real-time.
-    """
+    """Recupera il prezzo con cache minima per aggiornamenti rapidi."""
     ticker = yf.Ticker(symbol)
     last_price = None
     prev_close = None
 
-    # 1) Prova con fast_info
     try:
         fast_info = getattr(ticker, "fast_info", None)
         if fast_info is not None:
@@ -343,7 +339,6 @@ def fetch_live_price(symbol: str):
     except Exception:
         pass
 
-    # 2) Fallback: intraday 1m
     if last_price is None:
         try:
             hist = ticker.history(period="1d", interval="1m")
@@ -353,20 +348,68 @@ def fetch_live_price(symbol: str):
                     prev_close = float(hist["Close"].iloc[-2])
         except Exception:
             pass
-
-    # 3) Fallback finale: ultimo daily close
+            
+    # Fallback daily
     if last_price is None:
         try:
             hist = ticker.history(period="2d", interval="1d")
             if not hist.empty:
                 last_price = float(hist["Close"].iloc[-1])
-                if len(hist) > 1:
-                    prev_close = float(hist["Close"].iloc[-2])
         except Exception:
             pass
 
     return last_price, prev_close
 
+
+@st.fragment
+def show_interactive_price_panel(symbol_to_track):
+    """
+    Pannello interattivo: l'utente decide se avere aggiornamenti automatici
+    o manuali tramite un toggle e un bottone.
+    """
+    # ----- CONTROLLI UTENTE -----
+    # Creiamo due colonne per i comandi sopra il prezzo
+    c_toggle, c_btn = st.columns([1, 2])
+    
+    with c_toggle:
+        # L'interruttore per decidere se aggiornare in automatico
+        auto_update = st.toggle("Live 🔴", value=False, help="Attiva per aggiornamento automatico ogni 2s")
+        
+    with c_btn:
+        # Bottone per aggiornamento manuale (utile se Live è OFF)
+        manual_refresh = st.button("🔄 Aggiorna Prezzo", use_container_width=True)
+
+    # Se l'utente clicca il bottone manuale, st.rerun() viene chiamato implicitamente
+    # ricaricando questo fragment e quindi recuperando il nuovo prezzo qui sotto.
+
+    # ----- VISUALIZZAZIONE PREZZO -----
+    live_price, prev_close = fetch_live_price(symbol_to_track)
+    
+    col_live1, col_live2 = st.columns([1, 1])
+    with col_live1:
+        if live_price is not None:
+            delta_str = None
+            if prev_close is not None and prev_close != 0:
+                delta_pct = (live_price - prev_close) / prev_close * 100
+                delta_str = f"{delta_pct:+.2f}%"
+            
+            display_price = f"{live_price:.4f}" if live_price < 10 else f"{live_price:.2f}"
+            st.metric("💹 Prezzo di Mercato", display_price, delta_str)
+        else:
+            st.metric("💹 Prezzo di Mercato", "N/D")
+
+    with col_live2:
+        mode_text = "Automatico (2s)" if auto_update else "Manuale"
+        st.caption(
+            f"Modalità: **{mode_text}**\n\n"
+            f"Ultimo check: {datetime.datetime.now().strftime('%H:%M:%S')}"
+        )
+
+    # ----- LOGICA AUTO-UPDATE -----
+    # Se il toggle è ON, aspettiamo 2 secondi e poi ricarichiamo SOLO questo pezzo
+    if auto_update:
+        time.sleep(2)
+        st.rerun()
 
 # ==================== STREAMLIT APP ====================
 
