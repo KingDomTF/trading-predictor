@@ -7,7 +7,6 @@ from datetime import timedelta
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
 from sklearn.exceptions import NotFittedError
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 import joblib
