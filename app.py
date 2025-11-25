@@ -582,15 +582,15 @@ with col_live1:
         st.metric("💹 Prezzo live", display_price, delta_str)
     else:
         st.metric("💹 Prezzo live", "N/D")
+
 with col_live2:
     st.caption(
         f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} "
         "(dati Yahoo Finance, possono essere ritardati)"
     )
-    # 🔘 Pulsante per forzare una nuova ricerca del prezzo live
     if st.button("🔁 Aggiorna prezzo live"):
-        fetch_live_price.clear()      # svuota la cache solo di questa funzione
-        st.experimental_rerun()       # riesegue lo script e ricarica il prezzo
+        fetch_live_price.clear()
+        st.experimental_rerun()
 
 st.markdown("---")
 
