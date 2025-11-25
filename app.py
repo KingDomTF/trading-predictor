@@ -1,4 +1,3 @@
-import time
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 import datetime
+import time
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -28,7 +28,7 @@ def calculate_technical_indicators(df):
     df['RSI'] = 100 - (100 / (1 + rs))
    
     # MACD
-    exp1 = df['Close'].ewm(span=12).mean()   # <<< QUI ERA L'ERRORE: tolto ")."
+    exp1 = df['Close'].ewm(span=12).mean()
     exp2 = df['Close'].ewm(span=26).mean()
     df['MACD'] = exp1 - exp2
     df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
@@ -207,32 +207,46 @@ def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
     current_analysis = f"""
     **🌍 Contesto Globale (Ottobre 2025)**
    
-    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente...
+    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente (al 3.5% negli USA), tensioni geopolitiche e boom dell'IA. La psicologia degli investitori è segnata da un mix di ottimismo tecnologico e ansia macroeconomica. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive.
     """
    
     # Bias comportamentali
     biases_analysis = """
-    ### 🧠 Analisi Approfondita dei Bias Comportamentali
-    ...
-    """
-    
-    # (Codice abbreviato per leggibilità, logica invariata)
-    asset_specific = f"### 📈 Analisi Specifica per {symbol}"
-    
-    historical_comparison = """
-    ### 📚 Comparazione Storica Generale
-    ...
+    ### 🧠 Analisi Approfondita dei Bias Comportamentali (2025)
+   
+    | Bias Cognitivo | Definizione | Esempio |
+    |---------------|-------------|---------|
+    | **Avversione alle Perdite** | Dolore perdita > Gioia guadagno. | Tenere asset in perdita. |
+    | **FOMO** | Paura di perdere l'occasione. | Comprare sui massimi. |
+    | **Recency Bias** | Peso eccessivo al breve termine. | Credere che il trend attuale sia infinito. |
     """
    
-    return current_analysis + biases_analysis + asset_specific + historical_comparison
+    # Analisi specifica per asset
+    if symbol == 'GC=F':
+        asset_specific = """
+        ### 🥇 Focus su Oro (GC=F)
+        Bene rifugio per eccellenza. Attenzione al **Safe-Haven Bias** durante le news geopolitiche.
+        """
+    elif symbol == 'BTC-USD':
+        asset_specific = """
+        ### ₿ Focus su Bitcoin (BTC-USD)
+        Guidato dalla narrativa. Attenzione all'**Effetto Gregge** e alla volatilità estrema.
+        """
+    else:
+        asset_specific = f"""
+        ### 📈 Analisi Specifica per {symbol}
+        La psicologia su questo asset seguirà pattern universali: paura nei ribassi, avidità nei rally.
+        """
+   
+    return current_analysis + biases_analysis + asset_specific
 
 
 def get_web_signals(symbol, df_ind):
-    """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
+    """Funzione dinamica per ottenere segnali web aggiornati."""
     try:
         ticker = yf.Ticker(symbol)
        
-        # Prezzo corrente (ultimo close disponibile)
+        # Prezzo corrente
         hist = ticker.history(period='1d')
         if hist.empty:
             return []
@@ -240,28 +254,28 @@ def get_web_signals(symbol, df_ind):
        
         # News recenti
         news = getattr(ticker, "news", None)
-        news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente disponibile.'
+        news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente.'
        
         # Sentiment
         sentiment_label, sentiment_score = get_sentiment(news_summary)
        
-        # Calcolo stagionalità
+        # Stagionalità
         hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
         if len(hist_monthly) < 12:
-            seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
+            seasonality_note = 'Dati insufficienti.'
         else:
             hist_monthly['Return'] = hist_monthly['Close'].pct_change()
             hist_monthly['Month'] = hist_monthly.index.month
             monthly_returns = hist_monthly.groupby('Month')['Return'].mean()
             current_month = datetime.datetime.now().month
             avg_current = monthly_returns.get(current_month, 0) * 100
-            seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%.'
+            seasonality_note = f'Ritorno storico mese corrente: {avg_current:.2f}%.'
        
-        # Previsione prezzo
+        # Previsione
         _, forecast_series = predict_price(df_ind, steps=5)
-        forecast_note = f'Previsione media per i prossimi 5 periodi: {forecast_series.mean():.2f}' if forecast_series is not None else 'Previsione non disponibile.'
+        forecast_note = f'Media forecast (5 periodi): {forecast_series.mean():.2f}' if forecast_series is not None else 'N/A'
        
-        # Genera suggerimenti precisi basati su sentiment e trend
+        # Generazione suggerimenti
         latest = df_ind.iloc[-1]
         atr = latest['ATR']
         trend = latest['Trend']
@@ -274,12 +288,14 @@ def get_web_signals(symbol, df_ind):
             entry = round(current_price, 2)
             sl_mult = 1.0 if is_positive_dir else 1.5
             tp_mult = 2.5 if is_positive_dir else 2.0
+            
             if dir_ in ['Long', 'Buy']:
                 sl = round(entry - atr * sl_mult, 2)
                 tp = round(entry + atr * tp_mult, 2)
             else:
                 sl = round(entry + atr * sl_mult, 2)
                 tp = round(entry - atr * tp_mult, 2)
+                
             suggestions.append({
                 'Direction': dir_,
                 'Entry': entry,
@@ -292,45 +308,25 @@ def get_web_signals(symbol, df_ind):
                 'Forecast_Note': forecast_note
             })
        
-        # Aggiungi un terzo suggerimento se sentiment neutrale
-        if sentiment_score == 0:
-            dir_ = directions[0] if trend == 1 else directions[1]
-            entry = round(current_price, 2)
-            sl_mult = 1.2
-            tp_mult = 2.2
-            if dir_ in ['Long', 'Buy']:
-                sl = round(entry - atr * sl_mult, 2)
-                tp = round(entry + atr * tp_mult, 2)
-            else:
-                sl = round(entry + atr * sl_mult, 2)
-                tp = round(entry - atr * tp_mult, 2)
-            suggestions.append({
-                'Direction': dir_,
-                'Entry': entry,
-                'SL': sl,
-                'TP': tp,
-                'Probability': 65,
-                'Seasonality_Note': seasonality_note,
-                'News_Summary': news_summary,
-                'Sentiment': sentiment_label,
-                'Forecast_Note': forecast_note
-            })
-       
         return suggestions
     except Exception as e:
-        st.error(f"Errore nel recupero dati web: {e}")
+        st.error(f"Errore web signals: {e}")
         return []
 
 
-# ==================== PREZZO LIVE (MODIFICATO) ====================
+# ==================== PREZZO LIVE (INTERATTIVO) ====================
 
-@st.cache_data(ttl=1) 
+@st.cache_data(ttl=1)
 def fetch_live_price(symbol: str):
-    """Recupera il prezzo con cache minima per aggiornamenti rapidi."""
+    """
+    Recupera il prezzo 'live' con cache minima (1 secondo)
+    per permettere aggiornamenti frequenti.
+    """
     ticker = yf.Ticker(symbol)
     last_price = None
     prev_close = None
 
+    # 1) Fast Info
     try:
         fast_info = getattr(ticker, "fast_info", None)
         if fast_info is not None:
@@ -339,6 +335,7 @@ def fetch_live_price(symbol: str):
     except Exception:
         pass
 
+    # 2) Fallback Intraday
     if last_price is None:
         try:
             hist = ticker.history(period="1d", interval="1m")
@@ -348,13 +345,15 @@ def fetch_live_price(symbol: str):
                     prev_close = float(hist["Close"].iloc[-2])
         except Exception:
             pass
-            
-    # Fallback daily
+
+    # 3) Fallback Daily
     if last_price is None:
         try:
             hist = ticker.history(period="2d", interval="1d")
             if not hist.empty:
                 last_price = float(hist["Close"].iloc[-1])
+                if len(hist) > 1:
+                    prev_close = float(hist["Close"].iloc[-2])
         except Exception:
             pass
 
@@ -364,25 +363,26 @@ def fetch_live_price(symbol: str):
 @st.fragment
 def show_interactive_price_panel(symbol_to_track):
     """
-    Pannello interattivo: l'utente decide se avere aggiornamenti automatici
-    o manuali tramite un toggle e un bottone.
+    Pannello isolato per il prezzo.
+    Contiene:
+    - Toggle per aggiornamento automatico
+    - Pulsante per aggiornamento manuale
     """
-    # ----- CONTROLLI UTENTE -----
-    # Creiamo due colonne per i comandi sopra il prezzo
-    c_toggle, c_btn = st.columns([1, 2])
+    st.markdown("---")
+    
+    # --- CONTROLLI ---
+    c_toggle, c_btn = st.columns([1, 3])
     
     with c_toggle:
-        # L'interruttore per decidere se aggiornare in automatico
-        auto_update = st.toggle("Live 🔴", value=False, help="Attiva per aggiornamento automatico ogni 2s")
-        
+        # Toggle: Se True, attiva il loop di aggiornamento
+        auto_update = st.toggle("Live 🔴", value=False, help="Aggiorna automaticamente ogni 2 secondi")
+    
     with c_btn:
-        # Bottone per aggiornamento manuale (utile se Live è OFF)
-        manual_refresh = st.button("🔄 Aggiorna Prezzo", use_container_width=True)
+        # Bottone: Se cliccato, ricarica il fragment (e quindi aggiorna il prezzo)
+        if st.button("🔄 Aggiorna Prezzo", use_container_width=True):
+            st.rerun()
 
-    # Se l'utente clicca il bottone manuale, st.rerun() viene chiamato implicitamente
-    # ricaricando questo fragment e quindi recuperando il nuovo prezzo qui sotto.
-
-    # ----- VISUALIZZAZIONE PREZZO -----
+    # --- DATI E VISUALIZZAZIONE ---
     live_price, prev_close = fetch_live_price(symbol_to_track)
     
     col_live1, col_live2 = st.columns([1, 1])
@@ -392,45 +392,39 @@ def show_interactive_price_panel(symbol_to_track):
             if prev_close is not None and prev_close != 0:
                 delta_pct = (live_price - prev_close) / prev_close * 100
                 delta_str = f"{delta_pct:+.2f}%"
-            
             display_price = f"{live_price:.4f}" if live_price < 10 else f"{live_price:.2f}"
             st.metric("💹 Prezzo di Mercato", display_price, delta_str)
         else:
             st.metric("💹 Prezzo di Mercato", "N/D")
 
     with col_live2:
-        mode_text = "Automatico (2s)" if auto_update else "Manuale"
+        status = "🟢 Automatico (2s)" if auto_update else "⚪ Manuale"
         st.caption(
-            f"Modalità: **{mode_text}**\n\n"
+            f"Modalità: **{status}**\n\n"
             f"Ultimo check: {datetime.datetime.now().strftime('%H:%M:%S')}"
         )
+    
+    st.markdown("---")
 
-    # ----- LOGICA AUTO-UPDATE -----
-    # Se il toggle è ON, aspettiamo 2 secondi e poi ricarichiamo SOLO questo pezzo
+    # --- LOGICA AUTO-UPDATE ---
     if auto_update:
         time.sleep(2)
         st.rerun()
+
 
 # ==================== STREAMLIT APP ====================
 
 @st.cache_data
 def load_sample_data(symbol, interval='1h'):
     """Carica dati reali da yfinance."""
-    period_map = {
-        '5m': '60d',
-        '15m': '60d',
-        '1h': '730d'
-    }
+    period_map = {'5m': '60d', '15m': '60d', '1h': '730d'}
     period = period_map.get(interval, '730d')
     try:
         data = yf.download(symbol, period=period, interval=interval, progress=False)
-       
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.droplevel(1)
-       
         if len(data) < 100:
             raise Exception("Dati insufficienti")
-       
         data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
         return data
     except Exception as e:
@@ -463,7 +457,7 @@ proper_names = {
 
 # Configurazione pagina
 st.set_page_config(
-    page_title="Trading Predictor AI - Enhanced",
+    page_title="Trading Predictor AI - Ultimate",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -474,57 +468,24 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     * { font-family: 'Inter', sans-serif; }
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        max-width: 1600px;
-    }
+    .main .block-container { padding-top: 2rem; max-width: 1600px; }
     h1 {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 700;
         font-size: 3rem !important;
-        margin-bottom: 0.5rem !important;
     }
     .stMetric {
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        padding: 1.2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        transition: transform 0.2s ease;
-    }
-    .stMetric:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        padding: 1rem; border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.6rem 1.5rem;
-        font-weight: 600;
-        box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        color: white; border: none; border-radius: 8px; font-weight: 600;
     }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
-    }
-    section[data-testid="stSidebar"] { display: none; }
-    .trade-card {
-        background: white;
-        border-radius: 12px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-        border-left: 4px solid #667eea;
-        transition: all 0.2s ease;
-    }
-    .trade-card:hover {
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
-        transform: translateX(4px);
-    }
+    .stToggle { margin-top: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -533,265 +494,108 @@ st.title("📊 Trading Success Predictor AI")
 st.markdown("""
 <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;'>
     <p style='color: white; font-size: 1.1rem; margin: 0; text-align: center; font-weight: 500;'>
-        🤖 Analisi predittiva avanzata con Machine Learning • 📈 Indicatori tecnici real-time • 🧠 Psicologia dell'investitore
+        🤖 Analisi predittiva avanzata • 📈 Prezzi Real-Time • 🧠 Psicologia
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-# Parametri
+# Parametri Input
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
-    symbol = st.text_input(
-        "🔍 Seleziona Strumento (Ticker)",
-        value="GC=F",
-        help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)"
-    )
+    symbol = st.text_input("🔍 Ticker", value="GC=F", help="Es: GC=F, EURUSD=X, BTC-USD")
     proper_name = proper_names.get(symbol, symbol)
-    st.markdown(f"**Strumento selezionato:** `{proper_name}`")
+    st.markdown(f"**Asset:** `{proper_name}`")
 
 with col2:
     data_interval = st.selectbox("⏰ Timeframe", ['5m', '15m', '1h'], index=2)
 
 with col3:
     st.markdown("<br>", unsafe_allow_html=True)
-    refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
+    refresh_data = st.button("🔄 Ricarica Modello AI", use_container_width=True)
 
-# MODIFICA 2: Frammento per aggiornamento automatico (Real Time)
-# Questo blocco si aggiorna ogni 2 secondi indipendentemente dal resto dello script.
-@st.fragment(run_every=2)
-def show_realtime_price(symbol_to_track):
-    live_price, prev_close = fetch_live_price(symbol_to_track)
-    col_live1, col_live2 = st.columns([1, 1])
-    with col_live1:
-        if live_price is not None:
-            delta_str = None
-            if prev_close is not None and prev_close != 0:
-                delta_pct = (live_price - prev_close) / prev_close * 100
-                delta_str = f"{delta_pct:+.2f}%"
-            display_price = f"{live_price:.4f}" if live_price < 10 else f"{live_price:.2f}"
-            st.metric("💹 Prezzo live (Real-Time)", display_price, delta_str)
-        else:
-            st.metric("💹 Prezzo live", "N/D")
 
-    with col_live2:
-        st.caption(
-            f"Ultimo aggiornamento: {datetime.datetime.now().strftime('%H:%M:%S')}\n"
-            "(Aggiornamento automatico ogni 2s)"
-        )
+# >>> QUI CHIAMIAMO IL PANNELLO PREZZO INTERATTIVO <<<
+show_interactive_price_panel(symbol)
 
-# Chiamata alla funzione Real Time
-show_realtime_price(symbol)
 
-st.markdown("---")
-
-# Inizializzazione modello
+# Logica AI (Caricamento Modello)
 session_key = f"model_{symbol}_{data_interval}"
 if session_key not in st.session_state or refresh_data:
-    with st.spinner("🧠 Caricamento AI e analisi dati..."):
+    with st.spinner("🧠 Training AI in corso..."):
         model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=data_interval)
         if model is not None:
             st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
-            st.success("✅ Sistema pronto! Modello addestrato con successo.")
+            st.success("✅ Modello pronto!")
         else:
-            st.error("❌ Impossibile caricare dati. Verifica il ticker e riprova.")
+            st.error("❌ Errore caricamento dati.")
 
+# Display Dashboard AI
 if session_key in st.session_state:
     state = st.session_state[session_key]
     model = state['model']
     scaler = state['scaler']
     df_ind = state['df_ind']
    
-    # Previsione prezzo
+    # Previsione & Web Signals
     avg_forecast, forecast_series = predict_price(df_ind, steps=5)
-   
-    # Segnali web
     web_signals_list = get_web_signals(symbol, df_ind)
    
     col_left, col_right = st.columns([1.2, 0.8])
    
+    # Colonna Sinistra: Suggerimenti Trade
     with col_left:
-        st.markdown("### 💡 Suggerimenti Trade Intelligenti")
+        st.markdown("### 💡 Suggerimenti Trade")
         if web_signals_list:
-            suggestions_df = pd.DataFrame(web_signals_list)
-            suggestions_df = suggestions_df.sort_values(by='Probability', ascending=False)
-           
-            st.markdown("**📋 Clicca su un trade per analisi approfondita AI:**")
-           
+            suggestions_df = pd.DataFrame(web_signals_list).sort_values(by='Probability', ascending=False)
+            
             for idx, row in suggestions_df.iterrows():
                 sentiment_emoji = "🟢" if row['Sentiment'] == 'Positive' else "🔴" if row['Sentiment'] == 'Negative' else "🟡"
-               
+                
                 c_trade, c_btn = st.columns([5, 1])
                 with c_trade:
-                    st.markdown(f"""
-                    <div class='trade-card'>
-                        <strong style='font-size: 1.1rem; color: #667eea;'>{row['Direction'].upper()}</strong> 
-                        <span style='color: #4a5568;'>• Entry: <strong>{row['Entry']:.2f}</strong> • SL: {row['SL']:.2f} • TP: {row['TP']:.2f}</span><br>
-                        <span style='color: #2d3748;'>📊 Probabilità: <strong>{row['Probability']:.0f}%</strong> {sentiment_emoji} Sentiment: <strong>{row['Sentiment']}</strong></span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.info(f"**{row['Direction'].upper()}** | Entry: {row['Entry']} | Prob: {row['Probability']}% {sentiment_emoji}")
                 with c_btn:
-                    if st.button("🔍", key=f"analyze_{idx}", help="Analizza con AI"):
+                    if st.button("Analizza", key=f"an_{idx}"):
                         st.session_state.selected_trade = row
-           
-            with st.expander("📊 Dettagli Supplementari (Stagionalità, News, Previsioni)"):
-                st.markdown("#### 📅 Analisi Stagionalità")
-                st.info(suggestions_df.iloc[0]['Seasonality_Note'])
-               
-                st.markdown("#### 📰 News Recenti")
+            
+            # Espansione dettagli
+            with st.expander("📊 Dettagli News & Sentiment"):
                 st.write(suggestions_df.iloc[0]['News_Summary'])
-               
-                st.markdown("#### 😊 Sentiment Aggregato")
-                sentiment = suggestions_df.iloc[0]['Sentiment']
-                if sentiment == 'Positive':
-                    st.success(f"🟢 {sentiment} - Il mercato mostra segnali positivi")
-                elif sentiment == 'Negative':
-                    st.error(f"🔴 {sentiment} - Il mercato mostra segnali negativi")
-                else:
-                    st.warning(f"🟡 {sentiment} - Il mercato è neutrale")
-               
-                st.markdown("#### 🔮 Previsione Prezzo")
-                st.info(suggestions_df.iloc[0]['Forecast_Note'])
+                st.info(suggestions_df.iloc[0]['Seasonality_Note'])
+
         else:
-            st.info("ℹ️ Nessun suggerimento web disponibile per questo strumento al momento.")
+            st.info("Nessun segnale web disponibile.")
    
+    # Colonna Destra: Watchlist
     with col_right:
-        st.markdown("### 🚀 Asset con Potenziale 2025")
-        st.markdown("*Basato su analisi storica e trend macro*")
-       
-        data_watch = [
-            {"Asset": "🥇 Gold", "Ticker": "GC=F", "Score": "⭐⭐⭐⭐⭐"},
-            {"Asset": "🥈 Silver", "Ticker": "SI=F", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "₿ Bitcoin", "Ticker": "BTC-USD", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "💎 Nvidia", "Ticker": "NVDA", "Score": "⭐⭐⭐⭐⭐"},
-            {"Asset": "🖥️ Broadcom", "Ticker": "AVGO", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🔍 Palantir", "Ticker": "PLTR", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🏦 JPMorgan", "Ticker": "JPM", "Score": "⭐⭐⭐"},
-            {"Asset": "☁️ Microsoft", "Ticker": "MSFT", "Score": "⭐⭐⭐⭐⭐"},
-            {"Asset": "📦 Amazon", "Ticker": "AMZN", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🚗 Tesla", "Ticker": "TSLA", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "🔋 Lithium ETF", "Ticker": "LIT", "Score": "⭐⭐⭐⭐"},
-            {"Asset": "📊 S&P 500", "Ticker": "^GSPC", "Score": "⭐⭐⭐⭐"}
-        ]
-
+        st.markdown("### 🚀 Watchlist 2025")
+        watchlist = ["GC=F", "SI=F", "BTC-USD", "NVDA", "^GSPC"]
         rows = []
-        for row in data_watch:
-            price, prev = fetch_live_price(row["Ticker"])
-            if price is not None and prev is not None and prev != 0:
-                change_pct = (price - prev) / prev * 100
-                change_str = f"{change_pct:+.2f}%"
-            else:
-                change_str = "N/D"
+        for tick in watchlist:
+            p, prev = fetch_live_price(tick)
+            if p:
+                chg = ((p - prev)/prev)*100 if prev else 0
+                rows.append({"Ticker": tick, "Price": f"{p:.2f}", "Change": f"{chg:+.2f}%"})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-            if price is not None:
-                price_str = f"{price:.4f}" if price < 10 else f"{price:.2f}"
-            else:
-                price_str = "N/D"
-
-            rows.append({
-                "Asset": row["Asset"],
-                "Ticker": row["Ticker"],
-                "Score": row["Score"],
-                "Live Price": price_str,
-                "Δ % (vs close prec.)": change_str,
-            })
-
-        growth_df = pd.DataFrame(rows)
-        st.dataframe(growth_df, use_container_width=True, hide_index=True)
-   
-    # Analisi del trade selezionato
+    # Analisi Dettagliata Trade Selezionato
     if 'selected_trade' in st.session_state:
         trade = st.session_state.selected_trade
-       
-        with st.spinner("🔮 Analisi AI in corso..."):
-            direction = 'long' if trade['Direction'].lower() in ['long', 'buy'] else 'short'
-            entry = trade['Entry']
-            sl = trade['SL']
-            tp = trade['TP']
-           
-            features = generate_features(df_ind, entry, sl, tp, direction, 60)
-            success_prob = predict_success(model, scaler, features)
-            factors = get_dominant_factors(model, features)
-           
-            st.markdown("---")
-            st.markdown("### 📊 Dashboard Statistiche Real-Time")
-            latest = df_ind.iloc[-1]
-           
-            ca, cb, cc, cd, ce = st.columns(5)
-            with ca:
-                st.metric("💵 Prezzo Attuale", f"{latest['Close']:.2f}")
-            with cb:
-                rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
-                st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
-            with cc:
-                st.metric("📏 ATR", f"{latest['ATR']:.2f}")
-            with cd:
-                trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
-                trend_text = "Bullish" if latest['Trend'] == 1 else "Bearish"
-                st.metric(f"{trend_emoji} Trend", trend_text)
-            with ce:
-                if avg_forecast is not None:
-                    forecast_change = ((avg_forecast - latest['Close']) / latest['Close']) * 100
-                    st.metric("🔮 Previsione", f"{avg_forecast:.2f}", f"{forecast_change:+.1f}%")
-                else:
-                    st.metric("🔮 Previsione", "N/A")
-           
-            st.markdown("---")
-            st.markdown("## 🎯 Risultati Analisi AI Avanzata")
-           
-            c1r, c2r, c3r, c4r = st.columns(4)
-            with c1r:
-                delta = success_prob - trade['Probability']
-                st.metric(
-                    "🎲 Probabilità AI",
-                    f"{success_prob:.1f}%",
-                    delta=f"{delta:+.1f}%" if delta != 0 else None,
-                    help=f"Analisi Web: {trade['Probability']:.0f}%"
-                )
-            with c2r:
-                rr = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0.0
-                rr_emoji = "🟢" if rr >= 2 else "🟡" if rr >= 1.5 else "🔴"
-                st.metric(f"{rr_emoji} Risk/Reward", f"{rr:.2f}x")
-            with c3r:
-                risk_pct = abs(entry - sl) / entry * 100 if entry != 0 else 0.0
-                st.metric("📉 Rischio %", f"{risk_pct:.2f}%")
-            with c4r:
-                reward_pct = abs(tp - entry) / entry * 100 if entry != 0 else 0.0
-                st.metric("📈 Reward %", f"{reward_pct:.2f}%")
-           
-            st.markdown("---")
-            st.markdown("### 🔍 Fattori Chiave dell'Analisi AI")
-            for i, factor in enumerate(factors, 1):
-                emoji = ["🥇", "🥈", "🥉", "🏅", "🎖️"][i-1]
-                st.markdown(f"{emoji} **{i}.** {factor}")
-           
-            st.markdown("---")
-            st.markdown("### 🧠 Analisi Psicologica dell'Investitore")
-            st.markdown("*Approfondimento comportamentale con focus su " + proper_name + "*")
-            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
-            st.markdown(psych_analysis)
+        st.markdown("---")
+        st.markdown(f"## 🎯 Analisi AI: {trade['Direction']} su {symbol}")
+        
+        # Rigeneriamo features al volo per il trade selezionato
+        direction = 'long' if trade['Direction'].lower() in ['long', 'buy'] else 'short'
+        features = generate_features(df_ind, trade['Entry'], trade['SL'], trade['TP'], direction, 60)
+        prob_ai = predict_success(model, scaler, features)
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Probabilità AI", f"{prob_ai:.1f}%")
+        c2.metric("Rischio/Rendimento", f"{(abs(trade['TP']-trade['Entry'])/abs(trade['Entry']-trade['SL'])):.2f}")
+        c3.metric("Trend Attuale", "Bullish" if df_ind['Trend'].iloc[-1] == 1 else "Bearish")
+        
+        st.markdown("### 🧠 Psicologia")
+        st.markdown(get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind))
+
 else:
-    st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
-
-# Info
-with st.expander("ℹ️ Come Funziona Questo Sistema"):
-    st.markdown("""
-    ### 🤖 Tecnologia AI Avanzata
-   
-    - 📊 14 indicatori tecnici (RSI, MACD, EMA, Bollinger, ATR, Volume, Trend)
-    - 📈 500+ setup storici simulati per addestrare il modello
-    - 🌐 Segnali web: news, sentiment, stagionalità
-    - 🧠 Focus sulla psicologia comportamentale dell'investitore
-   
-    ⚠️ Questo strumento è a scopo educativo e non costituisce consulenza finanziaria.
-    """)
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; margin-top: 2rem;'>
-    <p style='color: #4a5568; font-size: 0.95rem; margin: 0;'>
-        ⚠️ <strong>Disclaimer Importante:</strong> Questo è uno strumento educativo e di ricerca. Non costituisce consiglio finanziario.<br>
-        Consulta sempre un professionista qualificato prima di prendere decisioni di investimento.
-    </p>
-</div>
-""", unsafe_allow_html=True)
+    st.warning("Carica i dati per vedere l'analisi.")
