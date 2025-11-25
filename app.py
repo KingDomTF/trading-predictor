@@ -79,8 +79,6 @@ def generate_features(df_ind, entry, sl, tp, direction, main_tf):
         'bb_position': (latest['Close'] - latest['BB_lower']) / (latest['BB_upper'] - latest['BB_lower']),
         'volume_ratio': latest['Volume'] / latest['Volume_MA'] if latest['Volume_MA'] > 0 else 1.0,
         'price_change': latest['Price_Change'] * 100,
-        'trend': latest['Trend']
-    }
    with col3:
     st.markdown("<br>", unsafe_allow_html=True)
     refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
