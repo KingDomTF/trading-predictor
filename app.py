@@ -381,28 +381,39 @@ def get_web_signals(symbol, df_ind):
 
 # ==================== PREZZO LIVE ====================
 
+# Mappatura tra ticker usati nell'app (Yahoo Finance) e simboli MT4.
+# Puoi estenderla/modificarla in base ai nomi reali della tua piattaforma.
+MT4_SYMBOL_MAP = {
+    "GC=F": "XAUUSD",      # Oro
+    "SI=F": "XAGUSD",      # Argento
+    "BTC-USD": "BTCUSD",   # Bitcoin
+    "^GSPC": "US500",      # S&P 500
+    "EURUSD=X": "EURUSD",  # Forex EUR/USD
+}
 
-# ==================== PREZZO LIVE ====================
-
-# ==================== PREZZI LIVE: MT4 + FALLBACK YAHOO ====================
-
-# Percorso del file generato dalla tua MT4 (Expert Advisor PriceExporter.mq4).
-# ⚠️ IMPORTANTE: sostituisci questo percorso con quello reale della tua installazione MT4.
+# Percorso del file generato dall'Expert Advisor PriceExporter.mq4 su MT4.
+# ⚠️ Sostituisci questo percorso con il TUO percorso reale (cartella MQL4/Files).
 MT4_PRICES_FILE = Path(
     r"C:\Users\TUO_UTENTE\AppData\Roaming\MetaQuotes\Terminal\XXXXXXXXXXXX\MQL4\Files\mt4_prices.csv"
 )
 
+def _get_mt4_symbol(symbol: str) -> str:
+    """Restituisce il simbolo da usare per leggere i prezzi MT4."""
+    return MT4_SYMBOL_MAP.get(symbol, symbol)
+
+
 def fetch_live_price(symbol: str):
     """
-    Recupera il prezzo 'live' (ultimo disponibile) usando prima i dati esportati
-    dalla tua piattaforma MT4 (file mt4_prices.csv) e, se non presenti, fa
-    fallback su Yahoo Finance.
+    Recupera il prezzo 'live' (ultimo disponibile) usando in priorità i dati esportati
+    dalla tua MT4 (file mt4_prices.csv). Se il simbolo non è presente nel file o il
+    file non è leggibile, effettua il fallback sui dati Yahoo Finance.
     Ritorna (last_price, prev_close).
     """
     last_price = None
     prev_close = None
 
-    # 1) Tenta di leggere dal file generato da MT4
+    # 1) Tentativo: lettura dal file MT4
+    mt4_symbol = _get_mt4_symbol(symbol)
     try:
         df = pd.read_csv(
             MT4_PRICES_FILE,
@@ -410,15 +421,14 @@ def fetch_live_price(symbol: str):
             header=None,
             names=['symbol', 'time', 'last', 'prev_close']
         )
-        # filtra per simbolo (case-insensitive)
-        df_sym = df[df["symbol"].str.upper() == symbol.upper()]
+        df_sym = df[df["symbol"].str.upper() == mt4_symbol.upper()]
         if not df_sym.empty:
             row = df_sym.iloc[-1]
             last_price = float(row["last"])
             prev_close = float(row["prev_close"])
             return last_price, prev_close
     except Exception:
-        # Se il file non esiste o c'è un errore, si passa al fallback Yahoo
+        # Se qualcosa va storto, si passa al fallback Yahoo
         pass
 
     # 2) Fallback: Yahoo Finance
@@ -509,6 +519,12 @@ proper_names = {
     'SI=F': 'XAG/USD (Silver)',
     'BTC-USD': 'BTC/USD',
     '^GSPC': 'S&P 500',
+    # Nomi tipici MT4 (se scrivi il simbolo MT4 direttamente nella casella)
+    'XAUUSD': 'XAU/USD (Gold, MT4)',
+    'XAGUSD': 'XAG/USD (Silver, MT4)',
+    'BTCUSD': 'BTC/USD (MT4)',
+    'US500': 'S&P 500 (US500, MT4)',
+    'EURUSD': 'EUR/USD (MT4)',
 }
 
 # Configurazione pagina
@@ -604,15 +620,13 @@ with col_switch2:
     stato = "attivi ✅" if st.session_state["live_prices_enabled"] else "disattivati ⛔"
     st.caption(f"Prezzi live attualmente **{stato}**.")
 
-
-
 # Parametri
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
     symbol = st.text_input(
         "🔍 Seleziona Strumento (Ticker)",
         value="GC=F",
-        help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)"
+        help="Ticker Yahoo (es: GC=F, EURUSD=X, BTC-USD) oppure simbolo MT4 collegato (es: XAUUSD, EURUSD, US500)"
     )
     proper_name = proper_names.get(symbol, symbol)
     st.markdown(f"**Strumento selezionato:** `{proper_name}`")
@@ -628,6 +642,7 @@ with col3:
 live_price, prev_close = (None, None)
 if st.session_state.get("live_prices_enabled", False):
     live_price, prev_close = fetch_live_price(symbol)
+
 col_live1, col_live2 = st.columns([1, 1])
 with col_live1:
     if live_price is not None:
@@ -742,6 +757,7 @@ if session_key in st.session_state:
             price, prev = None, None
             if st.session_state.get("live_prices_enabled", False):
                 price, prev = fetch_live_price(row["Ticker"])
+
             if price is not None and prev is not None and prev != 0:
                 change_pct = (price - prev) / prev * 100
                 change_str = f"{change_pct:+.2f}%"
