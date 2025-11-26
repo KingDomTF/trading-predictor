@@ -381,67 +381,25 @@ def get_web_signals(symbol, df_ind):
 
 # ==================== PREZZO LIVE ====================
 
-# Mappatura tra ticker usati nell'app (Yahoo Finance) e simboli MT4.
-# Puoi estenderla/modificarla in base ai nomi reali della tua piattaforma.
-MT4_SYMBOL_MAP = {
-    # 🥇 ORO
-    "GC=F": "XAUUSD.m",        # Ticker Yahoo -> simbolo MT4
-    "XAUUSD": "XAUUSD.m",      # Se scrivi XAUUSD nell'app, leggi XAUUSD.m in MT4
-    "XAUUSD.m": "XAUUSD.m",    # Già uguale
-
-    # 🥈 ARGENTO
-    "SI=F": "XAGUSD.m",
-    "XAGUSD": "XAGUSD.m",
-    "XAGUSD.m": "XAGUSD.m",
-
-    # 💶 EUR/USD
-    "EURUSD=X": "EURUSD.m",
-    "EURUSD": "EURUSD.m",
-    "EURUSD.m": "EURUSD.m",
-
-    # 🇩🇪 DAX / GER40
-    "^GDAXI": "GER40.cash",     # Indice DAX di Yahoo -> GER40.cash su MT4
-    "DE40": "GER40.cash",
-    "GER40": "GER40.cash",
-    "GER40.cash": "GER40.cash",
-
-    # 🇺🇸 S&P 500
-    "^GSPC": "US500.cash",
-    "US500": "US500.cash",
-    "US500.cash": "US500.cash",
-
-    # ₿ BITCOIN
-    "BTC-USD": "BTCUSD.m",
-    "BTCUSD": "BTCUSD.m",
-    "BTCUSD.m": "BTCUSD.m",
-
-    # (Esempi extra: aggiungi qui altri simboli del tuo broker)
-    # "NAS100": "USTEC.cash",
-    # "^NDX": "USTEC.cash",
-}
-# Percorso del file generato dall'Expert Advisor PriceExporter.mq4 su MT4.
-# ⚠️ Sostituisci questo percorso con il TUO percorso reale (cartella MQL4/Files).
+# Percorso del file generato da MT4 (Expert Advisor PriceExporter.mq4).
+# ⚠️ MODIFICA QUI: imposta il percorso ESATTO del tuo file mt4_prices.csv (cartella MQL4/Files).
 MT4_PRICES_FILE = Path(
-    r"C:\Users\TUO_UTENTE\AppData\Roaming\MetaQuotes\Terminal\XXXXXXXXXXXX\MQL4\Files\mt4_prices.csv"
+    r"C:\PERCORSO\ALLA\TUA\MQL4\Files\mt4_prices.csv"
 )
-
-def _get_mt4_symbol(symbol: str) -> str:
-    """Restituisce il simbolo da usare per leggere i prezzi MT4."""
-    return MT4_SYMBOL_MAP.get(symbol, symbol)
-
 
 def fetch_live_price(symbol: str):
     """
-    Recupera il prezzo 'live' (ultimo disponibile) usando in priorità i dati esportati
-    dalla tua MT4 (file mt4_prices.csv). Se il simbolo non è presente nel file o il
-    file non è leggibile, effettua il fallback sui dati Yahoo Finance.
+    Legge il prezzo 'live' SOLO dalla tua MT4 (file mt4_prices.csv).
+    Nessun fallback a Yahoo in questa versione: il prezzo mostrato dall'app
+    deve coincidere con quello della piattaforma (salvo minimi ritardi).
     Ritorna (last_price, prev_close).
     """
-    last_price = None
-    prev_close = None
+    # Inizializza info sorgente per debug nell'interfaccia
+    if "last_price_source" not in st.session_state:
+        st.session_state["last_price_source"] = "N/D"
 
-    # 1) Tentativo: lettura dal file MT4
-    mt4_symbol = _get_mt4_symbol(symbol)
+    mt4_symbol = symbol  # Usa lo stesso simbolo che compare nel file mt4_prices.csv
+
     try:
         df = pd.read_csv(
             MT4_PRICES_FILE,
@@ -449,54 +407,23 @@ def fetch_live_price(symbol: str):
             header=None,
             names=['symbol', 'time', 'last', 'prev_close']
         )
-        df_sym = df[df["symbol"].str.upper() == mt4_symbol.upper()]
-        if not df_sym.empty:
-            row = df_sym.iloc[-1]
-            last_price = float(row["last"])
-            prev_close = float(row["prev_close"])
-            return last_price, prev_close
-    except Exception:
-        # Se qualcosa va storto, si passa al fallback Yahoo
-        pass
+    except Exception as e:
+        st.session_state["last_price_source"] = f"ERRORE MT4: {e}"
+        return None, None
 
-    # 2) Fallback: Yahoo Finance
-    try:
-        ticker = yf.Ticker(symbol)
-    except Exception:
-        return last_price, prev_close
+    # Filtra per simbolo (case-insensitive)
+    df_sym = df[df["symbol"].str.upper() == mt4_symbol.upper()]
+    if df_sym.empty:
+        st.session_state["last_price_source"] = f"MT4: simbolo {mt4_symbol} NON trovato in mt4_prices.csv"
+        return None, None
 
-    # Prova con fast_info
-    try:
-        fast_info = getattr(ticker, "fast_info", None)
-        if fast_info is not None:
-            last_price = fast_info.get("lastPrice", None)
-            prev_close = fast_info.get("previousClose", None)
-    except Exception:
-        pass
+    row = df_sym.iloc[-1]
+    last_price = float(row["last"])
+    prev_close = float(row["prev_close"])
 
-    # Fallback intraday 1m
-    if last_price is None:
-        try:
-            hist = ticker.history(period="1d", interval="1m")
-            if not hist.empty:
-                last_price = float(hist["Close"].iloc[-1])
-                if len(hist) > 1:
-                    prev_close = float(hist["Close"].iloc[-2])
-        except Exception:
-            pass
-
-    # Fallback finale: daily
-    if last_price is None:
-        try:
-            hist = ticker.history(period="2d", interval="1d")
-            if not hist.empty:
-                last_price = float(hist["Close"].iloc[-1])
-                if len(hist) > 1:
-                    prev_close = float(hist["Close"].iloc[-2])
-        except Exception:
-            pass
-
+    st.session_state["last_price_source"] = f"MT4 ({mt4_symbol})"
     return last_price, prev_close
+
 
 
 # ==================== STREAMLIT APP ====================
@@ -547,12 +474,6 @@ proper_names = {
     'SI=F': 'XAG/USD (Silver)',
     'BTC-USD': 'BTC/USD',
     '^GSPC': 'S&P 500',
-    # Nomi tipici MT4 (se scrivi il simbolo MT4 direttamente nella casella)
-    'XAUUSD': 'XAU/USD (Gold, MT4)',
-    'XAGUSD': 'XAG/USD (Silver, MT4)',
-    'BTCUSD': 'BTC/USD (MT4)',
-    'US500': 'S&P 500 (US500, MT4)',
-    'EURUSD': 'EUR/USD (MT4)',
 }
 
 # Configurazione pagina
@@ -632,29 +553,13 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# === SWITCH GENERALE PER PREZZI LIVE (MT4/Yahoo) ===
-if "live_prices_enabled" not in st.session_state:
-    st.session_state["live_prices_enabled"] = False
-
-col_switch1, col_switch2 = st.columns([1, 3])
-with col_switch1:
-    if st.button(
-        "📡 Attiva/Disattiva prezzo live",
-        help="Quando attivo, recupera il prezzo live per tutti i ticker usati nell'app (prima da MT4, poi da Yahoo)."
-    ):
-        st.session_state["live_prices_enabled"] = not st.session_state["live_prices_enabled"]
-
-with col_switch2:
-    stato = "attivi ✅" if st.session_state["live_prices_enabled"] else "disattivati ⛔"
-    st.caption(f"Prezzi live attualmente **{stato}**.")
-
 # Parametri
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
     symbol = st.text_input(
         "🔍 Seleziona Strumento (Ticker)",
         value="GC=F",
-        help="Ticker Yahoo (es: GC=F, EURUSD=X, BTC-USD) oppure simbolo MT4 collegato (es: XAUUSD, EURUSD, US500)"
+        help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)"
     )
     proper_name = proper_names.get(symbol, symbol)
     st.markdown(f"**Strumento selezionato:** `{proper_name}`")
@@ -667,10 +572,7 @@ with col3:
     refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
 
 # PREZZO LIVE CORRENTE
-live_price, prev_close = (None, None)
-if st.session_state.get("live_prices_enabled", False):
-    live_price, prev_close = fetch_live_price(symbol)
-
+live_price, prev_close = fetch_live_price(symbol)
 col_live1, col_live2 = st.columns([1, 1])
 with col_live1:
     if live_price is not None:
@@ -782,10 +684,7 @@ if session_key in st.session_state:
 
         rows = []
         for row in data_watch:
-            price, prev = None, None
-            if st.session_state.get("live_prices_enabled", False):
-                price, prev = fetch_live_price(row["Ticker"])
-
+            price, prev = fetch_live_price(row["Ticker"])
             if price is not None and prev is not None and prev != 0:
                 change_pct = (price - prev) / prev * 100
                 change_str = f"{change_pct:+.2f}%"
