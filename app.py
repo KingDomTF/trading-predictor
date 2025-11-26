@@ -684,9 +684,9 @@ with col_live1:
         st.metric("💹 Prezzo live", "N/D")
 
 with col_live2:
+    source = st.session_state.get("last_price_source", "sorgente sconosciuta")
     st.caption(
-        f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} "
-        "(dati da MT4 se disponibile, altrimenti Yahoo Finance – possono essere ritardati)"
+        f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} • Fonte: {source}"
     )
 
 st.markdown("---")
