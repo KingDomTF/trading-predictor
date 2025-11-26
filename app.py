@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 import datetime
+from pathlib import Path
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -380,17 +381,53 @@ def get_web_signals(symbol, df_ind):
 
 # ==================== PREZZO LIVE ====================
 
-@st.cache_data(ttl=60)
+
+# ==================== PREZZO LIVE ====================
+
+# ==================== PREZZI LIVE: MT4 + FALLBACK YAHOO ====================
+
+# Percorso del file generato dalla tua MT4 (Expert Advisor PriceExporter.mq4).
+# ⚠️ IMPORTANTE: sostituisci questo percorso con quello reale della tua installazione MT4.
+MT4_PRICES_FILE = Path(
+    r"C:\Users\TUO_UTENTE\AppData\Roaming\MetaQuotes\Terminal\XXXXXXXXXXXX\MQL4\Files\mt4_prices.csv"
+)
+
 def fetch_live_price(symbol: str):
     """
-    Recupera il prezzo 'live' (ultimo disponibile) da Yahoo Finance.
-    ttl=60 => al massimo un aggiornamento al minuto per evitare rate limit.
+    Recupera il prezzo 'live' (ultimo disponibile) usando prima i dati esportati
+    dalla tua piattaforma MT4 (file mt4_prices.csv) e, se non presenti, fa
+    fallback su Yahoo Finance.
+    Ritorna (last_price, prev_close).
     """
-    ticker = yf.Ticker(symbol)
     last_price = None
     prev_close = None
 
-    # 1) Prova con fast_info
+    # 1) Tenta di leggere dal file generato da MT4
+    try:
+        df = pd.read_csv(
+            MT4_PRICES_FILE,
+            sep=';',
+            header=None,
+            names=['symbol', 'time', 'last', 'prev_close']
+        )
+        # filtra per simbolo (case-insensitive)
+        df_sym = df[df["symbol"].str.upper() == symbol.upper()]
+        if not df_sym.empty:
+            row = df_sym.iloc[-1]
+            last_price = float(row["last"])
+            prev_close = float(row["prev_close"])
+            return last_price, prev_close
+    except Exception:
+        # Se il file non esiste o c'è un errore, si passa al fallback Yahoo
+        pass
+
+    # 2) Fallback: Yahoo Finance
+    try:
+        ticker = yf.Ticker(symbol)
+    except Exception:
+        return last_price, prev_close
+
+    # Prova con fast_info
     try:
         fast_info = getattr(ticker, "fast_info", None)
         if fast_info is not None:
@@ -399,7 +436,7 @@ def fetch_live_price(symbol: str):
     except Exception:
         pass
 
-    # 2) Fallback: intraday 1m
+    # Fallback intraday 1m
     if last_price is None:
         try:
             hist = ticker.history(period="1d", interval="1m")
@@ -410,7 +447,7 @@ def fetch_live_price(symbol: str):
         except Exception:
             pass
 
-    # 3) Fallback finale: ultimo daily close
+    # Fallback finale: daily
     if last_price is None:
         try:
             hist = ticker.history(period="2d", interval="1d")
@@ -551,7 +588,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# === SWITCH GENERALE PER PREZZI LIVE ===
+# === SWITCH GENERALE PER PREZZI LIVE (MT4/Yahoo) ===
 if "live_prices_enabled" not in st.session_state:
     st.session_state["live_prices_enabled"] = False
 
@@ -559,13 +596,14 @@ col_switch1, col_switch2 = st.columns([1, 3])
 with col_switch1:
     if st.button(
         "📡 Attiva/Disattiva prezzo live",
-        help="Quando attivo, recupera il prezzo live per tutti i ticker usati nell'app."
+        help="Quando attivo, recupera il prezzo live per tutti i ticker usati nell'app (prima da MT4, poi da Yahoo)."
     ):
         st.session_state["live_prices_enabled"] = not st.session_state["live_prices_enabled"]
 
 with col_switch2:
     stato = "attivi ✅" if st.session_state["live_prices_enabled"] else "disattivati ⛔"
     st.caption(f"Prezzi live attualmente **{stato}**.")
+
 
 
 # Parametri
@@ -605,7 +643,7 @@ with col_live1:
 with col_live2:
     st.caption(
         f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} "
-        "(dati Yahoo Finance, possono essere ritardati)"
+        "(dati da MT4 se disponibile, altrimenti Yahoo Finance – possono essere ritardati)"
     )
 
 st.markdown("---")
