@@ -384,13 +384,41 @@ def get_web_signals(symbol, df_ind):
 # Mappatura tra ticker usati nell'app (Yahoo Finance) e simboli MT4.
 # Puoi estenderla/modificarla in base ai nomi reali della tua piattaforma.
 MT4_SYMBOL_MAP = {
-    "GC=F": "XAUUSD",      # Oro
-    "SI=F": "XAGUSD",      # Argento
-    "BTC-USD": "BTCUSD",   # Bitcoin
-    "^GSPC": "US500",      # S&P 500
-    "EURUSD=X": "EURUSD",  # Forex EUR/USD
-}
+    # 🥇 ORO
+    "GC=F": "XAUUSD.m",        # Ticker Yahoo -> simbolo MT4
+    "XAUUSD": "XAUUSD.m",      # Se scrivi XAUUSD nell'app, leggi XAUUSD.m in MT4
+    "XAUUSD.m": "XAUUSD.m",    # Già uguale
 
+    # 🥈 ARGENTO
+    "SI=F": "XAGUSD.m",
+    "XAGUSD": "XAGUSD.m",
+    "XAGUSD.m": "XAGUSD.m",
+
+    # 💶 EUR/USD
+    "EURUSD=X": "EURUSD.m",
+    "EURUSD": "EURUSD.m",
+    "EURUSD.m": "EURUSD.m",
+
+    # 🇩🇪 DAX / GER40
+    "^GDAXI": "GER40.cash",     # Indice DAX di Yahoo -> GER40.cash su MT4
+    "DE40": "GER40.cash",
+    "GER40": "GER40.cash",
+    "GER40.cash": "GER40.cash",
+
+    # 🇺🇸 S&P 500
+    "^GSPC": "US500.cash",
+    "US500": "US500.cash",
+    "US500.cash": "US500.cash",
+
+    # ₿ BITCOIN
+    "BTC-USD": "BTCUSD.m",
+    "BTCUSD": "BTCUSD.m",
+    "BTCUSD.m": "BTCUSD.m",
+
+    # (Esempi extra: aggiungi qui altri simboli del tuo broker)
+    # "NAS100": "USTEC.cash",
+    # "^NDX": "USTEC.cash",
+}
 # Percorso del file generato dall'Expert Advisor PriceExporter.mq4 su MT4.
 # ⚠️ Sostituisci questo percorso con il TUO percorso reale (cartella MQL4/Files).
 MT4_PRICES_FILE = Path(
