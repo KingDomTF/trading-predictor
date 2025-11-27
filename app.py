@@ -28,7 +28,7 @@ def calculate_technical_indicators(df):
     df['RSI'] = 100 - (100 / (1 + rs))
    
     # MACD
-    exp1 = df['Close'].ewm(span=12).mean()   # <<< QUI ERA L'ERRORE: tolto ")."
+    exp1 = df['Close'].ewm(span=12).mean()
     exp2 = df['Close'].ewm(span=26).mean()
     df['MACD'] = exp1 - exp2
     df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
@@ -199,113 +199,82 @@ def predict_price(df_ind, steps=5):
 
 
 def get_investor_psychology(symbol, news_summary, sentiment_label, df_ind):
-    """Analisi approfondita della psicologia dell'investitore con comparazione storica, bias comportamentali e focus specifici su asset come Bitcoin, Argento, Oro e S&P 500."""
+    """Analisi approfondita della psicologia dell'investitore con comparazione storica, bias comportamentali e focus specifici su asset."""
     latest = df_ind.iloc[-1]
     trend = 'bullish' if latest['Trend'] == 1 else 'bearish'
     
-    # Analisi generale attuale (2025)
     current_analysis = f"""
     **🌍 Contesto Globale (Ottobre 2025)**
     
-    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente (al 3.5% negli USA), tensioni geopolitiche (es. Medio Oriente e Ucraina) e un boom dell'IA che ha spinto il NASDAQ oltre i 20,000 punti. La psicologia degli investitori è segnata da un mix di ottimismo tecnologico e ansia macroeconomica, con il VIX a livelli elevati (intorno a 25), indicando volatilità. Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive, amplificate da social media e AI-driven trading.
+    Nel contesto del 28 Ottobre 2025, i mercati globali sono influenzati da inflazione persistente, tensioni geopolitiche e un boom dell'IA. 
+    Per {symbol}, con trend {trend} e sentiment {sentiment_label}, gli investitori mostrano overreazioni emotive amplificate da social media e trading algoritmico.
     """
     
-    # Bias comportamentali
     biases_analysis = """
-    ### 🧠 Analisi Approfondita dei Bias Comportamentali negli Investimenti (2025)
-    
-    I bias comportamentali causano spesso un gap tra ritorni del mercato e ritorni degli investitori retail stimato al 2-4% annuo.
+    ### 🧠 Bias Comportamentali Principali
     
     | Bias Cognitivo | Definizione | Esempio Generale |
     |---------------|-------------|------------------|
     | **Avversione alle Perdite** | Perdite percepite 2x più dolorose dei guadagni. | Mantenere asset in calo sperando in recuperi. |
     | **Eccessiva Fiducia** | Sovrastima abilità predittive. | Overtrading in asset volatili. |
     | **Effetto Gregge** | Seguire la massa. | Comprare dopo grandi rally. |
-    | **Bias di Conferma** | Cercare conferme a convinzioni. | Ignorare segnali negativi sul proprio asset. |
+    | **Bias di Conferma** | Cercare conferme di ciò che si crede. | Ignorare segnali negativi sul proprio asset. |
     | **Bias di Ancoraggio** | Ancorarsi al prezzo di acquisto. | Non voler vendere in perdita. |
-    | **Recency Bias** | Dare troppo peso agli eventi recenti. | Credere che l’ultimo trend continuerà all’infinito. |
+    | **Recency Bias** | Dare troppo peso agli eventi recenti. | Credere che l’ultimo trend continuerà. |
     """
     
-    # Analisi specifica per asset
     if symbol == 'GC=F':
         asset_specific = """
-        ### 🥇 Focus su Oro (GC=F / XAU/USD)
+        ### 🥇 Focus su Oro (GC=F / XAUUSD)
         
-        L'oro nel 2025 mantiene un ruolo di bene rifugio in contesti di inflazione e tensioni geopolitiche.  
-        Bias chiave:
-        - **Safe-Haven Bias**: rifugio emotivo nelle crisi.
-        - **Loss Aversion**: difficoltà a vendere durante drawdown prolungati.
-        - **FOMO**: ingresso tardivo dopo grandi rally.
+        Bene rifugio classico, molto legato a inflazione e crisi. L’investitore spesso tende a:
+        - rifugiarsi sull’oro nei momenti di paura estrema;
+        - subire FOMO dopo grandi rally, entrando tardi;
+        - sottovalutare i drawdown prolungati.
         """
     elif symbol == 'BTC-USD':
         asset_specific = """
         ### ₿ Focus su Bitcoin (BTC-USD)
         
-        Bitcoin è ancora fortemente guidato da sentiment e narrativa.  
-        Bias chiave:
-        - **Herding**: movimenti di massa dopo notizie/ETF/halving.
-        - **Overconfidence**: convinzione di “capire il ciclo” meglio del mercato.
-        - **Disposition Effect**: prendere profitti troppo presto sui gain e tenere le perdite.
-        """
-    elif symbol == 'SI=F':
-        asset_specific = """
-        ### 🥈 Focus su Argento (SI=F / XAG/USD)
-        
-        Argento = metallo metà industriale, metà rifugio: alta volatilità.  
-        Bias chiave:
-        - **FOMO** su “silver squeeze”.
-        - **Recency Bias** su rally legati alla domanda industriale.
-        """
-    elif symbol == '^GSPC':
-        asset_specific = """
-        ### 📊 Focus su S&P 500 (^GSPC)
-        
-        L’S&P 500 riflette il sentiment macro-usa e il boom tech/AI.  
-        Bias chiave:
-        - **Home Bias** (per investitori USA).
-        - **Overconfidence** in bull market prolungati.
-        - **Panic Selling** nei crolli improvvisi.
+        Asset fortemente narrativo, ciclico, con enorme componente emotiva.
+        Bias tipici: FOMO, overconfidence, herd behavior, e “hodling” irrazionale.
         """
     else:
         asset_specific = f"""
-        ### 📈 Analisi Specifica per {symbol}
+        ### 📈 Focus su {symbol}
         
-        La psicologia su questo asset seguirà comunque pattern universali: paura nei ribassi, avidità nei rally, e forte influenza di bias come effetto gregge e recency bias.
+        Vale la solita dinamica: paura nei ribassi, avidità nei rally, forte influenza dei bias sopra elencati.
         """
     
     historical_comparison = """
-    ### 📚 Comparazione Storica Generale
+    ### 📚 Comparazione Storica
     
-    - **2008 Crisi Finanziaria**: panico e sell-off massicci, poi grande rally per chi è rimasto investito.
-    - **2020 COVID**: crollo rapidissimo seguito da recupero a V.
-    - **Dot-com 2000**: euforia tech seguita da crollo, simile ad alcune dinamiche attuali sul tema IA.
+    - 2008: panic selling e recupero successivo.
+    - 2020: crollo COVID seguito da recupero a V.
+    - Bolle tech: euforia prolungata seguita da forti correzioni.
     """
     
     return current_analysis + biases_analysis + asset_specific + historical_comparison
 
 
 def get_web_signals(symbol, df_ind):
-    """Funzione dinamica per ottenere segnali web aggiornati, più precisi."""
+    """Ottiene segnali web (Yahoo) per generare setup base di ingresso/SL/TP."""
     try:
         ticker = yf.Ticker(symbol)
         
-        # Prezzo corrente (ultimo close disponibile)
         hist = ticker.history(period='1d')
         if hist.empty:
             return []
         current_price = hist['Close'].iloc[-1]
         
-        # News recenti
         news = getattr(ticker, "news", None)
         news_summary = ' | '.join([item.get('title', '') for item in news[:5] if isinstance(item, dict)]) if news and isinstance(news, list) else 'Nessuna news recente disponibile.'
         
-        # Sentiment
         sentiment_label, sentiment_score = get_sentiment(news_summary)
         
-        # Calcolo stagionalità
         hist_monthly = yf.download(symbol, period='10y', interval='1mo', progress=False)
         if len(hist_monthly) < 12:
-            seasonality_note = 'Dati storici insufficienti per calcolare la stagionalità.'
+            seasonality_note = 'Dati storici insufficienti per la stagionalità.'
         else:
             hist_monthly['Return'] = hist_monthly['Close'].pct_change()
             hist_monthly['Month'] = hist_monthly.index.month
@@ -314,24 +283,22 @@ def get_web_signals(symbol, df_ind):
             avg_current = monthly_returns.get(current_month, 0) * 100
             seasonality_note = f'Il mese corrente ha un ritorno medio storico di {avg_current:.2f}%.'
         
-        # Previsione prezzo (usa df_ind per timeframe specifico)
         _, forecast_series = predict_price(df_ind, steps=5)
         forecast_note = f'Previsione media per i prossimi 5 periodi: {forecast_series.mean():.2f}' if forecast_series is not None else 'Previsione non disponibile.'
         
-        # Genera suggerimenti precisi basati su sentiment e trend
         latest = df_ind.iloc[-1]
         atr = latest['ATR']
         trend = latest['Trend']
         suggestions = []
-        directions = ['Long', 'Short'] if '=X' not in symbol else ['Buy', 'Sell']
+        directions = ['Long', 'Short']
         
         for dir_ in directions:
-            is_positive_dir = (dir_ in ['Long', 'Buy'] and (sentiment_score > 0 or trend == 1)) or (dir_ in ['Short', 'Sell'] and (sentiment_score < 0 or trend == 0))
+            is_positive_dir = (dir_ == 'Long' and (sentiment_score > 0 or trend == 1)) or (dir_ == 'Short' and (sentiment_score < 0 or trend == 0))
             prob = 70 if is_positive_dir else 60
             entry = round(current_price, 2)
             sl_mult = 1.0 if is_positive_dir else 1.5
             tp_mult = 2.5 if is_positive_dir else 2.0
-            if dir_ in ['Long', 'Buy']:
+            if dir_ == 'Long':
                 sl = round(entry - atr * sl_mult, 2)
                 tp = round(entry + atr * tp_mult, 2)
             else:
@@ -349,13 +316,12 @@ def get_web_signals(symbol, df_ind):
                 'Forecast_Note': forecast_note
             })
         
-        # Aggiungi un terzo suggerimento se sentiment neutrale
         if sentiment_score == 0:
-            dir_ = directions[0] if trend == 1 else directions[1]
+            dir_ = 'Long' if trend == 1 else 'Short'
             entry = round(current_price, 2)
             sl_mult = 1.2
             tp_mult = 2.2
-            if dir_ in ['Long', 'Buy']:
+            if dir_ == 'Long':
                 sl = round(entry - atr * sl_mult, 2)
                 tp = round(entry + atr * tp_mult, 2)
             else:
@@ -379,13 +345,35 @@ def get_web_signals(symbol, df_ind):
         return []
 
 
-# ==================== PREZZO LIVE ====================
+# ==================== PREZZO LIVE (SOLO MT4) ====================
+
+# Mappa tra simboli usati nell'app e simboli reali di MT4 (colonna "symbol" del file mt4_prices.csv).
+# ✏️ MODIFICA i valori a destra in base ai nomi ESATTI dei simboli nel tuo MT4.
+MT4_SYMBOL_MAP = {
+    # Esempi tipici — adatta ai tuoi:
+    "GC=F": "XAUUSD.m",      # Oro: ticker Yahoo -> simbolo MT4
+    "SI=F": "XAGUSD.m",      # Argento
+    "BTC-USD": "BTCUSD.m",   # Bitcoin
+    "^GSPC": "US500.cash",   # S&P 500
+    "EURUSD=X": "EURUSD.m",  # EUR/USD Yahoo -> EURUSD.m MT4
+
+    # Se nell'app scrivi direttamente i simboli MT4, puoi mappare a se stessi:
+    "XAUUSD.m": "XAUUSD.m",
+    "XAGUSD.m": "XAGUSD.m",
+    "BTCUSD.m": "BTCUSD.m",
+    "US500.cash": "US500.cash",
+    "EURUSD.m": "EURUSD.m",
+}
 
 # Percorso del file generato da MT4 (Expert Advisor PriceExporter.mq4).
 # ⚠️ MODIFICA QUI: imposta il percorso ESATTO del tuo file mt4_prices.csv (cartella MQL4/Files).
 MT4_PRICES_FILE = Path(
     r"C:\PERCORSO\ALLA\TUA\MQL4\Files\mt4_prices.csv"
 )
+
+def _get_mt4_symbol(app_symbol: str) -> str:
+    """Dato il simbolo usato nell'app, restituisce il simbolo corrispondente in MT4."""
+    return MT4_SYMBOL_MAP.get(app_symbol, app_symbol)
 
 def fetch_live_price(symbol: str):
     """
@@ -394,11 +382,10 @@ def fetch_live_price(symbol: str):
     deve coincidere con quello della piattaforma (salvo minimi ritardi).
     Ritorna (last_price, prev_close).
     """
-    # Inizializza info sorgente per debug nell'interfaccia
     if "last_price_source" not in st.session_state:
         st.session_state["last_price_source"] = "N/D"
 
-    mt4_symbol = symbol  # Usa lo stesso simbolo che compare nel file mt4_prices.csv
+    mt4_symbol = _get_mt4_symbol(symbol)
 
     try:
         df = pd.read_csv(
@@ -411,7 +398,6 @@ def fetch_live_price(symbol: str):
         st.session_state["last_price_source"] = f"ERRORE MT4: {e}"
         return None, None
 
-    # Filtra per simbolo (case-insensitive)
     df_sym = df[df["symbol"].str.upper() == mt4_symbol.upper()]
     if df_sym.empty:
         st.session_state["last_price_source"] = f"MT4: simbolo {mt4_symbol} NON trovato in mt4_prices.csv"
@@ -423,7 +409,6 @@ def fetch_live_price(symbol: str):
 
     st.session_state["last_price_source"] = f"MT4 ({mt4_symbol})"
     return last_price, prev_close
-
 
 
 # ==================== STREAMLIT APP ====================
@@ -467,16 +452,19 @@ def train_or_load_model(symbol, interval='1h'):
     return model, scaler, df_ind
 
 
-# Mappatura nomi propri
 proper_names = {
     'GC=F': 'XAU/USD (Gold)',
     'EURUSD=X': 'EUR/USD',
     'SI=F': 'XAG/USD (Silver)',
     'BTC-USD': 'BTC/USD',
     '^GSPC': 'S&P 500',
+    'XAUUSD.m': 'XAU/USD (Gold, MT4)',
+    'XAGUSD.m': 'XAG/USD (Silver, MT4)',
+    'BTCUSD.m': 'BTC/USD (MT4)',
+    'US500.cash': 'S&P 500 (US500, MT4)',
+    'EURUSD.m': 'EUR/USD (MT4)',
 }
 
-# Configurazione pagina
 st.set_page_config(
     page_title="Trading Predictor AI - Enhanced",
     page_icon="📊",
@@ -484,7 +472,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS personalizzato
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
@@ -543,7 +530,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header
 st.title("📊 Trading Success Predictor AI")
 st.markdown("""
 <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;'>
@@ -553,13 +539,29 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# === SWITCH GENERALE PER PREZZI LIVE (MT4) ===
+if "live_prices_enabled" not in st.session_state:
+    st.session_state["live_prices_enabled"] = False
+
+col_switch1, col_switch2 = st.columns([1, 3])
+with col_switch1:
+    if st.button(
+        "📡 Attiva/Disattiva prezzo live",
+        help="Quando attivo, legge il prezzo live dal file mt4_prices.csv generato da MT4."
+    ):
+        st.session_state["live_prices_enabled"] = not st.session_state["live_prices_enabled"]
+
+with col_switch2:
+    stato = "attivi ✅" if st.session_state["live_prices_enabled"] else "disattivati ⛔"
+    st.caption(f"Prezzi live MT4 attualmente **{stato}**.")
+
 # Parametri
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
     symbol = st.text_input(
         "🔍 Seleziona Strumento (Ticker)",
         value="GC=F",
-        help="Es: GC=F (Oro), EURUSD=X, BTC-USD, SI=F (Argento), ^GSPC (S&P 500)"
+        help="Ticker Yahoo (es: GC=F, EURUSD=X, BTC-USD) oppure simbolo MT4 collegato (es: XAUUSD.m, EURUSD.m, US500.cash)"
     )
     proper_name = proper_names.get(symbol, symbol)
     st.markdown(f"**Strumento selezionato:** `{proper_name}`")
@@ -572,7 +574,10 @@ with col3:
     refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
 
 # PREZZO LIVE CORRENTE
-live_price, prev_close = fetch_live_price(symbol)
+live_price, prev_close = (None, None)
+if st.session_state.get("live_prices_enabled", False):
+    live_price, prev_close = fetch_live_price(symbol)
+
 col_live1, col_live2 = st.columns([1, 1])
 with col_live1:
     if live_price is not None:
@@ -593,7 +598,6 @@ with col_live2:
 
 st.markdown("---")
 
-# Inizializzazione modello
 session_key = f"model_{symbol}_{data_interval}"
 if session_key not in st.session_state or refresh_data:
     with st.spinner("🧠 Caricamento AI e analisi dati..."):
@@ -610,10 +614,7 @@ if session_key in st.session_state:
     scaler = state['scaler']
     df_ind = state['df_ind']
     
-    # Previsione prezzo
     avg_forecast, forecast_series = predict_price(df_ind, steps=5)
-    
-    # Segnali web
     web_signals_list = get_web_signals(symbol, df_ind)
     
     col_left, col_right = st.columns([1.2, 0.8])
@@ -684,7 +685,9 @@ if session_key in st.session_state:
 
         rows = []
         for row in data_watch:
-            price, prev = fetch_live_price(row["Ticker"])
+            price, prev = (None, None)
+            if st.session_state.get("live_prices_enabled", False):
+                price, prev = fetch_live_price(row["Ticker"])
             if price is not None and prev is not None and prev != 0:
                 change_pct = (price - prev) / prev * 100
                 change_str = f"{change_pct:+.2f}%"
@@ -707,7 +710,6 @@ if session_key in st.session_state:
         growth_df = pd.DataFrame(rows)
         st.dataframe(growth_df, use_container_width=True, hide_index=True)
     
-    # Analisi del trade selezionato
     if 'selected_trade' in st.session_state:
         trade = st.session_state.selected_trade
        
@@ -781,7 +783,6 @@ if session_key in st.session_state:
 else:
     st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
 
-# Info
 with st.expander("ℹ️ Come Funziona Questo Sistema"):
     st.markdown("""
     ### 🤖 Tecnologia AI Avanzata
@@ -794,7 +795,6 @@ with st.expander("ℹ️ Come Funziona Questo Sistema"):
     ⚠️ Questo strumento è a scopo educativo e non costituisce consulenza finanziaria.
     """)
 
-# Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; margin-top: 2rem;'>
