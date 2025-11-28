@@ -6,9 +6,87 @@ from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 import datetime
 import warnings
+from pathlib import Path  # <--- IMPORT PER PATH MT4
+
 warnings.filterwarnings('ignore')
 
+# ==================== MAPPATURA YAHOO <-> MT4 + PREZZO LIVE ====================
+
+# Ticker Yahoo -> simbolo MT4
+YAHOO_TO_MT4 = {
+    "GC=F": "XAUUSD",   # Oro
+    "SI=F": "XAGUSD",   # Argento
+    "BTC-USD": "BTCUSD",
+    "^GSPC": "US500",
+}
+
+# Inverso: simbolo MT4 -> ticker Yahoo
+MT4_TO_YAHOO = {v: k for k, v in YAHOO_TO_MT4.items()}
+
+def resolve_symbols(user_symbol: str):
+    """
+    Riceve il simbolo inserito dall'utente e restituisce:
+      - yahoo_symbol: per yfinance
+      - mt4_symbol:   per il file MT4
+    Gestisce sia GC=F, SI=F, BTC-USD, ^GSPC sia XAUUSD, XAGUSD, BTCUSD, US500.
+    """
+    user_symbol_clean = user_symbol.strip()
+
+    # Match su chiavi Yahoo (case-insensitive)
+    for k in YAHOO_TO_MT4.keys():
+        if user_symbol_clean.upper() == k.upper():
+            yahoo_symbol = k
+            mt4_symbol = YAHOO_TO_MT4[k]
+            return yahoo_symbol, mt4_symbol
+
+    # Match su simboli MT4 (case-insensitive)
+    for k_mt4 in MT4_TO_YAHOO.keys():
+        if user_symbol_clean.upper() == k_mt4.upper():
+            mt4_symbol = k_mt4
+            yahoo_symbol = MT4_TO_YAHOO[k_mt4]
+            return yahoo_symbol, mt4_symbol
+
+    # Default: non mappato -> uso lo stesso
+    return user_symbol_clean, user_symbol_clean
+
+# ⚠️ METTI QUI IL PERCORSO REALE DEL TUO FILE mt4_prices.csv (cartella MQL4/Files)
+MT4_PRICES_FILE = Path(
+    r"C:\PERCORSO\REALE\FINO_A\MQL4\Files\mt4_prices.csv"
+)
+
+def fetch_live_price(mt4_symbol: str):
+    """
+    Legge il prezzo live SOLO dalla tua MT4 (file mt4_prices.csv).
+    Ritorna (last_price, prev_close) oppure (None, None) se qualcosa non va.
+    """
+    if "last_price_source" not in st.session_state:
+        st.session_state["last_price_source"] = "N/D"
+
+    try:
+        df = pd.read_csv(
+            MT4_PRICES_FILE,
+            sep=';',
+            header=None,
+            names=['symbol', 'time', 'last', 'prev_close']
+        )
+    except Exception as e:
+        st.session_state["last_price_source"] = f"ERRORE MT4: {e}"
+        return None, None
+
+    df_sym = df[df["symbol"].str.upper() == mt4_symbol.upper()]
+    if df_sym.empty:
+        st.session_state["last_price_source"] = f"MT4: simbolo {mt4_symbol} NON trovato in mt4_prices.csv"
+        return None, None
+
+    row = df_sym.iloc[-1]
+    last_price = float(row["last"])
+    prev_close = float(row["prev_close"])
+
+    st.session_state["last_price_source"] = f"MT4 ({mt4_symbol})"
+    return last_price, prev_close
+
 # ==================== FUNZIONI CORE ====================
+
 def calculate_technical_indicators(df):
     """Calcola indicatori tecnici."""
     df = df.copy()
@@ -670,7 +748,7 @@ def get_web_signals(symbol, df_ind):
         return []
 
 def fetch_real_time_prices():
-    """Scova i prezzi degli strumenti incorporati in tempo reale."""
+    """Scova i prezzi degli strumenti incorporati in tempo reale da Yahoo (non MT4)."""
     prices = {}
     for ticker, name in proper_names.items():
         try:
@@ -724,10 +802,14 @@ def train_or_load_model(symbol, interval='1h'):
 
 proper_names = {
     'GC=F': 'XAU/USD (Gold)',
+    'XAUUSD': 'XAU/USD (Gold, MT4)',
     'EURUSD=X': 'EUR/USD',
     'SI=F': 'XAG/USD (Silver)',
+    'XAGUSD': 'XAG/USD (Silver, MT4)',
     'BTC-USD': 'BTC/USD',
+    'BTCUSD': 'BTC/USD (MT4)',
     '^GSPC': 'S&P 500',
+    'US500': 'S&P 500 (US500 MT4)',
 }
 
 st.set_page_config(
@@ -974,23 +1056,68 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# === SWITCH GENERALE PREZZI LIVE MT4 ===
+if "live_prices_enabled" not in st.session_state:
+    st.session_state["live_prices_enabled"] = False
+
+switch_col1, switch_col2 = st.columns([1, 3])
+with switch_col1:
+    if st.button("📡 Attiva/Disattiva prezzo live MT4"):
+        st.session_state["live_prices_enabled"] = not st.session_state["live_prices_enabled"]
+with switch_col2:
+    stato = "attivi ✅" if st.session_state["live_prices_enabled"] else "disattivati ⛔"
+    st.caption(f"Prezzi live MT4 attualmente **{stato}**.")
+
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
-    symbol = st.text_input("🔍 Seleziona Strumento (Ticker)", value="GC=F", help="GC=F (Oro), SI=F (Argento), BTC-USD, ^GSPC (S&P 500)")
-    proper_name = proper_names.get(symbol, symbol)
-    st.markdown(f"**Strumento selezionato:** `{proper_name}`")
+    symbol_input = st.text_input(
+        "🔍 Seleziona Strumento (Ticker)",
+        value="GC=F",
+        help="GC=F (Oro), SI=F (Argento), BTC-USD, ^GSPC (S&P 500) oppure XAUUSD, BTCUSD, US500, XAGUSD da MT4"
+    )
+    yahoo_symbol, mt4_symbol = resolve_symbols(symbol_input)
+    proper_name = (
+        proper_names.get(symbol_input)
+        or proper_names.get(yahoo_symbol)
+        or proper_names.get(mt4_symbol, symbol_input)
+    )
+    st.markdown(f"**Strumento selezionato:** `{proper_name}`  \n📡 Yahoo: `{yahoo_symbol}` • 🖥️ MT4: `{mt4_symbol}`")
+
 with col2:
     data_interval = st.selectbox("⏰ Timeframe", ['5m', '15m', '1h'], index=2)
 with col3:
     st.markdown("<br>", unsafe_allow_html=True)
     refresh_data = st.button("🔄 Carica Dati", use_container_width=True)
 
+# Prezzo live MT4
+live_price, prev_close = (None, None)
+if st.session_state.get("live_prices_enabled", False):
+    live_price, prev_close = fetch_live_price(mt4_symbol)
+
+live_col1, live_col2 = st.columns([1, 1])
+with live_col1:
+    if live_price is not None:
+        delta_str = None
+        if prev_close is not None and prev_close != 0:
+            delta_pct = (live_price - prev_close) / prev_close * 100
+            delta_str = f"{delta_pct:+.2f}%"
+        display_price = f"{live_price:.4f}" if live_price < 10 else f"{live_price:.2f}"
+        st.metric("💹 Prezzo live (MT4)", display_price, delta_str)
+    else:
+        st.metric("💹 Prezzo live (MT4)", "N/D")
+
+with live_col2:
+    source = st.session_state.get("last_price_source", "sorgente sconosciuta")
+    st.caption(
+        f"Aggiornato alle {datetime.datetime.now().strftime('%H:%M:%S')} • Fonte: {source}"
+    )
+
 st.markdown("---")
 
-session_key = f"model_{symbol}_{data_interval}"
+session_key = f"model_{yahoo_symbol}_{data_interval}"
 if session_key not in st.session_state or refresh_data:
     with st.spinner("🧠 Caricamento AI e analisi dati..."):
-        model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=data_interval)
+        model, scaler, df_ind = train_or_load_model(symbol=yahoo_symbol, interval=data_interval)
         if model is not None:
             st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
             st.success("✅ Sistema pronto! Modello addestrato con successo.")
@@ -1003,16 +1130,20 @@ if session_key in st.session_state:
     scaler = state['scaler']
     df_ind = state['df_ind']
     
-    # Fetch latest price to ensure it's current
-    ticker = yf.Ticker(symbol)
-    latest_hist = ticker.history(period="1d", interval="1m")
-    if not latest_hist.empty:
-        current_price = float(latest_hist['Close'].iloc[-1])
+    # Fetch latest price: prima MT4, poi Yahoo come fallback
+    if live_price is not None:
+        current_price = live_price
     else:
-        current_price = df_ind['Close'].iloc[-1]
+        ticker = yf.Ticker(yahoo_symbol)
+        latest_hist = ticker.history(period="1d", interval="1m")
+        if not latest_hist.empty:
+            current_price = float(latest_hist['Close'].iloc[-1])
+        else:
+            current_price = df_ind['Close'].iloc[-1]
     
-    # SEZIONE SPECIALE GOLD
-    if symbol == 'GC=F':
+    # SEZIONE SPECIALE GOLD (GC=F o XAUUSD)
+    is_gold = (yahoo_symbol.upper() == "GC=F") or (mt4_symbol.upper() == "XAUUSD")
+    if is_gold:
         st.markdown("## 🥇 ANALISI ORO COMPLETA - Multi-Fattoriale")
         
         with st.spinner("🔍 Analisi fondamentali e confronto storico in corso..."):
@@ -1188,7 +1319,7 @@ if session_key in st.session_state:
     
     # Resto del codice standard
     avg_forecast, forecast_series = predict_price(df_ind, steps=5)
-    web_signals_list = get_web_signals(symbol, df_ind)
+    web_signals_list = get_web_signals(yahoo_symbol, df_ind)
     
     st.markdown("---")
     
@@ -1358,7 +1489,7 @@ if session_key in st.session_state:
             st.markdown("### 🧠 Analisi Psicologica dell'Investitore")
             st.markdown("*Approfondimento comportamentale con focus su " + proper_name + "*")
             
-            psych_analysis = get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
+            psych_analysis = get_investor_psychology(yahoo_symbol, trade['News_Summary'], trade['Sentiment'], df_ind)
             st.markdown(psych_analysis)
 else:
     st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
@@ -1374,53 +1505,20 @@ with st.expander("ℹ️ Come Funziona Questo Sistema"):
     - 🧠 **Psicologia Comportamentale**: Analisi approfondita dei bias cognitivi
     - 📚 **Comparazioni Storiche**: Pattern da crisi del 2008, COVID-19, Dot-Com
     
-    ### 🥇 Analisi Speciale ORO (GC=F)
+    ### 🥇 Analisi Speciale ORO (GC=F/XAUUSD)
     
     **Fattori Fondamentali Analizzati:**
-    - 💵 **Dollar Index (DXY)**: Correlazione inversa con oro
-    - 📊 **Tassi di Interesse**: 10Y Treasury yields e tassi reali
-    - 📉 **VIX (Volatilità)**: Indicatore di fear/safe-haven demand
-    - 📈 **S&P 500**: Risk-on vs Risk-off sentiment
-    - 🥈 **Gold/Silver Ratio**: Indicatore di valore relativo
-    - 💹 **Aspettative Inflazione**: TIPS spread come proxy
-    - 🌍 **Rischio Geopolitico**: Score qualitativo 0-10
-    - 🏦 **Domanda Banche Centrali**: Tonnellate acquistate annualmente
-    - 😊 **Sentiment Retail**: Indicatore 0-10
+    - 💵 Dollar Index (DXY)
+    - 📊 Tassi di Interesse (Treasury 10Y, tassi reali)
+    - 📉 VIX (Volatilità)
+    - 📈 S&P 500 (risk-on/off)
+    - 🥈 Gold/Silver Ratio
+    - 💹 Aspettative Inflazione
+    - 🌍 Rischio Geopolitico
+    - 🏦 Domanda Banche Centrali
+    - 😊 Sentiment Retail
     
-    **Periodi Storici di Riferimento:**
-    - **1971-1980**: Bull Market Post-Bretton Woods (+2,329%)
-    - **2001-2011**: Post Dot-Com e Crisi 2008 (+653%)
-    - **2015-2020**: Consolidamento e COVID Rally (+97%)
-    - **2022-2025**: Era Inflazione Post-COVID (in corso)
-    
-    **Metodologia di Previsione (4 Metodi Combinati):**
-    1. **Proiezione Storica**: Basata sul periodo più simile
-    2. **Modello Fondamentale**: 9 fattori macro ponderati
-    3. **Analisi Tecnica**: Volatilità e momentum
-    4. **Gold/Silver Ratio**: Valore relativo metalli preziosi
-    
-    **Confidence Score**: Calcolato da similarità storica (60%) + fattori fondamentali (40%)
-    
-    ### 🎯 Caratteristiche Uniche
-    - ✅ **Analisi Dual-Mode**: Confronto tra predizioni AI e analisi web
-    - ✅ **Risk Management**: Calcolo automatico di Risk/Reward ratio
-    - ✅ **Multi-Timeframe**: Previsioni 3M, 6M, 12M con range di confidenza
-    - ✅ **Comparazione Storica**: Identifica automaticamente periodo più simile
-    - ✅ **Real-Time Data**: Integrazione con yfinance per dati aggiornati
-    
-    ### 📖 Disclaimer Importante
-    
-    Le previsioni sono basate su modelli quantitativi e analisi storica. I mercati finanziari sono influenzati da 
-    innumerevoli variabili imprevedibili. Questa analisi non costituisce consiglio finanziario. 
-    
-    **Fattori di rischio:**
-    - Eventi geopolitici imprevisti (guerre, sanzioni, crisi)
-    - Cambiamenti improvvisi politica monetaria Fed/BCE
-    - Shock economici globali (recessione, crisi bancarie)
-    - Scoperte tecnologiche che cambiano domanda/offerta
-    - Sentimento di mercato irrazionale (panic selling, FOMO)
-    
-    Consulta sempre un consulente finanziario professionista prima di investire.
+    ⚠️ Questo strumento è a scopo educativo e non costituisce consiglio finanziario.
     """)
 
 st.markdown("---")
