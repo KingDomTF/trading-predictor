@@ -7,7 +7,7 @@ import datetime
 
 # ===================== MAPPATURE SIMBOLI =====================
 
-# Yahoo -> MT4
+# Simbolo Yahoo -> Simbolo MT4
 YAHOO_TO_MT4 = {
     "GC=F": "XAUUSD",   # Oro future -> Oro MT4
     "SI=F": "XAGUSD",   # Argento future -> Argento MT4
@@ -15,40 +15,46 @@ YAHOO_TO_MT4 = {
     "^GSPC": "US500",   # S&P 500 index -> US500 MT4
 }
 
-# MT4 -> Yahoo (invertiamo la mappa sopra)
+# Simbolo MT4 -> Simbolo Yahoo (invertiamo la mappa)
 MT4_TO_YAHOO = {v: k for k, v in YAHOO_TO_MT4.items()}
+
 
 def resolve_symbols(user_symbol: str):
     """
     Riceve il simbolo inserito dall'utente e restituisce:
-    - yahoo_symbol: per scaricare i dati storici da Yahoo
+    - yahoo_symbol: per scaricare lo storico da Yahoo
     - mt4_symbol:   per leggere il prezzo live dal file MT4
     Esempi:
       - 'GC=F'   -> ('GC=F', 'XAUUSD')
       - 'XAUUSD' -> ('GC=F', 'XAUUSD')
       - 'US500'  -> ('^GSPC', 'US500')
-      - simbolo sconosciuto -> (user_symbol, user_symbol)
+      - simbolo non mappato -> (user_symbol, user_symbol)
     """
-    user_symbol = user_symbol.strip()
+    user_symbol_clean = user_symbol.strip()
 
-    if user_symbol in YAHOO_TO_MT4:
-        yahoo_symbol = user_symbol
-        mt4_symbol = YAHOO_TO_MT4[user_symbol]
-    elif user_symbol in MT4_TO_YAHOO:
-        mt4_symbol = user_symbol
-        yahoo_symbol = MT4_TO_YAHOO[user_symbol]
-    else:
-        yahoo_symbol = user_symbol
-        mt4_symbol = user_symbol
+    # Proviamo a matchare ignorando maiuscole/minuscole lato Yahoo
+    for k in YAHOO_TO_MT4.keys():
+        if user_symbol_clean.upper() == k.upper():
+            yahoo_symbol = k
+            mt4_symbol = YAHOO_TO_MT4[k]
+            return yahoo_symbol, mt4_symbol
 
-    return yahoo_symbol, mt4_symbol
+    # Proviamo sui simboli MT4
+    for k_mt4 in MT4_TO_YAHOO.keys():
+        if user_symbol_clean.upper() == k_mt4.upper():
+            mt4_symbol = k_mt4
+            yahoo_symbol = MT4_TO_YAHOO[k_mt4]
+            return yahoo_symbol, mt4_symbol
+
+    # Default: lo stesso per entrambi
+    return user_symbol_clean, user_symbol_clean
 
 
 # ===================== FILE MT4 (CSV) =====================
 
 # ⚠️ METTI QUI IL PERCORSO ESATTO DEL TUO mt4_prices.csv
-#  Esempio tipico:
-#  r"C:\Users\TUO_NOME\AppData\Roaming\MetaQuotes\Terminal\XXXX...\MQL4\Files\mt4_prices.csv"
+# Esempio (sostituisci con il tuo):
+# r"C:\Users\TUO_UTENTE\AppData\Roaming\MetaQuotes\Terminal\XXXX...\MQL4\Files\mt4_prices.csv"
 MT4_PRICES_FILE = Path(
     r"C:\PERCORSO\ALLA\TUA\MQL4\Files\mt4_prices.csv"
 )
@@ -91,7 +97,8 @@ def fetch_live_price(mt4_symbol: str):
 @st.cache_data
 def load_history(yahoo_symbol: str, interval: str = "1h") -> pd.DataFrame:
     """
-    Scarica dati storici da Yahoo Finance per il grafico / indicatori.
+    Scarica dati storici da Yahoo, gestendo anche casi con MultiIndex di colonne.
+    Restituisce un DataFrame con colonne: Time, Open, High, Low, Close, Volume (quelle disponibili).
     """
     period_map = {
         "15m": "30d",
@@ -108,36 +115,72 @@ def load_history(yahoo_symbol: str, interval: str = "1h") -> pd.DataFrame:
             interval=interval,
             progress=False
         )
-        if data.empty:
-            return pd.DataFrame()
-        data = data[["Open", "High", "Low", "Close", "Volume"]]
-        data.reset_index(inplace=True)
-        # uniformiamo il nome della colonna tempo
-        if "Datetime" in data.columns:
-            data.rename(columns={"Datetime": "Time"}, inplace=True)
-        elif "Date" in data.columns:
-            data.rename(columns={"Date": "Time"}, inplace=True)
-        return data
     except Exception:
         return pd.DataFrame()
+
+    if data is None or data.empty:
+        return pd.DataFrame()
+
+    # Se le colonne sono MultiIndex, prendiamo solo il primo livello (Open, High, Low, Close, Volume,...)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+
+    # Funzione per trovare colonne anche se si chiamano "Close_XAUUSD" ecc.
+    def pick_col(base_name: str):
+        base_low = base_name.lower()
+        for c in data.columns:
+            if str(c).lower().startswith(base_low):
+                return c
+        return None
+
+    open_col = pick_col("open")
+    high_col = pick_col("high")
+    low_col  = pick_col("low")
+    close_col = pick_col("close")
+    vol_col  = pick_col("volume")
+
+    # Senza Close non ha senso
+    if close_col is None:
+        return pd.DataFrame()
+
+    # Reset index: la prima colonna è Date/Datetime
+    df = data.copy().reset_index()
+    time_col = df.columns[0]
+    df.rename(columns={time_col: "Time"}, inplace=True)
+
+    out = pd.DataFrame()
+    out["Time"] = df["Time"]
+
+    if open_col is not None:
+        out["Open"] = df[open_col]
+    if high_col is not None:
+        out["High"] = df[high_col]
+    if low_col is not None:
+        out["Low"] = df[low_col]
+    out["Close"] = df[close_col]
+    if vol_col is not None:
+        out["Volume"] = df[vol_col]
+
+    return out
 
 
 def add_basic_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Aggiunge qualche indicatore semplice (EMA, RSI) giusto per dare contesto.
+    Aggiunge EMA 20/50 e RSI 14 come indicazioni base.
     """
     if df.empty:
         return df
 
     df = df.copy()
-    df["EMA_20"] = df["Close"].ewm(span=20).mean()
-    df["EMA_50"] = df["Close"].ewm(span=50).mean()
+    if "Close" in df.columns:
+        df["EMA_20"] = df["Close"].ewm(span=20).mean()
+        df["EMA_50"] = df["Close"].ewm(span=50).mean()
 
-    delta = df["Close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df["RSI_14"] = 100 - (100 / (1 + rs))
+        delta = df["Close"].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df["RSI_14"] = 100 - (100 / (1 + rs))
 
     return df
 
@@ -154,9 +197,8 @@ def main():
     st.title("📊 Trading Success Predictor AI – Live da MT4")
     st.markdown(
         """
-        Questa app:
-        - usa **Yahoo Finance** per lo storico (grafico e indicatori)
-        - usa **SOLO MT4** (file `mt4_prices.csv`) per il **prezzo live**
+        - Storico e grafici: **Yahoo Finance**  
+        - Prezzo live: **solo MT4**, tramite file `mt4_prices.csv` scritto dall'EA.
         """
     )
 
@@ -226,8 +268,8 @@ def main():
     with st.spinner("Carico dati storici da Yahoo Finance..."):
         hist = load_history(yahoo_symbol, interval)
 
-    if hist.empty:
-        st.error("Nessun dato storico trovato per questo simbolo (lato Yahoo).")
+    if hist.empty or "Close" not in hist.columns or "Time" not in hist.columns:
+        st.error("Nessun dato storico valido trovato per questo simbolo (lato Yahoo).")
         return
 
     hist = add_basic_indicators(hist)
@@ -235,20 +277,23 @@ def main():
     col_chart, col_info = st.columns([2, 1])
     with col_chart:
         st.subheader("📈 Storico prezzi (Yahoo)")
+        chart_df = hist.dropna(subset=["Time", "Close"]).copy()
+        # Assicuriamoci che Time sia l'asse X e Close la curva
+        chart_df = chart_df.set_index("Time")
         st.line_chart(
-            hist.set_index("Time")[["Close"]],
+            chart_df["Close"],
             height=300
         )
 
     with col_info:
-        st.subheader("📊 Indicatori base")
+        st.subheader("📊 Indicatori base (ultimo valore)")
         last = hist.iloc[-1]
         st.write(f"**Ultimo close (Yahoo)**: {last['Close']:.2f}")
-        if not np.isnan(last.get("EMA_20", np.nan)):
+        if "EMA_20" in hist.columns and not np.isnan(last.get("EMA_20", np.nan)):
             st.write(f"**EMA 20**: {last['EMA_20']:.2f}")
-        if not np.isnan(last.get("EMA_50", np.nan)):
+        if "EMA_50" in hist.columns and not np.isnan(last.get("EMA_50", np.nan)):
             st.write(f"**EMA 50**: {last['EMA_50']:.2f}")
-        if not np.isnan(last.get("RSI_14", np.nan)):
+        if "RSI_14" in hist.columns and not np.isnan(last.get("RSI_14", np.nan)):
             st.write(f"**RSI 14**: {last['RSI_14']:.1f}")
 
     st.markdown("---")
@@ -258,5 +303,5 @@ def main():
     )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
