@@ -444,4 +444,324 @@ def get_web_signals(symbol, df_ind):
             seasonality_note = f'Errore stagionalità: {e}'
             st.warning("⚠️ Errore nel calcolo stagionalità")
         
-        _, forecast_series = predict_price(
+        _, forecast_series = predict_price(df_ind, steps=5)
+        forecast_note = f'Previsione media: {forecast_series.mean():.2f}' if forecast_series is not None else 'N/A'
+        
+        latest = df_ind.iloc[-1]
+        atr = latest['ATR']
+        trend = latest['Trend']
+        suggestions = []
+        directions = ['Long', 'Short'] if '=X' not in symbol else ['Buy', 'Sell']
+        
+        for dir in directions:
+            is_positive_dir = (dir in ['Long', 'Buy'] and (sentiment_score > 0 or trend == 1)) or (dir in ['Short', 'Sell'] and (sentiment_score < 0 or trend == 0))
+            prob = 70 if is_positive_dir else 60
+            entry = round(current_price, 2)
+            sl_mult = 1.0 if is_positive_dir else 1.5
+            tp_mult = 2.5 if is_positive_dir else 2.0
+            if dir in ['Long', 'Buy']:
+                sl = round(entry - atr * sl_mult, 2)
+                tp = round(entry + atr * tp_mult, 2)
+            else:
+                sl = round(entry + atr * sl_mult, 2)
+                tp = round(entry - atr * tp_mult, 2)
+            suggestions.append({
+                'Direction': dir, 'Entry': entry, 'SL': sl, 'TP': tp, 'Probability': prob,
+                'Seasonality_Note': seasonality_note, 'News_Summary': news_summary,
+                'Sentiment': sentiment_label, 'Forecast_Note': forecast_note
+            })
+            
+        return suggestions
+    except Exception as e:
+        st.error(f"❌ Errore nel recupero dati web: {str(e)}")
+        return []
+
+def fetch_real_time_prices_dashboard():
+    """Recupera prezzi live per la dashboard."""
+    data_list = []
+    for ticker, name in proper_names.items():
+        try:
+            d = yf.Ticker(ticker)
+            h = d.history(period="1d", interval="1m")
+            if not h.empty:
+                price = h['Close'].iloc[-1]
+                chg = ((price - h['Open'].iloc[0]) / h['Open'].iloc[0]) * 100
+                data_list.append({'Strumento': name, 'Prezzo': price, 'Var%': chg})
+        except:
+            continue
+    return data_list
+
+@st.cache_data
+def load_sample_data(symbol, interval='1h'):
+    period_map = {'5m': '60d', '15m': '60d', '1h': '730d'}
+    period = period_map.get(interval, '730d')
+    try:
+        data = yf.download(symbol, period=period, interval=interval, progress=False)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)
+        if len(data) < 100: raise Exception("Dati insufficienti")
+        data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+        return data
+    except Exception as e:
+        st.error(f"Errore nel caricamento dati: {e}")
+        return None
+
+@st.cache_resource
+def train_or_load_model(symbol, interval='1h'):
+    data = load_sample_data(symbol, interval)
+    if data is None: return None, None, None
+    df_ind = calculate_technical_indicators(data)
+    X, y = simulate_historical_trades(df_ind, n_trades=500)
+    model, scaler = train_model(X, y)
+    return model, scaler, df_ind
+
+proper_names = {
+    'GC=F': 'XAU/USD (Gold)',
+    'EURUSD=X': 'EUR/USD',
+    'SI=F': 'XAG/USD (Silver)',
+    'BTC-USD': 'BTC/USD',
+    '^GSPC': 'S&P 500',
+}
+
+# ==================== INTERFACCIA UTENTE ====================
+st.set_page_config(page_title="Trading Predictor AI - Gold Focus", page_icon="🥇", layout="wide", initial_sidebar_state="collapsed")
+
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    .main .block-container { padding-top: 2rem; padding-bottom: 2rem; max-width: 1600px; }
+    h1 { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700; font-size: 3rem !important; margin-bottom: 0.5rem !important; }
+    h2 { color: #FFA500; font-weight: 600; font-size: 1.8rem !important; margin-top: 1.5rem !important; }
+    h3 { color: #FF8C00; font-weight: 600; font-size: 1.4rem !important; margin-top: 1rem !important; }
+    .stMetric { background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%); padding: 1.2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(255, 215, 0, 0.2); transition: transform 0.2s ease; }
+    .stMetric:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(255, 215, 0, 0.3); }
+    .stMetric label { font-size: 0.9rem !important; font-weight: 600 !important; color: #8B4513 !important; }
+    .stMetric [data-testid="stMetricValue"] { font-size: 1.8rem !important; font-weight: 700 !important; color: #B8860B !important; }
+    .stButton > button { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: white; border: none; border-radius: 8px; padding: 0.6rem 1.5rem; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 4px 6px rgba(255, 165, 0, 0.3); }
+    .stButton > button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(255, 165, 0, 0.4); }
+    .stTextInput > div > div > input, .stSelectbox > div > div > select { border-radius: 8px; border: 2px solid #FFE4B5; padding: 0.6rem; }
+    .stSuccess { background-color: #c6f6d5; border-left: 4px solid #48bb78; border-radius: 8px; padding: 1rem; }
+    .stWarning { background-color: #feebc8; border-left: 4px solid #ed8936; border-radius: 8px; padding: 1rem; }
+    .stError { background-color: #fed7d7; border-left: 4px solid #f56565; border-radius: 8px; padding: 1rem; }
+    .stInfo { background-color: #bee3f8; border-left: 4px solid #4299e1; border-radius: 8px; padding: 1rem; }
+    .trade-card { background: white; border-radius: 12px; padding: 1rem; margin: 0.5rem 0; box-shadow: 0 2px 4px rgba(255, 215, 0, 0.15); border-left: 4px solid #FFD700; transition: all 0.2s ease; }
+    .trade-card:hover { box-shadow: 0 4px 8px rgba(255, 215, 0, 0.25); transform: translateX(4px); }
+    .gold-prediction-box { background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%); border: 3px solid #FFD700; border-radius: 15px; padding: 2rem; margin: 2rem 0; box-shadow: 0 8px 16px rgba(255, 215, 0, 0.3); }
+    .confidence-bar { background: linear-gradient(90deg, #FF6B6B 0%, #FFD700 50%, #4ECB71 100%); height: 30px; border-radius: 15px; position: relative; overflow: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# Sidebar per configurazione MT4
+with st.sidebar:
+    st.header("⚙️ Configurazione MT4")
+    mt4_path_input = st.text_input("Percorso Cartella 'Files' di MT4", value=DEFAULT_MT4_PATH)
+    if mt4_path_input:
+        st.session_state['mt4_path'] = mt4_path_input
+    st.info("Per trovare il percorso in MT4: File -> Apri Scheda Data -> MQL4 -> Files. Copia l'indirizzo della cartella qui.")
+
+st.title("🥇 Trading Predictor AI - Gold Analysis")
+st.markdown("""
+<div style='background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem;'>
+    <p style='color: white; font-size: 1.1rem; margin: 0; text-align: center; font-weight: 500;'>
+        🥇 Analisi Oro Avanzata • 📊 Confronto Storico • 🎯 Previsioni Multi-Fattoriali • 🧠 Psicologia Investitori • 🔗 Bridge MT4
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# --- SEZIONE PREZZI LIVE RICHIESTA ---
+st.markdown("### 🔴 Monitor Prezzi Live")
+if st.button("Aggiorna Prezzi Live", key="live_prices_btn", use_container_width=True):
+    with st.spinner("Recupero quotazioni aggiornate..."):
+        live_data = fetch_real_time_prices_dashboard()
+        if live_data:
+            cols = st.columns(len(live_data))
+            for i, d in enumerate(live_data):
+                color = "green" if d['Var%'] >= 0 else "red"
+                with cols[i]:
+                    st.markdown(f"""
+                    <div style='background: #FFF8DC; padding: 10px; border-radius: 8px; border: 1px solid #FFD700; text-align: center;'>
+                        <strong>{d['Strumento']}</strong><br>
+                        <span style='font-size: 1.2em;'>${d['Prezzo']:.2f}</span><br>
+                        <span style='color: {color};'>{d['Var%']:+.2f}%</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.warning("Impossibile recuperare i prezzi live.")
+st.markdown("---")
+# -------------------------------------
+
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    symbol = st.text_input("🔍 Seleziona Strumento (Ticker)", value="GC=F", help="GC=F (Oro), SI=F (Argento), BTC-USD, ^GSPC (S&P 500)")
+    proper_name = proper_names.get(symbol, symbol)
+    st.markdown(f"**Strumento selezionato:** `{proper_name}`")
+with col2:
+    data_interval = st.selectbox("⏰ Timeframe", ['5m', '15m', '1h'], index=2)
+with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    refresh_data = st.button("🔄 Carica Dati & AI", use_container_width=True)
+
+st.markdown("---")
+
+session_key = f"model_{symbol}_{data_interval}"
+if session_key not in st.session_state or refresh_data:
+    with st.spinner("🧠 Caricamento AI e analisi dati..."):
+        model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=data_interval)
+        if model is not None:
+            st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
+            st.success("✅ Sistema pronto! Modello addestrato con successo.")
+        else:
+            st.error("❌ Impossibile caricare dati. Verifica il ticker e riprova.")
+
+if session_key in st.session_state:
+    state = st.session_state[session_key]
+    model = state['model']
+    scaler = state['scaler']
+    df_ind = state['df_ind']
+    
+    ticker = yf.Ticker(symbol)
+    latest_hist = ticker.history(period="1d", interval="1m")
+    if not latest_hist.empty:
+        current_price = float(latest_hist['Close'].iloc[-1])
+    else:
+        current_price = df_ind['Close'].iloc[-1]
+    
+    if symbol == 'GC=F':
+        st.markdown("## 🥇 ANALISI ORO COMPLETA - Multi-Fattoriale")
+        with st.spinner("🔍 Analisi fondamentali e confronto storico in corso..."):
+            factors = get_gold_fundamental_factors()
+            gold_analysis = analyze_gold_historical_comparison(current_price, factors)
+        
+        st.markdown("""
+        <div class='gold-prediction-box'>
+            <h2 style='color: #B8860B; text-align: center; margin-bottom: 1.5rem;'>🎯 PREVISIONI PREZZO ORO</h2>
+        """, unsafe_allow_html=True)
+        col1, col2, col3, col4 = st.columns(4)
+        with col1: st.metric("💵 Prezzo Attuale", f"${gold_analysis['current_price']:.2f}")
+        with col2: st.metric("📅 Target 3 Mesi", f"${gold_analysis['target_3m']:.2f}", f"{((gold_analysis['target_3m'] - current_price) / current_price) * 100:+.1f}%")
+        with col3: st.metric("📅 Target 6 Mesi", f"${gold_analysis['target_6m']:.2f}", f"{((gold_analysis['target_6m'] - current_price) / current_price) * 100:+.1f}%")
+        with col4: st.metric("📅 Target 12 Mesi", f"${gold_analysis['target_1y']:.2f}", f"{((gold_analysis['target_1y'] - current_price) / current_price) * 100:+.1f}%")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        confidence = gold_analysis['confidence']
+        col_conf, col_range = st.columns([1, 1])
+        with col_conf:
+            st.markdown(f"""
+            <div style='text-align: center; padding: 1rem;'>
+                <div class='confidence-bar' style='margin: 1rem 0;'>
+                    <div style='width: {confidence}%; background: rgba(255, 255, 255, 0.3); height: 100%; display: flex; align-items: center; justify-content: center;'>
+                        <span style='color: white; font-weight: bold; font-size: 1.2rem;'>{confidence:.1f}%</span>
+                    </div>
+                </div>
+                <p style='color: #666; margin-top: 0.5rem;'>Confidenza basata su similarità storica e fattori fondamentali</p>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_range:
+            st.markdown("#### 📊 Range di Prezzo (12 mesi)")
+            st.info(f"Range: ${gold_analysis['range_low']:.2f} - ${gold_analysis['range_high']:.2f}")
+        
+        st.markdown("---")
+        st.markdown("### 📚 Confronto con Periodo Storico Più Simile")
+        similar_period = gold_analysis['most_similar_period']
+        period_data = gold_analysis['period_data']
+        context = gold_analysis['current_context']
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.markdown(f"#### 🕰️ {similar_period}: {period_data['description']}")
+            st.markdown(f"Similarità: **{gold_analysis['similarity_pct']:.1f}%**")
+            st.write(f"Eventi Chiave: {period_data['key_events']}")
+        with col2:
+            st.markdown("#### 🌍 Contesto Attuale (2025)")
+            st.write(f"Dollaro: {context['dollar_strength']}, Rischio Geo: {context['geopolitical']}/10, Banche Centrali: {context['central_bank']}")
+
+    avg_forecast, forecast_series = predict_price(df_ind, steps=5)
+    web_signals_list = get_web_signals(symbol, df_ind)
+    
+    st.markdown("---")
+    col_left, col_right = st.columns([1.2, 0.8])
+    with col_left:
+        st.markdown("### 💡 Suggerimenti Trade Intelligenti")
+        if web_signals_list:
+            suggestions_df = pd.DataFrame(web_signals_list).sort_values(by='Probability', ascending=False)
+            st.markdown("**📋 Clicca su 🔍 per analisi AI e invio a MT4:**")
+            for idx, row in suggestions_df.iterrows():
+                sentiment_emoji = "🟢" if row['Sentiment'] == 'Positive' else "🔴" if row['Sentiment'] == 'Negative' else "🟡"
+                col_trade, col_btn = st.columns([5, 1])
+                with col_trade:
+                    st.markdown(f"""
+                    <div class='trade-card'>
+                        <strong style='font-size: 1.1rem; color: #FFD700;'>{row['Direction'].upper()}</strong> 
+                        <span style='color: #4a5568;'>• Entry: <strong>${row['Entry']:.2f}</strong> • SL: ${row['SL']:.2f} • TP: ${row['TP']:.2f}</span><br>
+                        <span style='color: #2d3748;'>📊 Prob: <strong>{row['Probability']:.0f}%</strong> {sentiment_emoji} Sent: <strong>{row['Sentiment']}</strong></span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_btn:
+                    if st.button("🔍", key=f"analyze_{idx}", help="Analizza e Invia a MT4"):
+                        st.session_state.selected_trade = row
+
+        else:
+            st.info("ℹ️ Nessun suggerimento web disponibile.")
+    
+    with col_right:
+        st.markdown("### 🚀 Asset con Potenziale 2025")
+        growth_df = pd.DataFrame([
+            {"Asset": "🥇 Gold", "Ticker": "GC=F", "Score": "⭐⭐⭐⭐⭐"},
+            {"Asset": "🥈 Silver", "Ticker": "SI=F", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "₿ Bitcoin", "Ticker": "BTC-USD", "Score": "⭐⭐⭐⭐"},
+            {"Asset": "💎 Nvidia", "Ticker": "NVDA", "Score": "⭐⭐⭐⭐⭐"},
+            {"Asset": "📊 S&P 500", "Ticker": "^GSPC", "Score": "⭐⭐⭐⭐"}
+        ])
+        st.dataframe(growth_df, use_container_width=True, hide_index=True)
+    
+    if 'selected_trade' in st.session_state:
+        trade = st.session_state.selected_trade
+        st.markdown("---")
+        st.markdown("## 🤖 Analisi Approfondita & Esecuzione")
+        with st.spinner("🔮 Analisi AI in corso..."):
+            direction = 'long' if trade['Direction'].lower() in ['long', 'buy'] else 'short'
+            entry = trade['Entry']
+            sl = trade['SL']
+            tp = trade['TP']
+            features = generate_features(df_ind, entry, sl, tp, direction, 60)
+            success_prob = predict_success(model, scaler, features)
+            factors_list = get_dominant_factors(model, features)
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1: st.metric("🎲 Probabilità AI", f"{success_prob:.1f}%")
+            with col2: st.metric("R/R Ratio", f"{abs(tp - entry) / abs(entry - sl):.2f}x")
+            with col3: st.metric("📉 Rischio %", f"{abs(entry - sl) / entry * 100:.2f}%")
+            with col4: st.metric("📈 Reward %", f"{abs(tp - entry) / entry * 100:.2f}%")
+            
+            # --- SEZIONE BRIDGE MT4 ---
+            st.markdown("### 🚀 Esecuzione Ordine su MetaTrader 4")
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.info(f"Stai per inviare un ordine **{trade['Direction'].upper()}** su **{symbol}** a MT4.\nAssicurati che l'EA 'PyBridge' sia attivo.")
+            with c2:
+                if st.button("📤 INVIA A MT4", type="primary", use_container_width=True):
+                    success, msg = send_signal_to_mt4(symbol, trade['Direction'], entry, sl, tp)
+                    if success:
+                        st.balloons()
+                        st.success(f"✅ ORDINE INVIATO!\n{msg}")
+                    else:
+                        st.error(f"❌ Errore Invio: {msg}")
+            # --------------------------
+
+            st.markdown("### 🔍 Fattori Chiave AI")
+            for i, factor in enumerate(factors_list, 1):
+                st.markdown(f"**{i}.** {factor}")
+            
+            st.markdown("### 🧠 Psicologia")
+            st.markdown(get_investor_psychology(symbol, trade['News_Summary'], trade['Sentiment'], df_ind))
+else:
+    st.warning("⚠️ Seleziona uno strumento e carica i dati per iniziare l'analisi.")
+
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%); border-radius: 12px; margin-top: 2rem;'>
+    <p style='color: #8B4513; font-size: 0.95rem; margin: 0;'>
+        ⚠️ <strong>Disclaimer:</strong> Tool educativo. Non costituisce consiglio finanziario.
+    </p>
+</div>
+""", unsafe_allow_html=True)
