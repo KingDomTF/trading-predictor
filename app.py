@@ -10,43 +10,52 @@ import os
 
 warnings.filterwarnings('ignore')
 
-# ==================== CONFIGURAZIONE MT4 & MAPPING ====================
-# Mappa i simboli di Yahoo Finance (che usi nell'app) ai simboli precisi della tua MT4.
-# Modifica i valori a destra se il tuo broker usa nomi diversi (es. "Gold" invece di "XAUUSD").
-MT4_MAPPING = {
-    'GC=F': 'XAUUSD',      # Oro
-    'SI=F': 'XAGUSD',      # Argento
-    'EURUSD=X': 'EURUSD',  # Euro Dollaro
-    'BTC-USD': 'BTCUSD',   # Bitcoin
-    '^GSPC': 'US500'       # S&P 500
-}
-
-def get_mt4_live_data(file_path, symbol_yahoo):
-    """Legge il prezzo live dal file CSV generato dalla MT4."""
-    mt4_symbol = MT4_MAPPING.get(symbol_yahoo)
+def calculate_technical_indicators(df):
+    """Calcola indicatori tecnici."""
+    df = df.copy()
+   
+    # EMA
+    df['EMA_20'] = df['Close'].ewm(span=20).mean()
+    df['EMA_50'] = df['Close'].ewm(span=50).mean()
+   
+    # RSI
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
     
-    if not mt4_symbol:
-        return None, "Mapping non trovato"
-        
-    try:
-        if not os.path.exists(file_path):
-            return None, "File CSV non trovato"
-            
-        # Legge il CSV (formato: symbol;time;last;prev_close)
-        # Usa on_bad_lines='skip' per evitare crash durante la scrittura simultanea
-        df_mt4 = pd.read_csv(file_path, sep=';', names=['symbol', 'time', 'close', 'prev_close'], header=None)
-        
-        # Filtra per il simbolo corrente
-        row = df_mt4[df_mt4['symbol'] == mt4_symbol]
-        
-        if not row.empty:
-            price = float(row.iloc[0]['close'])
-            prev_close = float(row.iloc[0]['prev_close'])
-            return price, prev_close
-        return None, f"Simbolo {mt4_symbol} non nel CSV"
-        
-    except Exception as e:
-        return None, str(e)
+    # RIGA CORRETTA QUI SOTTO:
+    df['RSI'] = 100 - (100 / (1 + rs))
+   
+    # MACD
+    exp1 = df['Close'].ewm(span=12).mean()
+    exp2 = df['Close'].ewm(span=26).mean()
+    df['MACD'] = exp1 - exp2
+    df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
+   
+    # Bollinger Bands
+    df['BB_middle'] = df['Close'].rolling(window=20).mean()
+    bb_std = df['Close'].rolling(window=20).std()
+    df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
+    df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
+   
+    # ATR
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    df['ATR'] = true_range.rolling(14).mean()
+   
+    # Volume
+    df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
+   
+    # Trend
+    df['Price_Change'] = df['Close'].pct_change()
+    df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x[-1] > x[0] else 0)
+   
+    df = df.dropna()
+    return df
 
 # ==================== FUNZIONI CORE (ORIGINALI) ====================
 def calculate_technical_indicators(df):
