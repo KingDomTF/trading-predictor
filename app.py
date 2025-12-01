@@ -15,8 +15,7 @@ warnings.filterwarnings('ignore')
 # ==================== CONFIGURAZIONE BRIDGE MT4 ====================
 # Sostituisci con il percorso della tua cartella: 
 # C:\Users\TUO_NOME\AppData\Roaming\MetaQuotes\Terminal\Common\Files
-DEFAULT_MT4_PATH = r"C:\Users\Admin\AppData\Roaming\MetaQuotes\Terminal\Common\Files"
-
+DEFAULT_MT4_PATH = r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Experts"
 class MT4Bridge:
     def __init__(self, path):
         self.base_path = path
