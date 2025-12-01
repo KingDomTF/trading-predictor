@@ -63,8 +63,7 @@ def calculate_technical_indicators(df):
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     [cite_start]df['RSI'] = 100 - (100 / (1 + rs)) # [cite: 2]
-   
-    # [cite_start]MACD [cite: 2]
+   # [cite_start]MACD [cite: 2]
     exp1 = df['Close'].ewm(span=12).mean()
     exp2 = df['Close'].ewm(span=26).mean()
     df['MACD'] = exp1 - exp2
