@@ -1,71 +1,77 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
 import yfinance as yf
 import datetime
 import warnings
 import os
 import time
 import csv
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings('ignore')
 
-# ==================== CONFIGURAZIONE BRIDGE MT4 ====================
-# Percorso standard (da aggiornare con il tuo percorso reale se diverso)
-DEFAULT_MT4_PATH = r"C:\Users\Administrator\AppData\Roaming\MetaQuotes\Terminal\COMMON\Files" 
-DATA_FILENAME = "mt4_market_data.csv"
-SIGNAL_FILENAME = "py_signal.csv"
+# ==================== CONFIGURAZIONE BRIDGE ====================
+# [IMPORTANTE] Modifica questo percorso con il tuo
+DEFAULT_MT4_PATH = r"C:\Users\Administrator\AppData\Roaming\MetaQuotes\Terminal\COMMON\Files"
+DATA_FILENAME = "mt4_live_prices.csv"
 
-# ==================== FUNZIONI DI COMUNICAZIONE ====================
-def get_mt4_live_price(symbol_mt4_name):
-    """Legge il prezzo reale scritto dall'EA di MT4."""
+# ==================== GESTIONE DATI MT4 (ROBUSTA) ====================
+def get_mt4_data():
+    """
+    Legge il file CSV generato da MT4.
+    Gestisce conflitti di lettura e restituisce un DataFrame pulito.
+    """
     path = st.session_state.get('mt4_path', DEFAULT_MT4_PATH)
     file_path = os.path.join(path, DATA_FILENAME)
     
+    # 1. Verifica esistenza file
     if not os.path.exists(file_path):
-        return None, 0.0
+        return None, "File non trovato. Verifica il percorso e che l'EA sia attivo."
     
+    # 2. Verifica aggiornamento file (se il file è vecchio di > 10 secondi, l'EA è fermo)
     try:
-        # Legge il file CSV: Symbol, Bid, Ask, Time
-        # Esempio contenuto: XAUUSD,2650.50,2650.80,123456789
-        with open(file_path, 'r') as f:
-            reader = csv.reader(f)
-            rows = list(reader)
-            if not rows: return None, 0.0
+        mtime = os.path.getmtime(file_path)
+        if time.time() - mtime > 15:
+            return None, "Dati obsoleti. L'EA su MT4 sembra fermo o il mercato è chiuso."
+    except:
+        pass
+
+    # 3. Tentativo di lettura con retry (per evitare conflitti I/O)
+    max_retries = 5
+    for _ in range(max_retries):
+        try:
+            # Leggiamo il CSV
+            # Formato atteso: Symbol, Bid, Ask, Time
+            data = []
+            with open(file_path, 'r') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) >= 3:
+                        data.append({
+                            'Symbol': row[0],
+                            'Bid': float(row[1]),
+                            'Ask': float(row[2]),
+                            'Time': row[3] if len(row) > 3 else "N/A"
+                        })
             
-            # Cerca l'ultima riga corrispondente al simbolo
-            # MT4 potrebbe scrivere più simboli nello stesso file o sovrascrivere
-            # In questo EA semplice, sovrascriviamo, quindi leggiamo l'unica riga
-            for row in rows:
-                if len(row) >= 3:
-                    if row[0] == symbol_mt4_name:
-                        return float(row[1]), float(row[2]) # Bid, Ask
-            return None, 0.0
-    except Exception:
-        return None, 0.0
+            if not data:
+                return None, "Il file è vuoto. L'EA sta inizializzando..."
+                
+            return pd.DataFrame(data), "OK"
+            
+        except PermissionError:
+            # Se MT4 sta scrivendo, aspettiamo un attimo
+            time.sleep(0.05)
+        except Exception as e:
+            return None, f"Errore lettura: {str(e)}"
+    
+    return None, "Impossibile accedere al file dopo vari tentativi."
 
-def send_signal_to_mt4(symbol, direction, entry, sl, tp, volume=0.1):
-    """Invia ordine a MT4."""
-    try:
-        # Pulizia simbolo
-        mt4_symbol = symbol
-        if "GC" in symbol or "XAU" in symbol: mt4_symbol = "XAUUSD" # Adatta al tuo broker
-        elif "EUR" in symbol: mt4_symbol = "EURUSD"
-        
-        op_type = 0 if direction.lower() in ['long', 'buy'] else 1
-        line = f"{mt4_symbol},{op_type},{volume},{sl},{tp}"
-        
-        file_path = os.path.join(st.session_state.get('mt4_path', DEFAULT_MT4_PATH), SIGNAL_FILENAME)
-        
-        with open(file_path, "w") as f:
-            f.write(line)
-        return True, f"Segnale inviato per {mt4_symbol}"
-    except Exception as e:
-        return False, str(e)
+# ==================== FUNZIONI AI & CORE (Standard) ====================
+# (Mantengo le funzioni di calcolo tecnico invariate per l'analisi)
 
-# ==================== FUNZIONI CORE AI & ANALISI ====================
 def calculate_technical_indicators(df):
     df = df.copy()
     df['EMA_20'] = df['Close'].ewm(span=20).mean()
@@ -75,9 +81,7 @@ def calculate_technical_indicators(df):
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
-    exp1 = df['Close'].ewm(span=12).mean()
-    exp2 = df['Close'].ewm(span=26).mean()
-    df['MACD'] = exp1 - exp2
+    df['MACD'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
     df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
@@ -85,209 +89,157 @@ def calculate_technical_indicators(df):
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = np.max(ranges, axis=1)
     df['ATR'] = true_range.rolling(14).mean()
-    df['Price_Change'] = df['Close'].pct_change()
     df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x[-1] > x[0] else 0)
-    
-    # Bollinger Bands (Aggiunto per completezza feature)
-    df['BB_middle'] = df['Close'].rolling(window=20).mean()
-    df['BB_std'] = df['Close'].rolling(window=20).std()
-    df['BB_upper'] = df['BB_middle'] + (2 * df['BB_std'])
-    df['BB_lower'] = df['BB_middle'] - (2 * df['BB_std'])
-    df['BB_position'] = (df['Close'] - df['BB_lower']) / (df['BB_upper'] - df['BB_lower'])
-    df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
-
     df = df.dropna()
     return df
 
-def generate_features(df_ind, entry, sl, tp, direction, main_tf):
-    latest = df_ind.iloc[-1]
-    rr_ratio = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 1.0
-    sl_distance = abs(entry - sl) / entry * 100
-    features = {
-        'sl_distance_pct': sl_distance, 'tp_distance_pct': abs(tp - entry) / entry * 100,
-        'rr_ratio': rr_ratio, 'direction': 1 if direction == 'long' else 0, 'main_tf': 60,
-        'rsi': latest['RSI'], 'macd': latest['MACD'], 'macd_signal': latest['MACD_signal'],
-        'atr': latest['ATR'], 'ema_diff': (latest['EMA_20'] - latest['EMA_50']) / latest['Close'] * 100,
-        'bb_position': latest['BB_position'], 
-        'volume_ratio': latest['Volume'] / latest['Volume_MA'] if latest['Volume_MA'] > 0 else 1.0,
-        'price_change': latest['Price_Change'] * 100, 'trend': latest['Trend']
-    }
-    return np.array(list(features.values()), dtype=np.float32)
-
-def simulate_historical_trades(df_ind, n_trades=500):
-    X_list = []
-    y_list = []
-    for _ in range(n_trades):
-        idx = np.random.randint(50, len(df_ind) - 50)
-        row = df_ind.iloc[idx]
-        direction = np.random.choice(['long', 'short'])
-        entry = row['Close']
-        atr = row['ATR']
-        if np.isnan(atr) or atr == 0: continue
-        
-        sl_mult = np.random.uniform(1.0, 2.0)
-        tp_mult = np.random.uniform(1.5, 3.0)
-        
-        if direction == 'long':
-            sl = entry - (atr * sl_mult)
-            tp = entry + (atr * tp_mult)
-        else:
-            sl = entry + (atr * sl_mult)
-            tp = entry - (atr * tp_mult)
-            
-        features = generate_features(df_ind.iloc[:idx+1], entry, sl, tp, direction, 60)
-        future_prices = df_ind.iloc[idx+1:idx+40]['Close'].values # 40 candele future
-        
-        if len(future_prices) > 0:
-            if direction == 'long':
-                hit_tp = np.any(future_prices >= tp)
-                hit_sl = np.any(future_prices <= sl)
-            else:
-                hit_tp = np.any(future_prices <= tp)
-                hit_sl = np.any(future_prices >= sl)
-            
-            # Se prende TP prima di SL o prende TP senza SL
-            success = 1 if hit_tp and not hit_sl else 0
-            # Raffinamento: se prende entrambi, controlla chi viene prima (qui semplificato)
-            
-            X_list.append(features)
-            y_list.append(success)
-    return np.array(X_list), np.array(y_list)
-
-def train_model(X_train, y_train):
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_train)
-    model = RandomForestClassifier(n_estimators=100, max_depth=12, random_state=42)
-    model.fit(X_scaled, y_train)
-    return model, scaler
-
 @st.cache_data
-def load_historical_data(symbol, interval='1h'):
-    """Usa yfinance SOLO per lo storico (training), non per il prezzo live."""
+def load_historical_data_yf(symbol, interval='1h'):
+    """Scarica storico da YFinance per l'analisi tecnica (le candele)."""
+    # Mapping nomi MT4 -> Yahoo Finance
+    yf_map = {
+        "XAUUSD": "GC=F",
+        "EURUSD": "EURUSD=X",
+        "BTCUSD": "BTC-USD",
+        "XAGUSD": "SI=F",
+        "US500": "^GSPC"
+    }
+    
+    yf_ticker = yf_map.get(symbol, symbol)
     try:
-        # Mapping per yfinance se necessario
-        yf_symbol = symbol
-        if symbol == "XAUUSD": yf_symbol = "GC=F"
-        
-        data = yf.download(yf_symbol, period='1y', interval=interval, progress=False)
-        if len(data) < 100: return None
+        data = yf.download(yf_ticker, period='6mo', interval=interval, progress=False)
+        if len(data) < 50: return None
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.droplevel(1)
         return data[['Open', 'High', 'Low', 'Close', 'Volume']]
     except:
         return None
 
-# ==================== INTERFACCIA STREAMLIT ====================
-st.set_page_config(page_title="MT4 Live Bridge AI", page_icon="⚡", layout="wide")
+# ==================== INTERFACCIA UTENTE ====================
+st.set_page_config(page_title="MT4 Live Monitor", page_icon="📡", layout="wide")
 
 st.markdown("""
 <style>
-    .stMetric { background-color: #f0f2f6; border-radius: 10px; padding: 10px; border: 1px solid #d1d5db; }
-    .big-font { font-size: 24px !important; font-weight: bold; }
-    .live-badge { background-color: #d1fae5; color: #065f46; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
-    .delayed-badge { background-color: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
+    .stMetric { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 10px; }
+    .status-ok { color: #198754; font-weight: bold; }
+    .status-err { color: #dc3545; font-weight: bold; }
+    .live-card { border-left: 5px solid #ffc107; background: #fff3cd; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# Sidebar
+# --- SIDEBAR: Configurazione ---
 with st.sidebar:
-    st.header("⚙️ Configurazione")
-    mt4_path_input = st.text_input("Percorso Cartella 'Files' MT4", value=DEFAULT_MT4_PATH)
-    if mt4_path_input: st.session_state['mt4_path'] = mt4_path_input
+    st.header("⚙️ Configurazione Bridge")
+    path_input = st.text_input("Percorso Cartella 'Files' MT4", value=DEFAULT_MT4_PATH)
+    if path_input: st.session_state['mt4_path'] = path_input
+    st.caption("Assicurati che il percorso sia corretto e l'EA sia attivo.")
+    if st.button("Pulisci Cache"):
+        st.cache_data.clear()
+
+st.title("📡 MT4 Live Monitor AI")
+st.markdown("Monitoraggio prezzi reali da MetaTrader 4 e Analisi AI sui dati storici.")
+
+# --- SEZIONE 1: PREZZI LIVE DA MT4 ---
+st.markdown("### 🔴 Quotazioni Real-Time (MT4)")
+
+# Pulsante di refresh manuale (Streamlit non si aggiorna da solo senza loop complessi)
+if st.button("🔄 Aggiorna Quotazioni Ora", use_container_width=True):
+    pass 
+
+df_mt4, status_msg = get_mt4_data()
+
+if df_mt4 is not None:
+    st.markdown(f"<span class='status-ok'>✅ Connesso a MT4 - Ultimo aggiornamento EA: {df_mt4['Time'].iloc[0]}</span>", unsafe_allow_html=True)
     
-    st.info("""
-    **Istruzioni:**
-    1. Incolla il percorso 'Files' di MT4 qui sopra.
-    2. Assicurati che l'EA 'PyBridge' sia attivo sul grafico MT4.
-    3. L'EA scriverà i prezzi reali nel file e leggerà i segnali.
-    """)
-
-st.title("⚡ MT4 Live Bridge AI - 100% Real Time")
-
-# --- SEZIONE DATI LIVE DA MT4 ---
-st.markdown("### 🔴 Prezzi Real-Time (Dal Broker)")
-
-col1, col2, col3, col4 = st.columns(4)
-mt4_assets = ["XAUUSD", "EURUSD", "BTCUSD", "US500"] # Simboli come in MT4
-
-# Contenitore per aggiornamento automatico (simulato col bottone per efficienza Streamlit)
-if st.button("🔄 Aggiorna Prezzi Live da MT4", type="primary", use_container_width=True):
-    pass # Il rerun ricaricherà i dati
-
-live_prices = {}
-
-for i, asset in enumerate(mt4_assets):
-    bid, ask = get_mt4_live_price(asset)
-    live_prices[asset] = bid
-    
-    col = [col1, col2, col3, col4][i]
-    with col:
-        if bid is not None and bid > 0:
-            st.markdown(f"**{asset}** <span class='live-badge'>LIVE MT4</span>", unsafe_allow_html=True)
-            st.metric("Bid Price", f"{bid}")
-            st.caption(f"Spread: {((ask-bid)*100):.2f} pts")
-        else:
-            st.markdown(f"**{asset}** <span class='delayed-badge'>OFFLINE</span>", unsafe_allow_html=True)
-            st.warning("EA non attivo o simbolo errato")
+    # Creazione colonne dinamiche in base a quanti simboli trova
+    cols = st.columns(len(df_mt4))
+    for index, row in df_mt4.iterrows():
+        with cols[index]:
+            symbol = row['Symbol']
+            bid = row['Bid']
+            ask = row['Ask']
+            spread = (ask - bid)
+            
+            # Formattazione spread
+            if "JPY" in symbol or "XAU" in symbol or "XAG" in symbol or "500" in symbol:
+                spread_fmt = f"{spread:.2f}"
+            else:
+                spread_fmt = f"{spread:.5f}"
+                
+            st.metric(
+                label=f"**{symbol}**",
+                value=f"{bid}",
+                delta=f"Ask: {ask} | Spread: {spread_fmt}",
+                delta_color="off"
+            )
+else:
+    st.markdown(f"<span class='status-err'>⚠️ Stato Connessione: {status_msg}</span>", unsafe_allow_html=True)
+    st.info("Consiglio: Controlla che il percorso file nella sidebar sia corretto e che l'EA 'PyBridge_Feeder' stia girando.")
 
 st.markdown("---")
 
-# --- ANALISI STRUMENTO ---
-selected_asset = st.selectbox("Seleziona Asset per Analisi AI", mt4_assets)
-current_live_price = live_prices.get(selected_asset, 0)
+# --- SEZIONE 2: ANALISI AI IBRIDA ---
+# Logica: Usa i prezzi LIVE per il livello attuale, ma lo storico Yahoo per calcolare gli indicatori
 
-if st.button(f"🧠 Analizza {selected_asset}"):
-    if current_live_price == 0:
-        st.error("❌ Impossibile analizzare: Dati MT4 non rilevati. Attiva l'EA su MT4!")
-    else:
-        with st.spinner("Caricamento storico e calcolo AI..."):
-            # 1. Carica storico (usiamo yfinance solo per i dati passati per addestrare il modello)
-            hist_data = load_historical_data(selected_asset)
+st.markdown("### 🧠 Analisi Tecnica AI (Hybrid Mode)")
+
+# Selettore basato sui simboli trovati in MT4 (o default se non connesso)
+available_symbols = df_mt4['Symbol'].tolist() if df_mt4 is not None else ["XAUUSD", "EURUSD", "BTCUSD"]
+selected_symbol = st.selectbox("Seleziona Strumento da Analizzare", available_symbols)
+
+analyze_btn = st.button(f"Analizza {selected_symbol}")
+
+if analyze_btn:
+    # 1. Recupera Prezzo Live (se disponibile)
+    live_price = None
+    if df_mt4 is not None:
+        row = df_mt4[df_mt4['Symbol'] == selected_symbol]
+        if not row.empty:
+            live_price = row['Bid'].values[0]
+    
+    if live_price is None:
+        st.warning(f"⚠️ Prezzo live per {selected_symbol} non disponibile. Uso ultimo prezzo di chiusura storico (potrebbe essere in ritardo).")
+    
+    # 2. Carica Storico e Calcola Indicatori
+    with st.spinner("Elaborazione dati storici..."):
+        df_hist = load_historical_data_yf(selected_symbol)
+        
+        if df_hist is not None:
+            df_ind = calculate_technical_indicators(df_hist)
+            last_hist = df_ind.iloc[-1]
             
-            if hist_data is not None:
-                # 2. Addestra AI
-                df_ind = calculate_technical_indicators(hist_data)
-                X, y = simulate_historical_trades(df_ind)
-                model, scaler = train_model(X, y)
+            # Se abbiamo il prezzo live, usiamo quello come "Close" attuale per ricalcolare livelli critici
+            current_price = live_price if live_price else last_hist['Close']
+            
+            # Calcolo livelli dinamici basati su ATR
+            atr = last_hist['ATR']
+            trend = "RIALSISTA 🟢" if last_hist['Trend'] == 1 else "RIBASSISTA 🔴"
+            rsi = last_hist['RSI']
+            
+            # Visualizzazione
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"#### 📊 Dati Tecnici ({selected_symbol})")
+                st.write(f"Prezzo Analisi: **{current_price}**")
+                st.write(f"Trend (SMA20): **{trend}**")
+                st.write(f"RSI (14): **{rsi:.2f}**")
+                st.write(f"ATR (Volatilità): **{atr:.4f}**")
+            
+            with col2:
+                st.markdown("#### 🎯 Livelli Chiave Stimati")
+                st.markdown(f"""
+                <div class='live-card'>
+                    <strong>Resistenza Dinamica / TP Short:</strong> {current_price + (atr*1.5):.4f}<br>
+                    <strong>Supporto Dinamico / TP Long:</strong> {current_price - (atr*1.5):.4f}<br>
+                    <hr style='margin:5px 0'>
+                    <em>Questi livelli sono calcolati partendo dal prezzo LIVE MT4 + volatilità storica.</em>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                latest = df_ind.iloc[-1]
-                atr = latest['ATR']
-                
-                # 3. Genera Setup usando il PREZZO LIVE DI MT4
-                st.success(f"✅ Analisi completata su prezzo LIVE: {current_live_price}")
-                
-                c1, c2 = st.columns(2)
-                
-                # Setup LONG
-                sl_long = current_live_price - (atr * 1.5)
-                tp_long = current_live_price + (atr * 2.5)
-                feat_long = generate_features(df_ind, current_live_price, sl_long, tp_long, 'long', 60)
-                prob_long = model.predict_proba(scaler.transform([feat_long]))[0][1] * 100
-                
-                # Setup SHORT
-                sl_short = current_live_price + (atr * 1.5)
-                tp_short = current_live_price - (atr * 2.5)
-                feat_short = generate_features(df_ind, current_live_price, sl_short, tp_short, 'short', 60)
-                prob_short = model.predict_proba(scaler.transform([feat_short]))[0][1] * 100
-                
-                with c1:
-                    st.markdown(f"### 🐂 LONG SETUP ({prob_long:.1f}%)")
-                    st.write(f"Entry: **{current_live_price}**")
-                    st.write(f"SL: {sl_long:.2f} | TP: {tp_long:.2f}")
-                    if prob_long > 60:
-                        if st.button("🚀 APRI BUY SU MT4", key="buy_btn"):
-                            ok, msg = send_signal_to_mt4(selected_asset, "BUY", current_live_price, sl_long, tp_long)
-                            if ok: st.toast(msg, icon="✅")
-                            else: st.error(msg)
-                            
-                with c2:
-                    st.markdown(f"### 🐻 SHORT SETUP ({prob_short:.1f}%)")
-                    st.write(f"Entry: **{current_live_price}**")
-                    st.write(f"SL: {sl_short:.2f} | TP: {tp_short:.2f}")
-                    if prob_short > 60:
-                        if st.button("🚀 APRI SELL SU MT4", key="sell_btn"):
-                            ok, msg = send_signal_to_mt4(selected_asset, "SELL", current_live_price, sl_short, tp_short)
-                            if ok: st.toast(msg, icon="✅")
-                            else: st.error(msg)
-                            
-            else:
-                st.error("Dati storici insufficienti per addestramento modello.")
+            # Avviso finale
+            st.info("Nota: Questa analisi usa la volatilità storica (Yahoo) applicata al prezzo reale (MT4) per darti i livelli più precisi possibili senza eseguire ordini.")
+            
+        else:
+            st.error("Errore nel recupero dei dati storici. Verifica la connessione internet o il simbolo.")
+
+st.markdown("<br><br><div style='text-align:center; color:gray; font-size:0.8em'>System V3.0 - Read Only Mode</div>", unsafe_allow_html=True)
