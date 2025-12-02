@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 # IMPORTANTE: Cambia questo percorso con la cartella 'Files' del tuo terminale MT4
 # Esempio: C:/Users/NomeUtente/AppData/Roaming/MetaQuotes/Terminal/ID_TERMINALE/MQL4/Files
 # Per testare facilmente, useremo una cartella C:/Temp/MT4_Bridge e useremo un symlink o copieremo i file
-DEFAULT_BRIDGE_PATH = "C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"
+DEFAULT_BRIDGE_PATH = r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"
 
 # ==================== MT4 BRIDGE SYSTEM ====================
 
