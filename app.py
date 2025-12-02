@@ -16,7 +16,7 @@ warnings.filterwarnings('ignore')
 # IMPORTANTE: Inserisci qui il percorso della cartella MQL4/Files del tuo MT4
 # Esempio: "C:/Users/NomeUtente/AppData/Roaming/MetaQuotes/Terminal/ID_TERMINALE/MQL4/Files"
 # Se usi C:/MT4_Bridge, devi abilitare le DLL in MT4 o usare i Link Simbolici.
-BRIDGE_FOLDER = "C:/MT4_Bridge" 
+BRIDGE_FOLDER = r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files" 
 
 # ==================== MT4 BRIDGE SYSTEM ====================
 class MT4Bridge:
