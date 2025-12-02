@@ -1,6 +1,6 @@
 """
 Trading Predictor AI - MT4 Integration
-Versione Finale Ottimizzata
+Versione Finale Ottimizzata (con supporto 1 Minuto)
 GitHub Ready - Streamlit Cloud Compatible
 """
 
@@ -247,6 +247,7 @@ def predict_success(model, scaler, features):
 def load_sample_data(symbol, interval='1h'):
     """Carica dati da yfinance"""
     period_map = {
+        '1m': '7d',   # <--- NUOVO: Timeframe 1 minuto (max 7 giorni history)
         '5m': '60d',
         '15m': '60d',
         '1h': '730d'
@@ -425,7 +426,8 @@ with col1:
     )
 
 with col2:
-    interval = st.selectbox("⏱️ Timeframe", ['5m', '15m', '1h'], index=2)
+    # --- MODIFICA QUI: Aggiunto '1m' alla lista ---
+    interval = st.selectbox("⏱️ Timeframe", ['1m', '5m', '15m', '1h'], index=3)
 
 with col3:
     load_btn = st.button("🔄 Carica Dati", use_container_width=True)
