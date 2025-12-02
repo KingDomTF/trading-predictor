@@ -1,7 +1,6 @@
 """
 Trading Predictor AI - MT4 Integration
-Versione Finale Ottimizzata (con supporto 1 Minuto)
-GitHub Ready - Streamlit Cloud Compatible
+Versione Finale: Supporto 1 Minuto + Prezzo Live Reale da MT4
 """
 
 import streamlit as st
@@ -23,7 +22,8 @@ warnings.filterwarnings('ignore')
 class MT4Bridge:
     """Sistema di comunicazione con MetaTrader 4"""
     
-    def __init__(self, bridge_folder=r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"):
+    # ⚠️ IMPORTANTE: Assicurati che questo percorso corrisponda alla cartella MQL4/Files del tuo MT4
+    def __init__(self, bridge_folder="C:/MT4_Bridge"):
         self.bridge_folder = Path(bridge_folder)
         self.signals_file = self.bridge_folder / "signals.json"
         self.status_file = self.bridge_folder / "status.json"
@@ -247,7 +247,7 @@ def predict_success(model, scaler, features):
 def load_sample_data(symbol, interval='1h'):
     """Carica dati da yfinance"""
     period_map = {
-        '1m': '7d',   # <--- NUOVO: Timeframe 1 minuto (max 7 giorni history)
+        '1m': '7d',   # Timeframe 1 minuto supportato
         '5m': '60d',
         '15m': '60d',
         '1h': '730d'
@@ -353,7 +353,7 @@ def get_web_signals(symbol, df_ind, current_price):
         st.error(f"Errore generazione segnali: {e}")
         return []
 
-# ==================== LIVE PRICE FETCHER (AGGIORNATO) ====================
+# ==================== LIVE PRICE FETCHER (MT4 PRIORITY) ====================
 
 def get_live_price(symbol):
     """
@@ -364,14 +364,11 @@ def get_live_price(symbol):
     if 'mt4_bridge' in st.session_state:
         status = st.session_state.mt4_bridge.get_status()
         if status and 'live_price' in status:
-            # Controlla se il dato è fresco (opzionale, qui ci fidiamo del file)
-            mt4_price = float(status['live_price'])
-            return mt4_price
+            return float(status['live_price'])
 
     # 2. Fallback su Yahoo Finance (Se MT4 è chiuso)
     try:
         ticker = yf.Ticker(symbol)
-        # Periodo brevissimo per avere l'ultimo tick disponibile
         hist = ticker.history(period="1d", interval="1m")
         if not hist.empty:
             return float(hist['Close'].iloc[-1])
@@ -390,7 +387,6 @@ proper_names = {
     '^GSPC': 'S&P 500',
 }
 
-# Page config
 st.set_page_config(
     page_title="Trading AI - MT4 Bridge",
     page_icon="🤖",
@@ -398,7 +394,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS
 st.markdown("""
 <style>
     .main .block-container {padding-top: 2rem; max-width: 1600px;}
@@ -414,11 +409,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header
 st.title("🤖 Trading AI - MetaTrader 4 Bridge")
 st.markdown("**Sistema di Trading Automatizzato con Intelligenza Artificiale**")
 
-# Initialize session state
 if 'live_price_active' not in st.session_state:
     st.session_state.live_price_active = False
 
@@ -427,18 +420,12 @@ if 'mt4_bridge' not in st.session_state:
 
 bridge = st.session_state.mt4_bridge
 
-# Main controls
 col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
 
 with col1:
-    symbol = st.selectbox(
-        "📊 Strumento",
-        list(proper_names.keys()),
-        format_func=lambda x: proper_names[x]
-    )
+    symbol = st.selectbox("📊 Strumento", list(proper_names.keys()), format_func=lambda x: proper_names[x])
 
 with col2:
-    # --- MODIFICA QUI: Aggiunto '1m' alla lista ---
     interval = st.selectbox("⏱️ Timeframe", ['1m', '5m', '15m', '1h'], index=3)
 
 with col3:
@@ -453,31 +440,24 @@ with col4:
 
 st.markdown("---")
 
-# Load data
 session_key = f"model_{symbol}_{interval}"
 
 if session_key not in st.session_state or load_btn:
     with st.spinner("🧠 Caricamento AI..."):
         model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=interval)
-        
         if model is not None:
-            st.session_state[session_key] = {
-                'model': model,
-                'scaler': scaler,
-                'df_ind': df_ind
-            }
+            st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
             st.success("✅ Sistema pronto!")
         else:
             st.error("❌ Errore caricamento dati")
 
-# Main content
 if session_key in st.session_state:
     state = st.session_state[session_key]
     model = state['model']
     scaler = state['scaler']
     df_ind = state['df_ind']
     
-    # Get current price
+    # LIVE PRICE DISPLAY LOOP
     if st.session_state.live_price_active:
         placeholder_price = st.empty()
         
@@ -486,7 +466,15 @@ if session_key in st.session_state:
             
             if live_price:
                 current_price = live_price
-                placeholder_price.success(f"📡 **LIVE:** ${current_price:.2f} - Aggiornamento automatico ogni 1s")
+                
+                # Check source
+                status = bridge.get_status()
+                if status and 'live_price' in status:
+                     source_text = "MT4 REAL-TIME" 
+                else: 
+                     source_text = "YAHOO (DELAYED)"
+                
+                placeholder_price.success(f"📡 **LIVE ({source_text}):** ${current_price:.2f}")
             else:
                 current_price = df_ind['Close'].iloc[-1]
                 placeholder_price.warning(f"⚠️ Prezzo da cache: ${current_price:.2f}")
@@ -496,55 +484,30 @@ if session_key in st.session_state:
         current_price = df_ind['Close'].iloc[-1]
         st.info(f"💵 **Prezzo Attuale:** ${current_price:.2f} (Click 'START Live' per aggiornamento real-time)")
     
-    # Indicators dashboard
     st.markdown("### 📊 Dashboard Indicatori")
-    
     latest = df_ind.iloc[-1]
     
     col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.metric("💵 Prezzo", f"${current_price:.2f}")
-    
-    with col2:
-        rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
-        st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
-    
-    with col3:
-        st.metric("📏 ATR", f"{latest['ATR']:.2f}")
-    
-    with col4:
-        trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
-        trend_text = "Bullish" if latest['Trend'] == 1 else "Bearish"
-        st.metric(f"{trend_emoji} Trend", trend_text)
-    
-    with col5:
-        macd_signal = "🟢 BUY" if latest['MACD'] > latest['MACD_signal'] else "🔴 SELL"
-        st.metric("📊 MACD", macd_signal)
+    with col1: st.metric("💵 Prezzo", f"${current_price:.2f}")
+    with col2: st.metric(f"{'🟢' if 30 <= latest['RSI'] <= 70 else '🔴'} RSI", f"{latest['RSI']:.1f}")
+    with col3: st.metric("📏 ATR", f"{latest['ATR']:.2f}")
+    with col4: st.metric(f"{'📈' if latest['Trend'] == 1 else '📉'} Trend", "Bullish" if latest['Trend'] == 1 else "Bearish")
+    with col5: st.metric("📊 MACD", "🟢 BUY" if latest['MACD'] > latest['MACD_signal'] else "🔴 SELL")
     
     st.markdown("---")
     
-    # Generate signals
     web_signals = get_web_signals(symbol, df_ind, current_price)
     
     col_left, col_right = st.columns([1.5, 1])
     
     with col_left:
         st.markdown("### 💡 Suggerimenti AI")
-        
         if web_signals:
             for idx, signal in enumerate(web_signals):
                 with st.container():
                     col_sig, col_btn = st.columns([5, 1])
-                    
                     with col_sig:
-                        direction_color = "🟢" if signal['Direction'] == 'LONG' else "🔴"
-                        st.markdown(f"""
-                        **{direction_color} {signal['Direction']}** - Entry: `${signal['Entry']:.2f}` | 
-                        SL: `${signal['SL']:.2f}` | TP: `${signal['TP']:.2f}` | 
-                        Prob: **{signal['Probability']}%** | {signal['Signal']}
-                        """)
-                    
+                        st.markdown(f"**{'🟢' if signal['Direction'] == 'LONG' else '🔴'} {signal['Direction']}** - Entry: `${signal['Entry']:.2f}` | SL: `${signal['SL']:.2f}` | TP: `${signal['TP']:.2f}` | Prob: **{signal['Probability']}%** | {signal['Signal']}")
                     with col_btn:
                         if st.button("🎯", key=f"sel_{idx}"):
                             st.session_state.selected_trade = signal
@@ -553,21 +516,13 @@ if session_key in st.session_state:
     
     with col_right:
         st.markdown("### 🔗 MT4 Connection")
-        
         status = bridge.get_status()
-        
         if status:
             st.success("🟢 **CONNESSO**")
-            
-            col_s1, col_s2 = st.columns(2)
-            with col_s1:
-                st.metric("💰 Balance", f"${status.get('balance', 0):,.2f}")
-            with col_s2:
-                st.metric("📈 Equity", f"${status.get('equity', 0):,.2f}")
-            
-            margin_level = status.get('margin_level', 0)
-            st.metric("📊 Margin", f"{margin_level:.1f}%")
-            
+            c1, c2 = st.columns(2)
+            c1.metric("💰 Balance", f"${status.get('balance', 0):,.2f}")
+            c2.metric("📈 Equity", f"${status.get('equity', 0):,.2f}")
+            st.metric("📊 Margin", f"{status.get('margin_level', 0):.1f}%")
             st.caption(f"🕐 {status.get('timestamp', 'N/A')}")
         else:
             st.warning("🟡 **DISCONNESSO**")
@@ -575,19 +530,15 @@ if session_key in st.session_state:
         
         st.markdown("#### 📋 Trade Aperti")
         trades = bridge.get_open_trades()
-        
         if trades:
             for trade in trades[:5]:
                 profit = trade.get('profit', 0)
-                emoji = "🟢" if profit >= 0 else "🔴"
-                st.markdown(f"{emoji} **{trade.get('symbol')}** ${profit:.2f}")
+                st.markdown(f"{'🟢' if profit >= 0 else '🔴'} **{trade.get('symbol')}** ${profit:.2f}")
         else:
             st.info("Nessun trade")
     
-    # Selected trade analysis
     if 'selected_trade' in st.session_state:
         trade = st.session_state.selected_trade
-        
         st.markdown("---")
         st.markdown("## 🎯 Analisi Trade Selezionato")
         
@@ -596,115 +547,51 @@ if session_key in st.session_state:
         sl = trade['SL']
         tp = trade['TP']
         
-        # AI Prediction
         features = generate_features(df_ind, entry, sl, tp, direction, 60)
         ai_prob = predict_success(model, scaler, features)
         
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("🎲 AI Confidence", f"{ai_prob:.1f}%")
-        
-        with col2:
-            rr = abs(tp - entry) / abs(entry - sl)
-            st.metric("⚖️ Risk/Reward", f"{rr:.2f}x")
-        
-        with col3:
-            risk_pct = abs(entry - sl) / entry * 100
-            st.metric("📉 Risk", f"{risk_pct:.2f}%")
-        
-        with col4:
-            reward_pct = abs(tp - entry) / entry * 100
-            st.metric("📈 Reward", f"{reward_pct:.2f}%")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🎲 AI Confidence", f"{ai_prob:.1f}%")
+        c2.metric("⚖️ Risk/Reward", f"{abs(tp - entry) / abs(entry - sl):.2f}x")
+        c3.metric("📉 Risk", f"{abs(entry - sl) / entry * 100:.2f}%")
+        c4.metric("📈 Reward", f"{abs(tp - entry) / entry * 100:.2f}%")
         
         st.markdown("---")
-        
-        # MT4 Integration
         st.markdown("### 🚀 Invia a MetaTrader 4")
         
-        col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+        cc1, cc2, cc3 = st.columns(3)
+        acc_bal = cc1.number_input("💰 Balance Account ($)", min_value=100.0, value=10000.0, step=100.0)
+        r_pct = cc2.number_input("📊 Rischio (%)", min_value=0.5, value=2.0, step=0.5)
         
-        with col_cfg1:
-            account_balance = st.number_input(
-                "💰 Balance Account ($)",
-                min_value=100.0,
-                value=10000.0,
-                step=100.0
-            )
+        sl_pips = abs(entry - sl) / 0.01
+        lot_size = calculate_lot_size(acc_bal, r_pct, sl_pips)
+        cc3.metric("📦 Lot Size", f"{lot_size:.2f}")
         
-        with col_cfg2:
-            risk_pct = st.number_input(
-                "📊 Rischio per Trade (%)",
-                min_value=0.5,
-                max_value=10.0,
-                value=2.0,
-                step=0.5
-            )
-        
-        with col_cfg3:
-            sl_pips = abs(entry - sl) / 0.01
-            lot_size = calculate_lot_size(account_balance, risk_pct, sl_pips)
-            st.metric("📦 Lot Size", f"{lot_size:.2f}")
-        
-        # Trade info
         mt4_symbol = convert_to_mt4_symbol(symbol)
-        direction_mt4 = "BUY" if trade['Direction'].lower() == 'long' else "SELL"
+        dir_mt4 = "BUY" if trade['Direction'].lower() == 'long' else "SELL"
         
-        st.info(f"""
-        **📋 Riepilogo Ordine:**
+        st.info(f"**Ordine:** `{mt4_symbol}` | `{dir_mt4}` | Lotti: `{lot_size}` | SL: `{sl}` | TP: `{tp}`")
         
-        🎯 **Simbolo:** `{mt4_symbol}`  
-        📊 **Direzione:** `{direction_mt4}`  
-        💵 **Entry:** `{entry:.2f}`  
-        🛑 **Stop Loss:** `{sl:.2f}`  
-        🎯 **Take Profit:** `{tp:.2f}`  
-        📦 **Lotti:** `{lot_size:.2f}`  
-        🎲 **AI Confidence:** `{ai_prob:.1f}%`  
-        💰 **Rischio Max:** `${account_balance * risk_pct / 100:.2f}`
-        """)
+        cs, cc = st.columns(2)
+        if cs.button("🚀 INVIA ORDINE A MT4", type="primary", use_container_width=True):
+            sig_data = {
+                "symbol": mt4_symbol, "direction": dir_mt4, "entry": entry,
+                "sl": sl, "tp": tp, "lot_size": lot_size,
+                "probability": trade['Probability'], "ai_confidence": ai_prob,
+                "rr_ratio": abs(tp - entry) / abs(entry - sl),
+                "comment": f"AI_{mt4_symbol}", "magic": 12345
+            }
+            if bridge.send_signal(sig_data):
+                st.success("✅ Inviato!"); st.balloons()
+            else: st.error("❌ Errore")
         
-        # Send button
-        col_send, col_clear = st.columns(2)
-        
-        with col_send:
-            if st.button("🚀 INVIA ORDINE A MT4", type="primary", use_container_width=True):
-                signal_data = {
-                    "symbol": mt4_symbol,
-                    "direction": direction_mt4,
-                    "entry": entry,
-                    "sl": sl,
-                    "tp": tp,
-                    "lot_size": lot_size,
-                    "probability": trade['Probability'],
-                    "ai_confidence": ai_prob,
-                    "rr_ratio": rr,
-                    "comment": f"AI_{mt4_symbol}_{datetime.datetime.now().strftime('%H%M')}",
-                    "magic": 12345
-                }
-                
-                if bridge.send_signal(signal_data):
-                    st.success("✅ Segnale inviato con successo!")
-                    st.balloons()
-                else:
-                    st.error("❌ Errore nell'invio del segnale")
-        
-        with col_clear:
-            if st.button("🗑️ Pulisci Segnale", use_container_width=True):
-                if bridge.clear_signal():
-                    st.success("✅ Segnale cancellato")
-                    del st.session_state.selected_trade
-                    st.rerun()
-
+        if cc.button("🗑️ Pulisci", use_container_width=True):
+            bridge.clear_signal()
+            st.success("✅ Cancellato")
+            del st.session_state.selected_trade
+            st.rerun()
 else:
     st.warning("⚠️ Carica i dati per iniziare l'analisi")
 
-# Footer
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center; padding: 1rem; background: #f8fafc; border-radius: 8px;'>
-    <p style='color: #64748b; margin: 0;'>
-        ⚠️ <strong>Disclaimer:</strong> Sistema educativo. Non costituisce consulenza finanziaria. 
-        Trading comporta rischi di perdita. Usa sempre stop loss.
-    </p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("<center><p style='color: #64748b;'>⚠️ Disclaimer: Sistema educativo.</p></center>", unsafe_allow_html=True)
