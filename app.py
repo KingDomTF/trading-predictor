@@ -353,20 +353,32 @@ def get_web_signals(symbol, df_ind, current_price):
         st.error(f"Errore generazione segnali: {e}")
         return []
 
-# ==================== LIVE PRICE FETCHER ====================
+# ==================== LIVE PRICE FETCHER (AGGIORNATO) ====================
 
 def get_live_price(symbol):
-    """Recupera prezzo live"""
+    """
+    Recupera prezzo live PRIMA da MT4 (preciso), 
+    poi da YFinance (fallback ritardato)
+    """
+    # 1. Prova a leggere dal Bridge MT4 (Prezzo Reale del Broker)
+    if 'mt4_bridge' in st.session_state:
+        status = st.session_state.mt4_bridge.get_status()
+        if status and 'live_price' in status:
+            # Controlla se il dato è fresco (opzionale, qui ci fidiamo del file)
+            mt4_price = float(status['live_price'])
+            return mt4_price
+
+    # 2. Fallback su Yahoo Finance (Se MT4 è chiuso)
     try:
         ticker = yf.Ticker(symbol)
+        # Periodo brevissimo per avere l'ultimo tick disponibile
         hist = ticker.history(period="1d", interval="1m")
-        
         if not hist.empty:
             return float(hist['Close'].iloc[-1])
-        
-        return None
     except:
-        return None
+        pass
+        
+    return None
 
 # ==================== STREAMLIT UI ====================
 
