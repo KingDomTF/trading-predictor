@@ -1,7 +1,9 @@
 """
-Trading Predictor AI - MT4 Integration (Python Side)
-Versione Finale: 2.0
+Trading Predictor AI - MT4 Integration
+Versione Finale Ottimizzata
+GitHub Ready - Streamlit Cloud Compatible
 """
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -13,20 +15,15 @@ import warnings
 import json
 import time
 from pathlib import Path
-import os
 
 warnings.filterwarnings('ignore')
-
-# ==================== CONFIGURAZIONE PERCORSI ====================
-# IMPORTANTE: Cambia questo percorso con la cartella 'Files' del tuo terminale MT4
-# Esempio: C:/Users/NomeUtente/AppData/Roaming/MetaQuotes/Terminal/ID_TERMINALE/MQL4/Files
-# Per testare facilmente, useremo una cartella C:/Temp/MT4_Bridge e useremo un symlink o copieremo i file
-DEFAULT_BRIDGE_PATH = r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"
 
 # ==================== MT4 BRIDGE SYSTEM ====================
 
 class MT4Bridge:
-    def __init__(self, bridge_folder=DEFAULT_BRIDGE_PATH):
+    """Sistema di comunicazione con MetaTrader 4"""
+    
+    def __init__(self, bridge_folder="C:/MT4_Bridge"):
         self.bridge_folder = Path(bridge_folder)
         self.signals_file = self.bridge_folder / "signals.json"
         self.status_file = self.bridge_folder / "status.json"
@@ -34,18 +31,12 @@ class MT4Bridge:
         
         try:
             self.bridge_folder.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            st.error(f"Errore creazione cartella: {e}")
+        except:
+            pass
     
     def send_signal(self, signal_data):
+        """Invia segnale a MT4"""
         try:
-            # Pulisci i tipi numpy per la serializzazione JSON
-            for key, value in signal_data.items():
-                if isinstance(value, (np.integer, np.int64)):
-                    signal_data[key] = int(value)
-                elif isinstance(value, (np.floating, np.float64)):
-                    signal_data[key] = float(value)
-
             signal = {
                 "timestamp": datetime.datetime.now().isoformat(),
                 "symbol": str(signal_data.get("symbol", "XAUUSD")),
@@ -54,12 +45,16 @@ class MT4Bridge:
                 "stop_loss": float(signal_data.get("sl", 0)),
                 "take_profit": float(signal_data.get("tp", 0)),
                 "lot_size": float(signal_data.get("lot_size", 0.01)),
+                "probability": float(signal_data.get("probability", 0)),
+                "ai_confidence": float(signal_data.get("ai_confidence", 0)),
+                "risk_reward": float(signal_data.get("rr_ratio", 0)),
+                "comment": str(signal_data.get("comment", "AI_Signal")),
                 "magic_number": int(signal_data.get("magic", 12345)),
-                "command": "OPEN" # Comando esplicito per l'EA
+                "status": "PENDING"
             }
             
             with open(self.signals_file, 'w', encoding='utf-8') as f:
-                json.dump(signal, f, indent=2)
+                json.dump(signal, f, indent=2, ensure_ascii=False)
             
             return True
         except Exception as e:
@@ -67,60 +62,81 @@ class MT4Bridge:
             return False
     
     def get_status(self):
+        """Leggi status MT4"""
         try:
             if self.status_file.exists():
-                # Ritardo minimo per evitare conflitti di lettura/scrittura
                 with open(self.status_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except:
-            return None
+            pass
         return None
     
     def get_open_trades(self):
+        """Leggi trade aperti"""
         try:
             if self.trades_file.exists():
                 with open(self.trades_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except:
-            return []
+            pass
         return []
-
+    
     def clear_signal(self):
+        """Pulisci segnale"""
         try:
             if self.signals_file.exists():
-                os.remove(self.signals_file)
+                self.signals_file.unlink()
             return True
         except:
             return False
 
-# ==================== INDICATORS & AI ====================
+# ==================== HELPER FUNCTIONS ====================
+
+def convert_to_mt4_symbol(yf_symbol):
+    """Converte ticker yfinance in simbolo MT4"""
+    mapping = {
+        'GC=F': 'XAUUSD',
+        'SI=F': 'XAGUSD',
+        'EURUSD=X': 'EURUSD',
+        'GBPUSD=X': 'GBPUSD',
+        'USDJPY=X': 'USDJPY',
+        'BTC-USD': 'BTCUSD',
+        '^GSPC': 'US500',
+    }
+    return mapping.get(yf_symbol, yf_symbol.replace('=F', '').replace('=X', ''))
+
+def calculate_lot_size(balance, risk_pct, sl_distance_pips, pip_value=10):
+    """Calcola lot size con risk management"""
+    risk_amount = balance * (risk_pct / 100)
+    lot_size = risk_amount / (sl_distance_pips * pip_value)
+    lot_size = round(lot_size, 2)
+    return max(0.01, min(lot_size, 10.0))
+
+# ==================== TECHNICAL INDICATORS ====================
 
 def calculate_technical_indicators(df):
+    """Calcola indicatori tecnici"""
     df = df.copy()
-    # Indicatori base
+    
     df['EMA_20'] = df['Close'].ewm(span=20).mean()
     df['EMA_50'] = df['Close'].ewm(span=50).mean()
     
-    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # MACD
     exp1 = df['Close'].ewm(span=12).mean()
     exp2 = df['Close'].ewm(span=26).mean()
     df['MACD'] = exp1 - exp2
     df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
     
-    # Bollinger Bands
     df['BB_middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
     df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
     df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
     
-    # ATR
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
@@ -128,159 +144,553 @@ def calculate_technical_indicators(df):
     true_range = np.max(ranges, axis=1)
     df['ATR'] = true_range.rolling(14).mean()
     
-    df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x.iloc[-1] > x.iloc[0] else 0)
+    df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
+    df['Price_Change'] = df['Close'].pct_change()
+    df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x[-1] > x[0] else 0)
     
-    return df.dropna()
+    df = df.dropna()
+    return df
+
+# ==================== AI MODEL ====================
 
 def generate_features(df_ind, entry, sl, tp, direction, main_tf):
+    """Genera features per predizione"""
     latest = df_ind.iloc[-1]
-    features = [
-        abs(entry - sl) / entry * 100, # SL Dist %
-        abs(tp - entry) / entry * 100, # TP Dist %
-        abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 1.0, # RR
-        1 if direction == 'long' else 0,
-        latest['RSI'],
-        latest['MACD'],
-        latest['ATR'],
-        (latest['EMA_20'] - latest['EMA_50']) / latest['Close'] * 100,
-        latest['Trend']
-    ]
-    return np.array(features, dtype=np.float32)
+    
+    rr_ratio = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 1.0
+    sl_distance = abs(entry - sl) / entry * 100
+    tp_distance = abs(tp - entry) / entry * 100
+    
+    features = {
+        'sl_distance_pct': sl_distance,
+        'tp_distance_pct': tp_distance,
+        'rr_ratio': rr_ratio,
+        'direction': 1 if direction == 'long' else 0,
+        'main_tf': main_tf,
+        'rsi': latest['RSI'],
+        'macd': latest['MACD'],
+        'macd_signal': latest['MACD_signal'],
+        'atr': latest['ATR'],
+        'ema_diff': (latest['EMA_20'] - latest['EMA_50']) / latest['Close'] * 100,
+        'bb_position': (latest['Close'] - latest['BB_lower']) / (latest['BB_upper'] - latest['BB_lower']),
+        'volume_ratio': latest['Volume'] / latest['Volume_MA'] if latest['Volume_MA'] > 0 else 1.0,
+        'price_change': latest['Price_Change'] * 100,
+        'trend': latest['Trend']
+    }
+    
+    return np.array(list(features.values()), dtype=np.float32)
 
-def simulate_training_data(df_ind, n_samples=300):
-    # Generazione sintetica dati training basata su storico
-    X, y = [], []
-    for _ in range(n_samples):
-        idx = np.random.randint(50, len(df_ind)-50)
+def simulate_historical_trades(df_ind, n_trades=500):
+    """Simula trade storici per training"""
+    X_list = []
+    y_list = []
+    
+    for _ in range(n_trades):
+        idx = np.random.randint(50, len(df_ind) - 50)
         row = df_ind.iloc[idx]
-        future = df_ind.iloc[idx+1:idx+20] # Guarda 20 candele avanti
         
-        if len(future) < 5: continue
+        direction = np.random.choice(['long', 'short'])
+        entry = row['Close']
+        sl_pct = np.random.uniform(0.5, 2.0)
+        tp_pct = np.random.uniform(1.0, 4.0)
         
-        # Logica semplificata: se il prezzo sale dell'ATR è un successo Long
-        atr = row['ATR']
-        if future['High'].max() > row['Close'] + atr:
-            y.append(1) # Success Long
-            X.append(generate_features(df_ind.iloc[:idx+1], row['Close'], row['Close']-atr, row['Close']+atr*2, 'long', 60))
-        elif future['Low'].min() < row['Close'] - atr:
-            y.append(1) # Success Short (etichettiamo 1 se la direzione è corretta)
-            X.append(generate_features(df_ind.iloc[:idx+1], row['Close'], row['Close']+atr, row['Close']-atr*2, 'short', 60))
+        if direction == 'long':
+            sl = entry * (1 - sl_pct / 100)
+            tp = entry * (1 + tp_pct / 100)
         else:
-            y.append(0) # Choppy market
-            X.append(generate_features(df_ind.iloc[:idx+1], row['Close'], row['Close']-atr, row['Close']+atr, 'long', 60))
+            sl = entry * (1 + sl_pct / 100)
+            tp = entry * (1 - tp_pct / 100)
+        
+        features = generate_features(df_ind.iloc[:idx+1], entry, sl, tp, direction, 60)
+        
+        future_prices = df_ind.iloc[idx+1:idx+51]['Close'].values
+        if len(future_prices) > 0:
+            if direction == 'long':
+                hit_tp = np.any(future_prices >= tp)
+                hit_sl = np.any(future_prices <= sl)
+            else:
+                hit_tp = np.any(future_prices <= tp)
+                hit_sl = np.any(future_prices >= sl)
             
-    return np.array(X), np.array(y)
+            success = 1 if hit_tp and not hit_sl else 0
+            
+            X_list.append(features)
+            y_list.append(success)
+    
+    return np.array(X_list), np.array(y_list)
+
+def train_model(X_train, y_train):
+    """Addestra modello"""
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_train)
+    
+    model = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=10,
+        min_samples_split=5,
+        random_state=42,
+        n_jobs=-1
+    )
+    model.fit(X_scaled, y_train)
+    
+    return model, scaler
+
+def predict_success(model, scaler, features):
+    """Predice probabilità"""
+    features_scaled = scaler.transform(features.reshape(1, -1))
+    prob = model.predict_proba(features_scaled)[0][1]
+    return prob * 100
 
 # ==================== DATA LOADING ====================
 
-@st.cache_resource
-def get_model_and_data(symbol, interval):
-    data = yf.download(symbol, period='1y', interval=interval, progress=False)
+@st.cache_data
+def load_sample_data(symbol, interval='1h'):
+    """Carica dati da yfinance"""
+    period_map = {
+        '5m': '60d',
+        '15m': '60d',
+        '1h': '730d'
+    }
+    period = period_map.get(interval, '730d')
     
-    # Fix per yfinance MultiIndex
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(1)
+    try:
+        data = yf.download(symbol, period=period, interval=interval, progress=False)
         
-    if len(data) < 100: return None, None, None
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)
+        
+        if len(data) < 100:
+            raise Exception("Dati insufficienti")
+        
+        data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+        return data
+    except Exception as e:
+        st.error(f"Errore caricamento dati: {e}")
+        return None
+
+@st.cache_resource
+def train_or_load_model(symbol, interval='1h'):
+    """Addestra modello"""
+    data = load_sample_data(symbol, interval)
+    if data is None:
+        return None, None, None
     
     df_ind = calculate_technical_indicators(data)
-    X, y = simulate_training_data(df_ind)
-    
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
-    model.fit(X_scaled, y)
+    X, y = simulate_historical_trades(df_ind, n_trades=500)
+    model, scaler = train_model(X, y)
     
     return model, scaler, df_ind
 
-# ==================== MAIN UI ====================
+# ==================== WEB SIGNALS ====================
 
-st.set_page_config(page_title="AI Trader Bridge", layout="wide")
-st.title("🤖 AI Trading Bridge - Python to MT4")
+def get_web_signals(symbol, df_ind, current_price):
+    """Genera suggerimenti trade"""
+    try:
+        latest = df_ind.iloc[-1]
+        atr = latest['ATR']
+        trend = latest['Trend']
+        rsi = latest['RSI']
+        
+        suggestions = []
+        
+        # Segnale LONG
+        if rsi < 70 and trend == 1:
+            entry = round(current_price, 2)
+            sl = round(entry - atr * 1.5, 2)
+            tp = round(entry + atr * 3.0, 2)
+            prob = 72 if rsi < 50 else 68
+            
+            suggestions.append({
+                'Direction': 'LONG',
+                'Entry': entry,
+                'SL': sl,
+                'TP': tp,
+                'Probability': prob,
+                'Signal': 'Trend Bullish + RSI OK'
+            })
+        
+        # Segnale SHORT
+        if rsi > 30 and trend == 0:
+            entry = round(current_price, 2)
+            sl = round(entry + atr * 1.5, 2)
+            tp = round(entry - atr * 3.0, 2)
+            prob = 72 if rsi > 50 else 68
+            
+            suggestions.append({
+                'Direction': 'SHORT',
+                'Entry': entry,
+                'SL': sl,
+                'TP': tp,
+                'Probability': prob,
+                'Signal': 'Trend Bearish + RSI OK'
+            })
+        
+        # Segnale NEUTRAL
+        if not suggestions:
+            entry = round(current_price, 2)
+            direction = 'LONG' if trend == 1 else 'SHORT'
+            
+            if direction == 'LONG':
+                sl = round(entry - atr * 1.2, 2)
+                tp = round(entry + atr * 2.5, 2)
+            else:
+                sl = round(entry + atr * 1.2, 2)
+                tp = round(entry - atr * 2.5, 2)
+            
+            suggestions.append({
+                'Direction': direction,
+                'Entry': entry,
+                'SL': sl,
+                'TP': tp,
+                'Probability': 65,
+                'Signal': 'Neutral Market'
+            })
+        
+        return suggestions
+        
+    except Exception as e:
+        st.error(f"Errore generazione segnali: {e}")
+        return []
 
-# Setup
-if 'bridge' not in st.session_state:
-    st.session_state.bridge = MT4Bridge()
+# ==================== LIVE PRICE FETCHER ====================
+
+def get_live_price(symbol):
+    """Recupera prezzo live"""
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1d", interval="1m")
+        
+        if not hist.empty:
+            return float(hist['Close'].iloc[-1])
+        
+        return None
+    except:
+        return None
+
+# ==================== STREAMLIT UI ====================
+
+proper_names = {
+    'GC=F': 'XAU/USD (Gold)',
+    'EURUSD=X': 'EUR/USD',
+    'SI=F': 'XAG/USD (Silver)',
+    'BTC-USD': 'BTC/USD',
+    '^GSPC': 'S&P 500',
+}
+
+# Page config
+st.set_page_config(
+    page_title="Trading AI - MT4 Bridge",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# CSS
+st.markdown("""
+<style>
+    .main .block-container {padding-top: 2rem; max-width: 1600px;}
+    h1 {color: #2E86AB; font-weight: 700; font-size: 2.5rem !important;}
+    h2 {color: #A23B72; font-weight: 600; font-size: 1.8rem !important;}
+    h3 {color: #F18F01; font-weight: 600; font-size: 1.4rem !important;}
+    .stMetric {background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
+               padding: 1rem; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
+    .stButton>button {background: linear-gradient(135deg, #2E86AB 0%, #1e5f8a 100%);
+                      color: white; border: none; border-radius: 8px; padding: 0.6rem 1.5rem;
+                      font-weight: 600; transition: all 0.3s;}
+    .stButton>button:hover {transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.2);}
+</style>
+""", unsafe_allow_html=True)
+
+# Header
+st.title("🤖 Trading AI - MetaTrader 4 Bridge")
+st.markdown("**Sistema di Trading Automatizzato con Intelligenza Artificiale**")
+
+# Initialize session state
+if 'live_price_active' not in st.session_state:
+    st.session_state.live_price_active = False
+
+if 'mt4_bridge' not in st.session_state:
+    st.session_state.mt4_bridge = MT4Bridge()
+
+bridge = st.session_state.mt4_bridge
+
+# Main controls
+col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+
+with col1:
+    symbol = st.selectbox(
+        "📊 Strumento",
+        list(proper_names.keys()),
+        format_func=lambda x: proper_names[x]
+    )
+
+with col2:
+    interval = st.selectbox("⏱️ Timeframe", ['5m', '15m', '1h'], index=2)
+
+with col3:
+    load_btn = st.button("🔄 Carica Dati", use_container_width=True)
+
+with col4:
+    if st.button("📡 " + ("STOP Live" if st.session_state.live_price_active else "START Live"), 
+                 use_container_width=True,
+                 type="primary" if not st.session_state.live_price_active else "secondary"):
+        st.session_state.live_price_active = not st.session_state.live_price_active
+        st.rerun()
+
+st.markdown("---")
+
+# Load data
+session_key = f"model_{symbol}_{interval}"
+
+if session_key not in st.session_state or load_btn:
+    with st.spinner("🧠 Caricamento AI..."):
+        model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=interval)
+        
+        if model is not None:
+            st.session_state[session_key] = {
+                'model': model,
+                'scaler': scaler,
+                'df_ind': df_ind
+            }
+            st.success("✅ Sistema pronto!")
+        else:
+            st.error("❌ Errore caricamento dati")
+
+# Main content
+if session_key in st.session_state:
+    state = st.session_state[session_key]
+    model = state['model']
+    scaler = state['scaler']
+    df_ind = state['df_ind']
     
-# Sidebar Config
-st.sidebar.header("Configurazione")
-symbol_yf = st.sidebar.selectbox("Simbolo Yahoo", ["GC=F", "EURUSD=X", "GBPUSD=X", "BTC-USD"])
-symbol_mt4 = st.sidebar.text_input("Simbolo MT4 (Esatto)", "XAUUSD" if "GC" in symbol_yf else "EURUSD")
-interval = st.sidebar.selectbox("Timeframe", ["15m", "1h", "4h"])
-
-# Caricamento Modello
-model, scaler, df = get_model_and_data(symbol_yf, interval)
-
-if df is not None:
-    current_price = df['Close'].iloc[-1]
+    # Get current price
+    if st.session_state.live_price_active:
+        placeholder_price = st.empty()
+        
+        while st.session_state.live_price_active:
+            live_price = get_live_price(symbol)
+            
+            if live_price:
+                current_price = live_price
+                placeholder_price.success(f"📡 **LIVE:** ${current_price:.2f} - Aggiornamento automatico ogni 1s")
+            else:
+                current_price = df_ind['Close'].iloc[-1]
+                placeholder_price.warning(f"⚠️ Prezzo da cache: ${current_price:.2f}")
+            
+            time.sleep(1)
+    else:
+        current_price = df_ind['Close'].iloc[-1]
+        st.info(f"💵 **Prezzo Attuale:** ${current_price:.2f} (Click 'START Live' per aggiornamento real-time)")
     
-    # Dashboard Prezzi
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Prezzo Attuale", f"{current_price:.2f}")
-    c2.metric("RSI", f"{df['RSI'].iloc[-1]:.1f}")
-    c3.metric("ATR", f"{df['ATR'].iloc[-1]:.2f}")
+    # Indicators dashboard
+    st.markdown("### 📊 Dashboard Indicatori")
+    
+    latest = df_ind.iloc[-1]
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        st.metric("💵 Prezzo", f"${current_price:.2f}")
+    
+    with col2:
+        rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
+        st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
+    
+    with col3:
+        st.metric("📏 ATR", f"{latest['ATR']:.2f}")
+    
+    with col4:
+        trend_emoji = "📈" if latest['Trend'] == 1 else "📉"
+        trend_text = "Bullish" if latest['Trend'] == 1 else "Bearish"
+        st.metric(f"{trend_emoji} Trend", trend_text)
+    
+    with col5:
+        macd_signal = "🟢 BUY" if latest['MACD'] > latest['MACD_signal'] else "🔴 SELL"
+        st.metric("📊 MACD", macd_signal)
     
     st.markdown("---")
     
-    # Generatore Segnali
-    col_l, col_r = st.columns(2)
+    # Generate signals
+    web_signals = get_web_signals(symbol, df_ind, current_price)
     
-    with col_l:
-        st.subheader("💡 Genera Segnale")
-        direction = st.radio("Direzione", ["BUY", "SELL"], horizontal=True)
+    col_left, col_right = st.columns([1.5, 1])
+    
+    with col_left:
+        st.markdown("### 💡 Suggerimenti AI")
         
-        atr = df['ATR'].iloc[-1]
-        entry = st.number_input("Entry", value=float(current_price))
-        
-        if direction == "BUY":
-            sl_def = entry - (atr * 1.5)
-            tp_def = entry + (atr * 2.0)
+        if web_signals:
+            for idx, signal in enumerate(web_signals):
+                with st.container():
+                    col_sig, col_btn = st.columns([5, 1])
+                    
+                    with col_sig:
+                        direction_color = "🟢" if signal['Direction'] == 'LONG' else "🔴"
+                        st.markdown(f"""
+                        **{direction_color} {signal['Direction']}** - Entry: `${signal['Entry']:.2f}` | 
+                        SL: `${signal['SL']:.2f}` | TP: `${signal['TP']:.2f}` | 
+                        Prob: **{signal['Probability']}%** | {signal['Signal']}
+                        """)
+                    
+                    with col_btn:
+                        if st.button("🎯", key=f"sel_{idx}"):
+                            st.session_state.selected_trade = signal
         else:
-            sl_def = entry + (atr * 1.5)
-            tp_def = entry - (atr * 2.0)
-            
-        sl = st.number_input("Stop Loss", value=float(sl_def))
-        tp = st.number_input("Take Profit", value=float(tp_def))
-        lots = st.number_input("Lotti", value=0.01, step=0.01)
+            st.info("Nessun segnale disponibile")
+    
+    with col_right:
+        st.markdown("### 🔗 MT4 Connection")
         
-        # AI Check
-        feat = generate_features(df, entry, sl, tp, 'long' if direction == "BUY" else 'short', 60)
-        prob = model.predict_proba(scaler.transform([feat]))[0][1] * 100
+        status = bridge.get_status()
         
-        st.info(f"🤖 AI Confidence: **{prob:.1f}%**")
-        
-        if st.button("🚀 INVIA A MT4", type="primary"):
-            signal = {
-                "symbol": symbol_mt4,
-                "direction": direction,
-                "entry": entry,
-                "sl": sl,
-                "tp": tp,
-                "lot_size": lots,
-                "probability": prob
-            }
-            if st.session_state.bridge.send_signal(signal):
-                st.success("Segnale salvato in JSON! In attesa che MT4 lo legga...")
-
-    with col_r:
-        st.subheader("📡 Stato MT4")
-        if st.button("Aggiorna Stato"):
-            st.rerun()
-            
-        status = st.session_state.bridge.get_status()
         if status:
-            st.json(status)
-            st.caption(f"Ultimo aggiornamento: {status.get('updated')}")
-        else:
-            st.warning("Nessun dato da MT4. Assicurati che l'EA sia attivo.")
+            st.success("🟢 **CONNESSO**")
             
-        st.subheader("📋 Ordini Aperti")
-        trades = st.session_state.bridge.get_open_trades()
-        if trades:
-            st.dataframe(trades)
+            col_s1, col_s2 = st.columns(2)
+            with col_s1:
+                st.metric("💰 Balance", f"${status.get('balance', 0):,.2f}")
+            with col_s2:
+                st.metric("📈 Equity", f"${status.get('equity', 0):,.2f}")
+            
+            margin_level = status.get('margin_level', 0)
+            st.metric("📊 Margin", f"{margin_level:.1f}%")
+            
+            st.caption(f"🕐 {status.get('timestamp', 'N/A')}")
         else:
-            st.info("Nessun trade aperto.")
+            st.warning("🟡 **DISCONNESSO**")
+            st.caption("Avvia EA in MT4")
+        
+        st.markdown("#### 📋 Trade Aperti")
+        trades = bridge.get_open_trades()
+        
+        if trades:
+            for trade in trades[:5]:
+                profit = trade.get('profit', 0)
+                emoji = "🟢" if profit >= 0 else "🔴"
+                st.markdown(f"{emoji} **{trade.get('symbol')}** ${profit:.2f}")
+        else:
+            st.info("Nessun trade")
+    
+    # Selected trade analysis
+    if 'selected_trade' in st.session_state:
+        trade = st.session_state.selected_trade
+        
+        st.markdown("---")
+        st.markdown("## 🎯 Analisi Trade Selezionato")
+        
+        direction = 'long' if trade['Direction'].lower() == 'long' else 'short'
+        entry = trade['Entry']
+        sl = trade['SL']
+        tp = trade['TP']
+        
+        # AI Prediction
+        features = generate_features(df_ind, entry, sl, tp, direction, 60)
+        ai_prob = predict_success(model, scaler, features)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("🎲 AI Confidence", f"{ai_prob:.1f}%")
+        
+        with col2:
+            rr = abs(tp - entry) / abs(entry - sl)
+            st.metric("⚖️ Risk/Reward", f"{rr:.2f}x")
+        
+        with col3:
+            risk_pct = abs(entry - sl) / entry * 100
+            st.metric("📉 Risk", f"{risk_pct:.2f}%")
+        
+        with col4:
+            reward_pct = abs(tp - entry) / entry * 100
+            st.metric("📈 Reward", f"{reward_pct:.2f}%")
+        
+        st.markdown("---")
+        
+        # MT4 Integration
+        st.markdown("### 🚀 Invia a MetaTrader 4")
+        
+        col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+        
+        with col_cfg1:
+            account_balance = st.number_input(
+                "💰 Balance Account ($)",
+                min_value=100.0,
+                value=10000.0,
+                step=100.0
+            )
+        
+        with col_cfg2:
+            risk_pct = st.number_input(
+                "📊 Rischio per Trade (%)",
+                min_value=0.5,
+                max_value=10.0,
+                value=2.0,
+                step=0.5
+            )
+        
+        with col_cfg3:
+            sl_pips = abs(entry - sl) / 0.01
+            lot_size = calculate_lot_size(account_balance, risk_pct, sl_pips)
+            st.metric("📦 Lot Size", f"{lot_size:.2f}")
+        
+        # Trade info
+        mt4_symbol = convert_to_mt4_symbol(symbol)
+        direction_mt4 = "BUY" if trade['Direction'].lower() == 'long' else "SELL"
+        
+        st.info(f"""
+        **📋 Riepilogo Ordine:**
+        
+        🎯 **Simbolo:** `{mt4_symbol}`  
+        📊 **Direzione:** `{direction_mt4}`  
+        💵 **Entry:** `{entry:.2f}`  
+        🛑 **Stop Loss:** `{sl:.2f}`  
+        🎯 **Take Profit:** `{tp:.2f}`  
+        📦 **Lotti:** `{lot_size:.2f}`  
+        🎲 **AI Confidence:** `{ai_prob:.1f}%`  
+        💰 **Rischio Max:** `${account_balance * risk_pct / 100:.2f}`
+        """)
+        
+        # Send button
+        col_send, col_clear = st.columns(2)
+        
+        with col_send:
+            if st.button("🚀 INVIA ORDINE A MT4", type="primary", use_container_width=True):
+                signal_data = {
+                    "symbol": mt4_symbol,
+                    "direction": direction_mt4,
+                    "entry": entry,
+                    "sl": sl,
+                    "tp": tp,
+                    "lot_size": lot_size,
+                    "probability": trade['Probability'],
+                    "ai_confidence": ai_prob,
+                    "rr_ratio": rr,
+                    "comment": f"AI_{mt4_symbol}_{datetime.datetime.now().strftime('%H%M')}",
+                    "magic": 12345
+                }
+                
+                if bridge.send_signal(signal_data):
+                    st.success("✅ Segnale inviato con successo!")
+                    st.balloons()
+                else:
+                    st.error("❌ Errore nell'invio del segnale")
+        
+        with col_clear:
+            if st.button("🗑️ Pulisci Segnale", use_container_width=True):
+                if bridge.clear_signal():
+                    st.success("✅ Segnale cancellato")
+                    del st.session_state.selected_trade
+                    st.rerun()
 
 else:
-    st.error("Impossibile scaricare i dati. Controlla la connessione o il simbolo.")
+    st.warning("⚠️ Carica i dati per iniziare l'analisi")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; padding: 1rem; background: #f8fafc; border-radius: 8px;'>
+    <p style='color: #64748b; margin: 0;'>
+        ⚠️ <strong>Disclaimer:</strong> Sistema educativo. Non costituisce consulenza finanziaria. 
+        Trading comporta rischi di perdita. Usa sempre stop loss.
+    </p>
+</div>
+""", unsafe_allow_html=True)
