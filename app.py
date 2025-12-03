@@ -885,4 +885,3 @@ if session_key in st.session_state:
             st.metric("⚡ Source", "LIVE")
         else:
             st.metric("⚡ Source", "STATIC")
-    st.markdown
