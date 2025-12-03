@@ -88,6 +88,17 @@ class MT4Bridge:
             pass
         return False
     
+    def get_live_price(self):
+        """Recupera prezzo live da MT4"""
+        try:
+            live_price_file = self.bridge_folder / "live_price.json"
+            if live_price_file.exists():
+                with open(live_price_file, 'r') as f:
+                    return json.load(f)
+        except:
+            pass
+        return None
+    
     def clear_signal(self):
         """Pulisce file segnale"""
         try:
@@ -761,8 +772,22 @@ if session_key in st.session_state:
     # Get current price
     ticker = yf.Ticker(symbol)
     
-    # Live price update
-    if st.session_state.live_price_active:
+    # Live price from MT4 if available
+    mt4_price = bridge.get_live_price()
+    
+    if mt4_price and st.session_state.live_price_active:
+        # Use MT4 live price
+        current_price = float(mt4_price.get('bid', df_ind['Close'].iloc[-1]))
+        mt4_spread = mt4_price.get('spread', 0)
+        
+        # Auto-refresh every second
+        current_time = time.time()
+        if current_time - st.session_state.last_price_update >= 1:
+            st.session_state.last_price_update = current_time
+            time.sleep(1)
+            st.rerun()
+    elif st.session_state.live_price_active:
+        # Fallback to yfinance if MT4 not available
         current_time = time.time()
         if current_time - st.session_state.last_price_update >= 1:
             try:
@@ -775,7 +800,6 @@ if session_key in st.session_state:
             except:
                 current_price = df_ind['Close'].iloc[-1]
             
-            # Auto-refresh for live prices
             time.sleep(1)
             st.rerun()
         else:
@@ -784,12 +808,15 @@ if session_key in st.session_state:
                 current_price = float(hist['Close'].iloc[-1]) if not hist.empty else df_ind['Close'].iloc[-1]
             except:
                 current_price = df_ind['Close'].iloc[-1]
+        mt4_spread = 0
     else:
+        # Static price
         try:
             hist = ticker.history(period="1d", interval="1h")
             current_price = float(hist['Close'].iloc[-1]) if not hist.empty else df_ind['Close'].iloc[-1]
         except:
             current_price = df_ind['Close'].iloc[-1]
+        mt4_spread = 0
     
     # Gold Analysis
     if symbol == 'GC=F':
@@ -817,22 +844,29 @@ if session_key in st.session_state:
     st.markdown("### 📊 Market Statistics")
     latest = df_ind.iloc[-1]
     
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         price_change = ((current_price - df_ind['Close'].iloc[-2]) / df_ind['Close'].iloc[-2]) * 100
         st.metric("💵 Live Price", f"${current_price:.2f}", f"{price_change:+.2f}%")
     with col2:
+        if mt4_price and st.session_state.live_price_active:
+            st.metric("📊 Spread", f"{mt4_spread:.1f}")
+        else:
+            st.metric("📊 Spread", "N/A")
+    with col3:
         rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
         st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
-    with col3:
-        st.metric("📏 ATR", f"{latest['ATR']:.2f}")
     with col4:
-        trend_text = "📈 Bullish" if latest['Trend'] == 1 else "📉 Bearish"
-        st.metric("Trend", trend_text)
+        st.metric("📏 ATR", f"{latest['ATR']:.2f}")
     with col5:
-        if st.session_state.live_price_active:
-            st.metric("⚡ Status", "LIVE")
+        trend_text = "📈 Bull" if latest['Trend'] == 1 else "📉 Bear"
+        st.metric("Trend", trend_text)
+    with col6:
+        if mt4_price and st.session_state.live_price_active:
+            st.metric("⚡ Source", "MT4")
+        elif st.session_state.live_price_active:
+            st.metric("⚡ Source", "LIVE")
         else:
-            st.metric("⚡ Status", "STATIC")
+            st.metric("⚡ Source", "STATIC")
     
     st.markdown
