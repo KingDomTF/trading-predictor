@@ -90,12 +90,22 @@ class MT4Bridge:
         return False
     
     def get_live_price(self):
-        """Recupera prezzo live da MT4"""
+        """Recupera prezzo live da MT4 con gestione errori di lettura"""
+        json_path = self.bridge_folder / "live_price.json"
         try:
-            live_price_file = self.bridge_folder / "live_price.json"
-            if live_price_file.exists():
-                with open(live_price_file, 'r') as f:
-                    return json.load(f)
+            if json_path.exists():
+                # Tenta di leggere fino a 3 volte se il file è occupato
+                for _ in range(3):
+                    try:
+                        with open(json_path, 'r') as f:
+                            return json.load(f)
+                    except json.JSONDecodeError:
+                        # Il file è vuoto o corrotto mentre MT4 scriveva
+                        time.sleep(0.01)
+                        continue
+                    except Exception:
+                        time.sleep(0.01)
+                        continue
         except:
             pass
         return None
