@@ -9,13 +9,14 @@ import warnings
 import json
 import time
 from pathlib import Path
+
 warnings.filterwarnings('ignore')
 
 # ==================== MT4 BRIDGE SYSTEM ====================
 class MT4Bridge:
     """Gestisce comunicazione bidirezionale con MT4"""
     
-    def __init__(self, bridge_folder= r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"):
+    def __init__(self, bridge_folder=r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"):
         self.bridge_folder = Path(bridge_folder)
         self.signals_file = self.bridge_folder / "signals.json"
         self.status_file = self.bridge_folder / "status.json"
@@ -542,6 +543,11 @@ with col1:
 with col2:
     interval = st.selectbox("⏱️ Timeframe", ['5m', '15m', '1h'], index=2)
 
+# Load Model logic happens later, but we need df_ind for suggestions
+# So we run train_or_load_model early to get df_ind
+model_placeholder, scaler_placeholder, df_ind_placeholder = train_or_load_model(symbol, interval)
+df_ind = df_ind_placeholder
+
 with col3:
     st.markdown("---")
     
@@ -551,29 +557,30 @@ with col3:
     with col_left:
         st.markdown("### 💡 AI Trade Suggestions")
         
-        web_signals = get_web_signals(symbol, df_ind)
-        
-        if web_signals:
-            for idx, signal in enumerate(web_signals):
-                col_trade, col_analyze = st.columns([4, 1])
-                
-                with col_trade:
-                    direction_emoji = "🟢" if signal['Direction'] == 'Long' else "🔴"
-                    st.markdown(f"""
-                    <div class='trade-card'>
+        if df_ind is not None:
+            web_signals = get_web_signals(symbol, df_ind)
+            
+            if web_signals:
+                for idx, signal in enumerate(web_signals):
+                    col_trade, col_analyze = st.columns([4, 1])
+                    
+                    with col_trade:
+                        direction_emoji = "🟢" if signal['Direction'] == 'Long' else "🔴"
+                        st.markdown(f"""
+                        <div class='trade-card'>
                         <strong style='font-size: 1.1rem;'>{direction_emoji} {signal['Direction'].upper()}</strong><br>
-                        Entry: <strong>${signal['Entry']:.2f}</strong> • 
-                        SL: ${signal['SL']:.2f} • 
-                        TP: ${signal['TP']:.2f}<br>
-                        📊 Probability: <strong>{signal['Probability']:.0f}%</strong>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col_analyze:
-                    if st.button("🔍 Analyze", key=f"btn_{idx}"):
-                        st.session_state.selected_signal = signal
-        else:
-            st.info("No signals available at the moment")
+                            Entry: <strong>${signal['Entry']:.2f}</strong> • 
+                            SL: ${signal['SL']:.2f} • 
+                            TP: ${signal['TP']:.2f}<br>
+                            📊 Probability: <strong>{signal['Probability']:.0f}%</strong>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col_analyze:
+                        if st.button("🔍 Analyze", key=f"btn_{idx}"):
+                            st.session_state.selected_signal = signal
+            else:
+                st.info("No signals available at the moment")
     
     with col_right:
         st.markdown("### 📊 MT4 Status")
@@ -602,7 +609,7 @@ with col3:
             st.info("No open trades")
     
     # AI Analysis
-    if 'selected_signal' in st.session_state:
+    if 'selected_signal' in st.session_state and df_ind is not None:
         signal = st.session_state.selected_signal
         
         st.markdown("---")
@@ -615,19 +622,19 @@ with col3:
         
         # Generate features and predict
         features = generate_features(df_ind, entry, sl, tp, direction, 60)
-        ai_prob = predict_success(model, scaler, features)
+        ai_prob = predict_success(model_placeholder, scaler_placeholder, features)
         
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
+        col1_a, col2_a, col3_a, col4_a = st.columns(4)
+        with col1_a:
             delta = ai_prob - signal['Probability']
             st.metric("🤖 AI Confidence", f"{ai_prob:.1f}%", f"{delta:+.1f}%")
-        with col2:
+        with col2_a:
             rr = abs(tp - entry) / abs(entry - sl)
             st.metric("⚖️ Risk/Reward", f"{rr:.2f}x")
-        with col3:
+        with col3_a:
             risk = abs(entry - sl) / entry * 100
             st.metric("📉 Risk %", f"{risk:.2f}%")
-        with col4:
+        with col4_a:
             reward = abs(tp - entry) / entry * 100
             st.metric("📈 Reward %", f"{reward:.2f}%")
         
@@ -682,6 +689,7 @@ with col3:
         with col_send:
             st.markdown("<br><br>", unsafe_allow_html=True)
             
+            mt4_connected = bridge.is_mt4_connected()
             if st.button("🚀 SEND TO MT4", type="primary", use_container_width=True):
                 if not mt4_connected:
                     st.error("❌ MT4 not connected! Start EA first.")
@@ -703,7 +711,6 @@ with col3:
                     if bridge.send_signal(signal_data):
                         st.success("✅ Signal sent to MT4!")
                         st.balloons()
-                        
                         # Log
                         st.info(f"📝 Signal saved to: {bridge.signals_file}")
                     else:
@@ -718,15 +725,22 @@ with col3:
 # Disclaimer
 st.markdown("---")
 st.markdown("""
-<div style='background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%); 
-     padding: 1rem; border-radius: 10px; margin-top: 1rem;'>
-    <p style='color: #8B4513; font-size: 0.9rem; margin: 0; text-align: center;'>
+<div style='background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%);
+padding: 1rem; border-radius: 10px; margin-top: 1rem;'>
+    <p style='color: #8B4513; font-size: 0.9rem; margin: 0;
+text-align: center;'>
         ⚠️ <strong>Risk Warning:</strong> Trading involves substantial risk. 
-        This is educational software. Always test in demo first. Past performance 
-        does not guarantee future results. © 2025 AI Trading System
+        This is educational software.
+        Always test in demo first. Past performance 
+        does not guarantee future results.
+        © 2025 AI Trading System
     </p>
 </div>
-""", unsafe_allow_html=True)("<br>", unsafe_allow_html=True)
+""", unsafe_allow_html=True)
+
+# CORREZIONE APPLICATA QUI SOTTO
+with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
     refresh = st.button("🔄 Load Data", use_container_width=True)
 
 with col4:
@@ -846,7 +860,10 @@ if session_key in st.session_state:
     
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
-        price_change = ((current_price - df_ind['Close'].iloc[-2]) / df_ind['Close'].iloc[-2]) * 100
+        if len(df_ind) > 1:
+            price_change = ((current_price - df_ind['Close'].iloc[-2]) / df_ind['Close'].iloc[-2]) * 100
+        else:
+            price_change = 0
         st.metric("💵 Live Price", f"${current_price:.2f}", f"{price_change:+.2f}%")
     with col2:
         if mt4_price and st.session_state.live_price_active:
@@ -868,5 +885,4 @@ if session_key in st.session_state:
             st.metric("⚡ Source", "LIVE")
         else:
             st.metric("⚡ Source", "STATIC")
-    
     st.markdown
