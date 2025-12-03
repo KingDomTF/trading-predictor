@@ -22,7 +22,6 @@ class MT4Bridge:
         self.trades_file = self.bridge_folder / "trades.json"
         self.heartbeat_file = self.bridge_folder / "heartbeat.json"
         
-        # Crea cartella se non esiste
         try:
             self.bridge_folder.mkdir(parents=True, exist_ok=True)
         except Exception as e:
@@ -83,7 +82,7 @@ class MT4Bridge:
                     data = json.load(f)
                     last_beat = datetime.datetime.fromisoformat(data.get('timestamp', '2000-01-01'))
                     age = (datetime.datetime.now() - last_beat).total_seconds()
-                    return age < 10  # Connesso se heartbeat < 10 secondi
+                    return age < 10
         except:
             pass
         return False
@@ -127,8 +126,6 @@ def calculate_lot_size(balance, risk_pct, entry, sl, pip_value=10, contract_size
     """Calcola lot size ottimale"""
     risk_amount = balance * (risk_pct / 100)
     sl_distance = abs(entry - sl)
-    
-    # Per oro: 1 lotto = 100 oz, 1 pip = 0.01, valore pip = $10
     sl_pips = sl_distance / 0.01
     
     if sl_pips <= 0:
@@ -144,30 +141,25 @@ def calculate_technical_indicators(df):
     """Calcola indicatori tecnici"""
     df = df.copy()
     
-    # EMA
     df['EMA_20'] = df['Close'].ewm(span=20).mean()
     df['EMA_50'] = df['Close'].ewm(span=50).mean()
     
-    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # MACD
     exp1 = df['Close'].ewm(span=12).mean()
     exp2 = df['Close'].ewm(span=26).mean()
     df['MACD'] = exp1 - exp2
     df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
     
-    # Bollinger Bands
     df['BB_middle'] = df['Close'].rolling(window=20).mean()
     bb_std = df['Close'].rolling(window=20).std()
     df['BB_upper'] = df['BB_middle'] + (bb_std * 2)
     df['BB_lower'] = df['BB_middle'] - (bb_std * 2)
     
-    # ATR
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
@@ -175,151 +167,12 @@ def calculate_technical_indicators(df):
     true_range = np.max(ranges, axis=1)
     df['ATR'] = true_range.rolling(14).mean()
     
-    # Volume
     df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
-    
-    # Trend
     df['Price_Change'] = df['Close'].pct_change()
     df['Trend'] = df['Close'].rolling(window=20).apply(lambda x: 1 if x[-1] > x[0] else 0)
     
     df = df.dropna()
     return df
-
-# ==================== GOLD ANALYSIS ====================
-def get_gold_fundamental_factors():
-    """Recupera fattori fondamentali oro"""
-    factors = {}
-    
-    try:
-        # Dollar Index
-        for ticker_symbol in ["DX-Y.NYB", "DX=F"]:
-            try:
-                dxy = yf.Ticker(ticker_symbol)
-                dxy_hist = dxy.history(period="5d", interval="1d")
-                if not dxy_hist.empty:
-                    factors['dxy_current'] = float(dxy_hist['Close'].iloc[-1])
-                    factors['dxy_change'] = ((dxy_hist['Close'].iloc[-1] - dxy_hist['Close'].iloc[0]) / dxy_hist['Close'].iloc[0]) * 100
-                    break
-            except:
-                continue
-        
-        if 'dxy_current' not in factors:
-            factors['dxy_current'] = 106.2
-            factors['dxy_change'] = -0.3
-        
-        # Treasury 10Y
-        try:
-            tnx = yf.Ticker("^TNX")
-            tnx_hist = tnx.history(period="5d")
-            if not tnx_hist.empty:
-                factors['yield_10y'] = float(tnx_hist['Close'].iloc[-1])
-            else:
-                factors['yield_10y'] = 4.42
-        except:
-            factors['yield_10y'] = 4.42
-        
-        # VIX
-        try:
-            vix = yf.Ticker("^VIX")
-            vix_hist = vix.history(period="5d")
-            if not vix_hist.empty:
-                factors['vix'] = float(vix_hist['Close'].iloc[-1])
-            else:
-                factors['vix'] = 16.8
-        except:
-            factors['vix'] = 16.8
-        
-        # S&P 500 Momentum
-        try:
-            spx = yf.Ticker("^GSPC")
-            spx_hist = spx.history(period="5d")
-            if not spx_hist.empty and len(spx_hist) > 1:
-                factors['spx_momentum'] = ((spx_hist['Close'].iloc[-1] - spx_hist['Close'].iloc[0]) / spx_hist['Close'].iloc[0]) * 100
-            else:
-                factors['spx_momentum'] = 1.8
-        except:
-            factors['spx_momentum'] = 1.8
-        
-        # Gold/Silver Ratio
-        factors['gold_silver_ratio'] = 88.5
-        factors['inflation_expectations'] = 2.5
-        factors['geopolitical_risk'] = 7.5
-        factors['central_bank_demand'] = 1050
-        
-    except Exception as e:
-        st.warning(f"⚠️ Alcuni dati fondamentali non disponibili")
-        factors = {
-            'dxy_current': 106.2, 'dxy_change': -0.3, 'yield_10y': 4.42,
-            'vix': 16.8, 'spx_momentum': 1.8, 'gold_silver_ratio': 88.5,
-            'inflation_expectations': 2.5, 'geopolitical_risk': 7.5,
-            'central_bank_demand': 1050
-        }
-    
-    return factors
-
-def analyze_gold_historical_comparison(current_price, factors):
-    """Analisi oro con confronto storico"""
-    
-    historical_periods = {
-        '1971-1980': {
-            'description': 'Bull Market Post-Bretton Woods',
-            'start_price': 35, 'end_price': 850, 'gain_pct': 2329,
-            'duration_years': 9, 'avg_inflation': 8.5, 'geopolitical': 8,
-            'dollar_weak': True, 'key_events': 'Fine gold standard, inflazione alta'
-        },
-        '2001-2011': {
-            'description': 'Bull Market Post-Dot-Com',
-            'start_price': 255, 'end_price': 1920, 'gain_pct': 653,
-            'duration_years': 10, 'avg_inflation': 2.8, 'geopolitical': 7,
-            'dollar_weak': True, 'key_events': '9/11, QE, crisi 2008'
-        },
-        '2022-2025': {
-            'description': 'Era Inflazione Post-COVID',
-            'start_price': 1800, 'end_price': current_price,
-            'gain_pct': ((current_price - 1800) / 1800) * 100,
-            'duration_years': 3, 'avg_inflation': 4.5, 'geopolitical': 7.5,
-            'dollar_weak': False, 'key_events': 'Inflazione persistente, tensioni'
-        }
-    }
-    
-    # Trova periodo simile
-    similarity_scores = {}
-    for period, data in historical_periods.items():
-        if period == '2022-2025':
-            continue
-        score = 0
-        score += max(0, 10 - abs(data['avg_inflation'] - factors['inflation_expectations']) * 2)
-        score += max(0, 10 - abs(data['geopolitical'] - factors['geopolitical_risk']) * 2)
-        if data['dollar_weak'] == (factors['dxy_current'] < 100):
-            score += 15
-        similarity_scores[period] = score
-    
-    most_similar = max(similarity_scores, key=similarity_scores.get)
-    similar_period = historical_periods[most_similar]
-    
-    # Calcola target
-    annual_return = (similar_period['gain_pct'] / 100) / similar_period['duration_years']
-    target_1y = current_price * (1 + annual_return)
-    target_6m = current_price + (target_1y - current_price) * 0.5
-    target_3m = current_price + (target_1y - current_price) * 0.25
-    
-    confidence = min(100, similarity_scores[most_similar] * 2)
-    
-    return {
-        'current_price': current_price,
-        'target_3m': target_3m,
-        'target_6m': target_6m,
-        'target_1y': target_1y,
-        'most_similar_period': most_similar,
-        'similarity_pct': (similarity_scores[most_similar] / 45) * 100,
-        'confidence': confidence,
-        'key_drivers': {
-            'Dollar Index': f"${factors['dxy_current']:.2f}",
-            'VIX': f"{factors['vix']:.1f}",
-            'Inflazione': f"{factors['inflation_expectations']:.2f}%",
-            'Rischio Geo': f"{factors['geopolitical_risk']}/10"
-        }
-    }
 
 # ==================== ML MODEL ====================
 def generate_features(df_ind, entry, sl, tp, direction, main_tf):
@@ -426,7 +279,6 @@ def get_web_signals(symbol, df_ind):
         
         suggestions = []
         
-        # Long signal
         if rsi < 40 or trend == 1:
             suggestions.append({
                 'Direction': 'Long',
@@ -436,7 +288,6 @@ def get_web_signals(symbol, df_ind):
                 'Probability': 72 if rsi < 40 else 65
             })
         
-        # Short signal
         if rsi > 60 or trend == 0:
             suggestions.append({
                 'Direction': 'Short',
@@ -495,7 +346,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS
 st.markdown("""
 <style>
     .main .block-container {padding-top: 2rem; max-width: 1600px;}
@@ -513,7 +363,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header
 st.title("🎯 AI Trading Predictor + MT4 Integration")
 st.markdown("""
 <div style='background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); padding: 1rem; 
@@ -524,7 +373,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Initialize
 if 'mt4_bridge' not in st.session_state:
     st.session_state.mt4_bridge = MT4Bridge()
     st.session_state.live_price_active = False
@@ -532,20 +380,128 @@ if 'mt4_bridge' not in st.session_state:
 
 bridge = st.session_state.mt4_bridge
 
-# Configurazione
 col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
 
 with col1:
     symbol = st.text_input("🎯 Ticker Symbol", value="GC=F", 
                            help="GC=F (Gold), SI=F (Silver), EURUSD=X, BTC-USD")
-    
+
 with col2:
     interval = st.selectbox("⏱️ Timeframe", ['5m', '15m', '1h'], index=2)
 
 with col3:
+    st.markdown("<br>", unsafe_allow_html=True)
+    refresh = st.button("🔄 Load Data", use_container_width=True)
+
+with col4:
+    st.markdown("<br>", unsafe_allow_html=True)
+    live_toggle = st.checkbox("⚡ Live Price", value=st.session_state.live_price_active)
+    st.session_state.live_price_active = live_toggle
+
+col_status1, col_status2 = st.columns([3, 1])
+
+with col_status1:
+    mt4_connected = bridge.is_mt4_connected()
+    if mt4_connected:
+        st.success("🟢 MT4 Connected")
+    else:
+        st.warning("🟡 MT4 Disconnected - Start EA in MT4")
+
+with col_status2:
+    status = bridge.get_status()
+    if status:
+        st.metric("💰 Balance", f"${status.get('balance', 0):.2f}")
+
+st.markdown("---")
+
+session_key = f"model_{symbol}_{interval}"
+if session_key not in st.session_state or refresh:
+    with st.spinner("🧠 Training AI Model..."):
+        model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=interval)
+        if model is not None:
+            st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
+            st.success("✅ AI Model Ready!")
+        else:
+            st.error("❌ Failed to load data")
+
+if session_key in st.session_state:
+    state = st.session_state[session_key]
+    model = state['model']
+    scaler = state['scaler']
+    df_ind = state['df_ind']
+    
+    ticker = yf.Ticker(symbol)
+    mt4_price = bridge.get_live_price()
+    
+    if mt4_price and st.session_state.live_price_active:
+        current_price = float(mt4_price.get('bid', df_ind['Close'].iloc[-1]))
+        mt4_spread = mt4_price.get('spread', 0)
+        
+        current_time = time.time()
+        if current_time - st.session_state.last_price_update >= 1:
+            st.session_state.last_price_update = current_time
+            time.sleep(1)
+            st.rerun()
+    elif st.session_state.live_price_active:
+        current_time = time.time()
+        if current_time - st.session_state.last_price_update >= 1:
+            try:
+                hist = ticker.history(period="1d", interval="1m")
+                if not hist.empty:
+                    current_price = float(hist['Close'].iloc[-1])
+                    st.session_state.last_price_update = current_time
+                else:
+                    current_price = df_ind['Close'].iloc[-1]
+            except:
+                current_price = df_ind['Close'].iloc[-1]
+            
+            time.sleep(1)
+            st.rerun()
+        else:
+            try:
+                hist = ticker.history(period="1d", interval="1m")
+                current_price = float(hist['Close'].iloc[-1]) if not hist.empty else df_ind['Close'].iloc[-1]
+            except:
+                current_price = df_ind['Close'].iloc[-1]
+        mt4_spread = 0
+    else:
+        try:
+            hist = ticker.history(period="1d", interval="1h")
+            current_price = float(hist['Close'].iloc[-1]) if not hist.empty else df_ind['Close'].iloc[-1]
+        except:
+            current_price = df_ind['Close'].iloc[-1]
+        mt4_spread = 0
+    
+    st.markdown("### 📊 Market Statistics")
+    latest = df_ind.iloc[-1]
+    
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    with col1:
+        price_change = ((current_price - df_ind['Close'].iloc[-2]) / df_ind['Close'].iloc[-2]) * 100
+        st.metric("💵 Live Price", f"${current_price:.2f}", f"{price_change:+.2f}%")
+    with col2:
+        if mt4_price and st.session_state.live_price_active:
+            st.metric("📊 Spread", f"{mt4_spread:.1f}")
+        else:
+            st.metric("📊 Spread", "N/A")
+    with col3:
+        rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
+        st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
+    with col4:
+        st.metric("📏 ATR", f"{latest['ATR']:.2f}")
+    with col5:
+        trend_text = "📈 Bull" if latest['Trend'] == 1 else "📉 Bear"
+        st.metric("Trend", trend_text)
+    with col6:
+        if mt4_price and st.session_state.live_price_active:
+            st.metric("⚡ Source", "MT4")
+        elif st.session_state.live_price_active:
+            st.metric("⚡ Source", "LIVE")
+        else:
+            st.metric("⚡ Source", "STATIC")
+    
     st.markdown("---")
     
-    # Trade Suggestions
     col_left, col_right = st.columns([2, 1])
     
     with col_left:
@@ -590,7 +546,6 @@ with col3:
         else:
             st.warning("🟡 Waiting for MT4...")
         
-        # Open Trades
         st.markdown("#### 📋 Open Trades")
         trades = bridge.get_open_trades()
         if trades:
@@ -601,7 +556,6 @@ with col3:
         else:
             st.info("No open trades")
     
-    # AI Analysis
     if 'selected_signal' in st.session_state:
         signal = st.session_state.selected_signal
         
@@ -613,7 +567,6 @@ with col3:
         sl = signal['SL']
         tp = signal['TP']
         
-        # Generate features and predict
         features = generate_features(df_ind, entry, sl, tp, direction, 60)
         ai_prob = predict_success(model, scaler, features)
         
@@ -632,8 +585,6 @@ with col3:
             st.metric("📈 Reward %", f"{reward:.2f}%")
         
         st.markdown("---")
-        
-        # MT4 Integration
         st.markdown("### 🔗 Send to MT4")
         
         col_config, col_send = st.columns([2, 1])
@@ -663,7 +614,6 @@ with col3:
                 lot_size = calculate_lot_size(account_balance, risk_pct, entry, sl)
                 st.metric("📦 Lot Size", f"{lot_size:.2f}")
             
-            # Trade Info
             mt4_symbol = convert_yfinance_to_mt4_symbol(symbol)
             direction_mt4 = "BUY" if direction == 'long' else "SELL"
             
@@ -703,8 +653,6 @@ with col3:
                     if bridge.send_signal(signal_data):
                         st.success("✅ Signal sent to MT4!")
                         st.balloons()
-                        
-                        # Log
                         st.info(f"📝 Signal saved to: {bridge.signals_file}")
                     else:
                         st.error("❌ Failed to send signal")
@@ -715,7 +663,6 @@ with col3:
                 if bridge.clear_signal():
                     st.success("✅ Signal cleared")
 
-# Disclaimer
 st.markdown("---")
 st.markdown("""
 <div style='background: linear-gradient(135deg, #FFF8DC 0%, #FFE4B5 100%); 
@@ -726,147 +673,4 @@ st.markdown("""
         does not guarantee future results. © 2025 AI Trading System
     </p>
 </div>
-""", unsafe_allow_html=True)("<br>", unsafe_allow_html=True)
-    refresh = st.button("🔄 Load Data", use_container_width=True)
-
-with col4:
-    st.markdown("<br>", unsafe_allow_html=True)
-    live_toggle = st.checkbox("⚡ Live Price", value=st.session_state.live_price_active)
-    st.session_state.live_price_active = live_toggle
-
-# MT4 Connection Status
-col_status1, col_status2 = st.columns([3, 1])
-
-with col_status1:
-    mt4_connected = bridge.is_mt4_connected()
-    if mt4_connected:
-        st.success("🟢 MT4 Connected")
-    else:
-        st.warning("🟡 MT4 Disconnected - Start EA in MT4")
-
-with col_status2:
-    status = bridge.get_status()
-    if status:
-        st.metric("💰 Balance", f"${status.get('balance', 0):.2f}")
-
-st.markdown("---")
-
-# Load Model
-session_key = f"model_{symbol}_{interval}"
-if session_key not in st.session_state or refresh:
-    with st.spinner("🧠 Training AI Model..."):
-        model, scaler, df_ind = train_or_load_model(symbol=symbol, interval=interval)
-        if model is not None:
-            st.session_state[session_key] = {'model': model, 'scaler': scaler, 'df_ind': df_ind}
-            st.success("✅ AI Model Ready!")
-        else:
-            st.error("❌ Failed to load data")
-
-# Main Content
-if session_key in st.session_state:
-    state = st.session_state[session_key]
-    model = state['model']
-    scaler = state['scaler']
-    df_ind = state['df_ind']
-    
-    # Get current price
-    ticker = yf.Ticker(symbol)
-    
-    # Live price from MT4 if available
-    mt4_price = bridge.get_live_price()
-    
-    if mt4_price and st.session_state.live_price_active:
-        # Use MT4 live price
-        current_price = float(mt4_price.get('bid', df_ind['Close'].iloc[-1]))
-        mt4_spread = mt4_price.get('spread', 0)
-        
-        # Auto-refresh every second
-        current_time = time.time()
-        if current_time - st.session_state.last_price_update >= 1:
-            st.session_state.last_price_update = current_time
-            time.sleep(1)
-            st.rerun()
-    elif st.session_state.live_price_active:
-        # Fallback to yfinance if MT4 not available
-        current_time = time.time()
-        if current_time - st.session_state.last_price_update >= 1:
-            try:
-                hist = ticker.history(period="1d", interval="1m")
-                if not hist.empty:
-                    current_price = float(hist['Close'].iloc[-1])
-                    st.session_state.last_price_update = current_time
-                else:
-                    current_price = df_ind['Close'].iloc[-1]
-            except:
-                current_price = df_ind['Close'].iloc[-1]
-            
-            time.sleep(1)
-            st.rerun()
-        else:
-            try:
-                hist = ticker.history(period="1d", interval="1m")
-                current_price = float(hist['Close'].iloc[-1]) if not hist.empty else df_ind['Close'].iloc[-1]
-            except:
-                current_price = df_ind['Close'].iloc[-1]
-        mt4_spread = 0
-    else:
-        # Static price
-        try:
-            hist = ticker.history(period="1d", interval="1h")
-            current_price = float(hist['Close'].iloc[-1]) if not hist.empty else df_ind['Close'].iloc[-1]
-        except:
-            current_price = df_ind['Close'].iloc[-1]
-        mt4_spread = 0
-    
-    # Gold Analysis
-    if symbol == 'GC=F':
-        st.markdown("## 🥇 GOLD MARKET ANALYSIS")
-        
-        with st.spinner("📊 Analyzing fundamentals..."):
-            factors = get_gold_fundamental_factors()
-            gold_analysis = analyze_gold_historical_comparison(current_price, factors)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("💵 Current", f"${gold_analysis['current_price']:.2f}")
-        with col2:
-            change_3m = ((gold_analysis['target_3m'] - current_price) / current_price) * 100
-            st.metric("📅 Target 3M", f"${gold_analysis['target_3m']:.2f}", f"{change_3m:+.1f}%")
-        with col3:
-            change_6m = ((gold_analysis['target_6m'] - current_price) / current_price) * 100
-            st.metric("📅 Target 6M", f"${gold_analysis['target_6m']:.2f}", f"{change_6m:+.1f}%")
-        with col4:
-            st.metric("🎯 Confidence", f"{gold_analysis['confidence']:.0f}%")
-        
-        st.markdown("---")
-    
-    # Market Stats
-    st.markdown("### 📊 Market Statistics")
-    latest = df_ind.iloc[-1]
-    
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    with col1:
-        price_change = ((current_price - df_ind['Close'].iloc[-2]) / df_ind['Close'].iloc[-2]) * 100
-        st.metric("💵 Live Price", f"${current_price:.2f}", f"{price_change:+.2f}%")
-    with col2:
-        if mt4_price and st.session_state.live_price_active:
-            st.metric("📊 Spread", f"{mt4_spread:.1f}")
-        else:
-            st.metric("📊 Spread", "N/A")
-    with col3:
-        rsi_color = "🟢" if 30 <= latest['RSI'] <= 70 else "🔴"
-        st.metric(f"{rsi_color} RSI", f"{latest['RSI']:.1f}")
-    with col4:
-        st.metric("📏 ATR", f"{latest['ATR']:.2f}")
-    with col5:
-        trend_text = "📈 Bull" if latest['Trend'] == 1 else "📉 Bear"
-        st.metric("Trend", trend_text)
-    with col6:
-        if mt4_price and st.session_state.live_price_active:
-            st.metric("⚡ Source", "MT4")
-        elif st.session_state.live_price_active:
-            st.metric("⚡ Source", "LIVE")
-        else:
-            st.metric("⚡ Source", "STATIC")
-    
-    st.markdown
+""", unsafe_allow_html=True)
