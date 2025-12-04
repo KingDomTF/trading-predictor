@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 class MT4Bridge:
     """Gestisce comunicazione bidirezionale con MT4"""
     
-    def __init__(self, bridge_folder= r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files\MT4_Bridge"):
+    def __init__(self, bridge_folder="C:/MT4_Bridge"):
         self.bridge_folder = Path(bridge_folder)
         self.signals_file = self.bridge_folder / "signals.json"
         self.status_file = self.bridge_folder / "status.json"
