@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAZIONE COSTANTI ====================
 # Percorso assoluto della "Data Pipe" verso MT4
-MT4_DIRECTORY ="C:/Users/dcbat/AppData/Roaming/MetaQuotes/Terminal/B8925BF731C22E88F33C7A8D7CD3190E/MQL4/Files"
+MT4_DIRECTORY = r"C:/Users/dcbat/AppData/Roaming/MetaQuotes/Terminal/B8925BF731C22E88F33C7A8D7CD3190E/MQL4/Files"
 
 # ==================== MT4 BRIDGE SYSTEM (CORE LOGIC) ====================
 class MT4Bridge:
