@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 class MT4Bridge:
     """Gestisce comunicazione bidirezionale con MT4"""
     
-    def __init__(self, bridge_folder=r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"):
+    def __init__(self, bridge_folder="C:/MT4_Bridge"):
         self.bridge_folder = Path(bridge_folder)
         self.signals_file = self.bridge_folder / "signals.json"
         self.status_file = self.bridge_folder / "status.json"
@@ -374,7 +374,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if 'mt4_bridge' not in st.session_state:
-    st.session_state.mt4_bridge = MT4Bridge()
+    # CRITICAL: Usa il percorso esatto MT4
+    mt4_path = r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files\MT4_Bridge"
+    st.session_state.mt4_bridge = MT4Bridge(bridge_folder=mt4_path)
     st.session_state.live_price_active = False
     st.session_state.last_price_update = time.time()
 
@@ -402,10 +404,45 @@ col_status1, col_status2 = st.columns([3, 1])
 
 with col_status1:
     mt4_connected = bridge.is_mt4_connected()
+    
+    # Debug info expander
+    with st.expander("🔧 Debug Info - Connection Status", expanded=not mt4_connected):
+        st.code(f"Bridge Path: {bridge.bridge_folder}")
+        st.code(f"Heartbeat File: {bridge.heartbeat_file}")
+        
+        # Check if files exist
+        if bridge.heartbeat_file.exists():
+            st.success("✅ Heartbeat file EXISTS")
+            try:
+                with open(bridge.heartbeat_file, 'r') as f:
+                    hb_data = json.load(f)
+                st.json(hb_data)
+                
+                # Check age
+                last_beat = datetime.datetime.fromisoformat(hb_data.get('timestamp', '2000-01-01'))
+                age = (datetime.datetime.now() - last_beat).total_seconds()
+                
+                if age < 10:
+                    st.success(f"✅ Heartbeat is FRESH ({age:.1f}s old)")
+                else:
+                    st.warning(f"⚠️ Heartbeat is OLD ({age:.1f}s old)")
+            except Exception as e:
+                st.error(f"Error reading heartbeat: {e}")
+        else:
+            st.error("❌ Heartbeat file NOT FOUND")
+            st.info("EA is not writing to this location. Check MT4 Journal for the correct path.")
+        
+        # Check other files
+        st.markdown("**Other Files:**")
+        st.text(f"Status: {'✅' if bridge.status_file.exists() else '❌'} {bridge.status_file}")
+        st.text(f"Trades: {'✅' if bridge.trades_file.exists() else '❌'} {bridge.trades_file}")
+        st.text(f"Live Price: {'✅' if (bridge.bridge_folder / 'live_price.json').exists() else '❌'}")
+    
     if mt4_connected:
-        st.success("🟢 MT4 Connected")
+        st.success("🟢 MT4 Connected & Active")
     else:
-        st.warning("🟡 MT4 Disconnected - Start EA in MT4")
+        st.error("🔴 MT4 Disconnected")
+        st.warning("⚠️ Check: 1) EA is running 2) Path is correct 3) Heartbeat file exists")
 
 with col_status2:
     status = bridge.get_status()
