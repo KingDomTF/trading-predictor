@@ -4,6 +4,3 @@ yfinance
 pandas
 numpy
 scikit-learn
-
-# Installa
-pip install -r requirements.txt
