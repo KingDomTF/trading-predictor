@@ -12,16 +12,16 @@ from datetime import datetime
 # ==================== MT4 BRIDGE ====================
 class MT4Bridge:
     def __init__(self):
-        # MODIFICA QUESTO PATH con il tuo percorso MT4
-        # Trova il tuo path in MT4: File -> Apri Cartella Dati -> MQL4 -> Files
+        # Percorsi standard
         self.base_path = Path.home() / "AppData/Roaming/MetaQuotes/Terminal"
         
-        # Trova automaticamente la cartella Terminal
+        # Tentativo di rilevamento automatico
         if self.base_path.exists():
             terminals = [d for d in self.base_path.iterdir() if d.is_dir()]
             if terminals:
                 self.files_path = terminals[0] / "MQL4" / "Files"
             else:
+                # Fallback path specifico se necessario
                 self.files_path = Path(r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files")
         else:
             self.files_path = Path("C:/MT4_Files")
@@ -80,6 +80,10 @@ def calculate_indicators(df):
     return df.dropna()
 
 def train_simple_model(df):
+    # Assicura di avere abbastanza dati
+    if len(df) < 100:
+        return None, None
+        
     X = df[['EMA_20', 'RSI', 'ATR']].values[-100:]
     y = (df['Close'].shift(-1) > df['Close'])[-100:].astype(int).values
     
@@ -92,6 +96,8 @@ def train_simple_model(df):
     return model, scaler
 
 def predict(model, scaler, features):
+    if model is None:
+        return 50.0
     return model.predict_proba(scaler.transform([features]))[0][1] * 100
 
 # ==================== STREAMLIT APP ====================
@@ -110,7 +116,6 @@ bridge = st.session_state.bridge
 with st.sidebar:
     st.header("⚙️ Configuration")
     
-    # MT4 Path Info
     st.info(f"📁 MT4 Files Path:\n{bridge.files_path}")
     
     if st.button("🔍 Test Connection"):
@@ -118,12 +123,12 @@ with st.sidebar:
             st.success("✅ MT4 Connected!")
         else:
             st.error("❌ Not Connected")
-            st.caption("Check: 1) EA running 2) Path correct")
     
     st.divider()
     
     symbol = st.text_input("Symbol", "GC=F")
-    interval = st.selectbox("Timeframe", ['1h', '1d'], index=0)
+    # UPDATED: Added 5m and 15m
+    interval = st.selectbox("Timeframe", ['5m', '15m', '1h', '1d'], index=2)
     
     st.session_state.live_mode = st.checkbox("⚡ Live Price from MT4", 
                                               value=st.session_state.live_mode)
@@ -131,7 +136,6 @@ with st.sidebar:
 # ==================== MAIN AREA ====================
 col1, col2, col3 = st.columns(3)
 
-# MT4 Status
 status = bridge.get_status()
 mt4_price = bridge.get_live_price()
 
@@ -161,122 +165,88 @@ st.divider()
 if st.button("🔄 Load & Analyze"):
     with st.spinner("Loading data..."):
         try:
-            # Load data
-            data = yf.download(symbol, period='90d', interval=interval, progress=False)
+            # UPDATED: Dynamic period selection (yfinance max 60d for intraday)
+            if interval in ['5m', '15m']:
+                period_lookup = '59d' 
+            elif interval == '1h':
+                period_lookup = '720d' # 2 years approx
+            else:
+                period_lookup = '5y'
+            
+            data = yf.download(symbol, period=period_lookup, interval=interval, progress=False)
             
             if data.empty:
-                st.error("No data available")
+                st.error("No data available from yfinance.")
             else:
-                # Calculate indicators
                 df = calculate_indicators(data)
-                
-                # Train model
                 model, scaler = train_simple_model(df)
                 
-                # Current price
-                if mt4_price and st.session_state.live_mode:
-                    current_price = float(mt4_price.get('bid', df['Close'].iloc[-1]))
-                    source = "MT4"
+                if model is None:
+                    st.error("Not enough data to train model (Need > 100 periods with indicators).")
                 else:
-                    current_price = float(df['Close'].iloc[-1])
-                    source = "yfinance"
-                
-                # Display
-                st.success(f"✅ Data loaded! Current price: ${current_price:.2f} ({source})")
-                
-                # Metrics
-                col1, col2, col3, col4 = st.columns(4)
-                latest = df.iloc[-1]
-                
-                with col1:
-                    st.metric("Price", f"${current_price:.2f}")
-                with col2:
-                    st.metric("RSI", f"{latest['RSI']:.1f}")
-                with col3:
-                    st.metric("ATR", f"{latest['ATR']:.2f}")
-                with col4:
-                    trend = "📈 UP" if latest['EMA_20'] > df['EMA_20'].iloc[-5] else "📉 DOWN"
-                    st.metric("Trend", trend)
-                
-                # Generate signals
-                st.subheader("🎯 AI Signals")
-                
-                atr = latest['ATR']
-                features = [latest['EMA_20'], latest['RSI'], latest['ATR']]
-                ai_prob = predict(model, scaler, features)
-                
-                # Long signal
-                if latest['RSI'] < 50:
-                    col_sig, col_btn = st.columns([3, 1])
-                    with col_sig:
-                        entry = current_price
-                        sl = current_price - atr * 1.5
-                        tp = current_price + atr * 3.0
-                        
-                        st.success(f"""
-                        **🟢 LONG SIGNAL**
-                        - Entry: ${entry:.2f}
-                        - SL: ${sl:.2f}
-                        - TP: ${tp:.2f}
-                        - AI Confidence: {ai_prob:.1f}%
-                        """)
+                    if mt4_price and st.session_state.live_mode:
+                        current_price = float(mt4_price.get('bid', df['Close'].iloc[-1]))
+                        source = "MT4"
+                    else:
+                        current_price = float(df['Close'].iloc[-1])
+                        source = "yfinance"
                     
-                    with col_btn:
-                        st.write("")
-                        st.write("")
-                        if st.button("📤 Send to MT4", key="long"):
-                            signal = {
-                                "symbol": mt4_price.get('symbol', 'XAUUSD') if mt4_price else 'XAUUSD',
-                                "direction": "BUY",
-                                "entry": entry,
-                                "stop_loss": sl,
-                                "take_profit": tp,
-                                "lot_size": 0.01,
-                                "comment": "AI_LONG"
-                            }
-                            
-                            if bridge.send_signal(signal):
-                                st.success("✅ Signal sent!")
-                            else:
-                                st.error("❌ Failed")
-                
-                # Short signal
-                if latest['RSI'] > 50:
-                    col_sig, col_btn = st.columns([3, 1])
-                    with col_sig:
-                        entry = current_price
-                        sl = current_price + atr * 1.5
-                        tp = current_price - atr * 3.0
-                        
-                        st.error(f"""
-                        **🔴 SHORT SIGNAL**
-                        - Entry: ${entry:.2f}
-                        - SL: ${sl:.2f}
-                        - TP: ${tp:.2f}
-                        - AI Confidence: {(100-ai_prob):.1f}%
-                        """)
+                    st.success(f"✅ Data loaded! Current price: ${current_price:.2f} ({source})")
                     
-                    with col_btn:
-                        st.write("")
-                        st.write("")
-                        if st.button("📤 Send to MT4", key="short"):
-                            signal = {
-                                "symbol": mt4_price.get('symbol', 'XAUUSD') if mt4_price else 'XAUUSD',
-                                "direction": "SELL",
-                                "entry": entry,
-                                "stop_loss": sl,
-                                "take_profit": tp,
-                                "lot_size": 0.01,
-                                "comment": "AI_SHORT"
-                            }
-                            
-                            if bridge.send_signal(signal):
-                                st.success("✅ Signal sent!")
-                            else:
-                                st.error("❌ Failed")
-                
-                # Chart
-                st.line_chart(df['Close'].tail(50))
+                    col1, col2, col3, col4 = st.columns(4)
+                    latest = df.iloc[-1]
+                    
+                    with col1: st.metric("Price", f"${current_price:.2f}")
+                    with col2: st.metric("RSI", f"{latest['RSI']:.1f}")
+                    with col3: st.metric("ATR", f"{latest['ATR']:.2f}")
+                    with col4: 
+                        trend = "📈 UP" if latest['EMA_20'] > df['EMA_20'].iloc[-5] else "📉 DOWN"
+                        st.metric("Trend", trend)
+                    
+                    st.subheader("🎯 AI Signals")
+                    
+                    atr = latest['ATR']
+                    features = [latest['EMA_20'], latest['RSI'], latest['ATR']]
+                    ai_prob = predict(model, scaler, features)
+                    
+                    # Logic for Buttons
+                    col_sig, col_btn = st.columns([3, 1])
+                    
+                    # Long logic
+                    if latest['RSI'] < 50:
+                        with col_sig:
+                            entry = current_price
+                            sl = current_price - atr * 1.5
+                            tp = current_price + atr * 3.0
+                            st.success(f"**🟢 LONG SIGNAL** | AI Conf: {ai_prob:.1f}% | SL: {sl:.2f} | TP: {tp:.2f}")
+                        with col_btn:
+                            if st.button("📤 Send BUY", key="long"):
+                                signal = {
+                                    "symbol": mt4_price.get('symbol', 'XAUUSD') if mt4_price else 'XAUUSD',
+                                    "direction": "BUY", "entry": entry, "stop_loss": sl, 
+                                    "take_profit": tp, "lot_size": 0.01, "comment": "AI_LONG"
+                                }
+                                bridge.send_signal(signal)
+                                st.toast("Signal Sent!")
+
+                    # Short logic
+                    elif latest['RSI'] > 50:
+                        with col_sig:
+                            entry = current_price
+                            sl = current_price + atr * 1.5
+                            tp = current_price - atr * 3.0
+                            st.error(f"**🔴 SHORT SIGNAL** | AI Conf: {(100-ai_prob):.1f}% | SL: {sl:.2f} | TP: {tp:.2f}")
+                        with col_btn:
+                            if st.button("📤 Send SELL", key="short"):
+                                signal = {
+                                    "symbol": mt4_price.get('symbol', 'XAUUSD') if mt4_price else 'XAUUSD',
+                                    "direction": "SELL", "entry": entry, "stop_loss": sl, 
+                                    "take_profit": tp, "lot_size": 0.01, "comment": "AI_SHORT"
+                                }
+                                bridge.send_signal(signal)
+                                st.toast("Signal Sent!")
+                    
+                    st.line_chart(df['Close'].tail(50))
                 
         except Exception as e:
             st.error(f"Error: {e}")
@@ -285,7 +255,3 @@ if st.button("🔄 Load & Analyze"):
 if st.session_state.live_mode and mt4_price:
     time.sleep(1)
     st.rerun()
-
-# Footer
-st.divider()
-st.caption("⚠️ Educational purposes only. Trade at your own risk.")
