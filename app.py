@@ -24,7 +24,7 @@ class MT4Bridge:
             else:
                 self.files_path = Path(r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files")
         else:
-            self.files_path = Path)r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"
+            self.files_path = Path("C:/MT4_Files")
         
         self.status_file = self.files_path / "ai_status.json"
         self.price_file = self.files_path / "ai_price.json"
