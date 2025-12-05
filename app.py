@@ -15,7 +15,8 @@ warnings.filterwarnings('ignore')
 class MT4Bridge:
     """Gestisce comunicazione bidirezionale con MT4"""
     
-    def __init__(self, bridge_folder= r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files"):
+    def __init__(self, bridge_folder="C:/MT4_Bridge"):
+        # CRITICAL: Converti tutto in Path per gestire correttamente i separatori
         self.bridge_folder = Path(bridge_folder)
         self.signals_file = self.bridge_folder / "signals.json"
         self.status_file = self.bridge_folder / "status.json"
@@ -75,16 +76,40 @@ class MT4Bridge:
         return []
     
     def is_mt4_connected(self):
-        """Verifica connessione MT4"""
+        """Verifica connessione MT4 - usa status.json come fallback"""
+        # Try heartbeat first
         try:
             if self.heartbeat_file.exists():
                 with open(self.heartbeat_file, 'r') as f:
                     data = json.load(f)
                     last_beat = datetime.datetime.fromisoformat(data.get('timestamp', '2000-01-01'))
                     age = (datetime.datetime.now() - last_beat).total_seconds()
-                    return age < 10
+                    if age < 10:
+                        return True
         except:
             pass
+        
+        # Fallback to status.json (more reliable)
+        try:
+            if self.status_file.exists():
+                with open(self.status_file, 'r') as f:
+                    data = json.load(f)
+                    timestamp_str = data.get('timestamp', '2000-01-01 00:00:00')
+                    
+                    # Parse MT4 timestamp format
+                    try:
+                        last_update = datetime.datetime.strptime(timestamp_str, '%Y.%m.%d %H:%M:%S')
+                    except:
+                        try:
+                            last_update = datetime.datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                        except:
+                            return False
+                    
+                    age = (datetime.datetime.now() - last_update).total_seconds()
+                    return age < 15  # 15 seconds tolerance for status file
+        except:
+            pass
+        
         return False
     
     def get_live_price(self):
@@ -374,9 +399,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if 'mt4_bridge' not in st.session_state:
-    # CRITICAL: Usa il percorso esatto MT4
-    mt4_path = r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files\MT4_Bridge"
-    st.session_state.mt4_bridge = MT4Bridge(bridge_folder=mt4_path)
+    # CRITICAL: Usa Path().resolve() per normalizzare i separatori
+    mt4_path = Path(r"C:\Users\dcbat\AppData\Roaming\MetaQuotes\Terminal\B8925BF731C22E88F33C7A8D7CD3190E\MQL4\Files\MT4_Bridge").resolve()
+    st.session_state.mt4_bridge = MT4Bridge(bridge_folder=str(mt4_path))
     st.session_state.live_price_active = False
     st.session_state.last_price_update = time.time()
 
@@ -410,6 +435,27 @@ with col_status1:
         st.code(f"Bridge Path: {bridge.bridge_folder}")
         st.code(f"Heartbeat File: {bridge.heartbeat_file}")
         
+        # Show if using correct path separators
+        if '/' in str(bridge.heartbeat_file) and '\\' in str(bridge.heartbeat_file):
+            st.error("⚠️ MIXED PATH SEPARATORS DETECTED - This will cause file not found!")
+            st.info(f"Fix: Using normalized path...")
+        
+        # List actual files in folder
+        try:
+            if bridge.bridge_folder.exists():
+                st.success(f"✅ Folder EXISTS: {bridge.bridge_folder}")
+                files_in_folder = list(bridge.bridge_folder.glob("*.json"))
+                if files_in_folder:
+                    st.success(f"📁 Found {len(files_in_folder)} JSON files:")
+                    for f in files_in_folder:
+                        st.text(f"   • {f.name}")
+                else:
+                    st.warning("📂 Folder is EMPTY - EA not writing files yet")
+            else:
+                st.error(f"❌ Folder DOES NOT EXIST: {bridge.bridge_folder}")
+        except Exception as e:
+            st.error(f"Error checking folder: {e}")
+        
         # Check if files exist
         if bridge.heartbeat_file.exists():
             st.success("✅ Heartbeat file EXISTS")
@@ -419,7 +465,7 @@ with col_status1:
                 st.json(hb_data)
                 
                 # Check age
-                last_beat = datetime.datetime.fromisoformat(hb_data.get('timestamp', '2000-01-01'))
+                last_beat = datetime.datetime.fromisoformat(hb_data.get('timestamp', '2000-01-01').replace(' ', 'T'))
                 age = (datetime.datetime.now() - last_beat).total_seconds()
                 
                 if age < 10:
@@ -430,13 +476,18 @@ with col_status1:
                 st.error(f"Error reading heartbeat: {e}")
         else:
             st.error("❌ Heartbeat file NOT FOUND")
-            st.info("EA is not writing to this location. Check MT4 Journal for the correct path.")
+            st.code(f"Looking for: {bridge.heartbeat_file}")
         
         # Check other files
         st.markdown("**Other Files:**")
-        st.text(f"Status: {'✅' if bridge.status_file.exists() else '❌'} {bridge.status_file}")
-        st.text(f"Trades: {'✅' if bridge.trades_file.exists() else '❌'} {bridge.trades_file}")
-        st.text(f"Live Price: {'✅' if (bridge.bridge_folder / 'live_price.json').exists() else '❌'}")
+        for name, path in [
+            ("Status", bridge.status_file),
+            ("Trades", bridge.trades_file),
+            ("Live Price", bridge.bridge_folder / "live_price.json")
+        ]:
+            exists = path.exists() if hasattr(path, 'exists') else False
+            icon = '✅' if exists else '❌'
+            st.text(f"{icon} {name}: {path.name}")
     
     if mt4_connected:
         st.success("🟢 MT4 Connected & Active")
