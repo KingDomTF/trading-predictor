@@ -1,6 +1,7 @@
-# Crea requirements.txt
-streamlit
-yfinance
-pandas
-numpy
-scikit-learn
+pandas>=2.0.0
+numpy>=1.24.0
+yfinance>=0.2.20     # Rimuovi se non scarichi dati da Yahoo
+ccxt>=4.0.0          # Rimuovi se non usi Crypto Exchange
+schedule>=1.2.0      # Utile per eseguire task a intervalli
+ta>=0.10.0           # Libreria per analisi tecnica (RSI, MACD, etc.)
+matplotlib>=3.7.0    # Se devi plottare grafici
