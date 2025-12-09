@@ -5,15 +5,16 @@ import datetime
 from supabase import create_client
 
 # ==========================================
-# CONFIGURAZIONE (DA COMPILARE CON I TUOI DATI)
+# CONFIGURAZIONE
 # ==========================================
-# Inserisci qui l'URL e la KEY che hai preso da Supabase (Settings -> API)
-SUPABASE_URL = "INSERISCI_QUI_IL_TUO_URL_SUPABASE"
-SUPABASE_KEY = "INSERISCI_QUI_LA_TUA_CHIAVE_SUPABASE"
 
-# Porta ZMQ (Deve essere la stessa indicata nell'EA di MT4, di solito PUSH_PORT o PULL_PORT)
-# Se usi il mio snippet EA semplice usa 5555. 
-# Se usi l'EA completo DWX, controlla l'input "PUSH_PORT" su MT4 (default 32768).
+# 1. INSERISCI QUI IL TUO URL (Lo trovi su Supabase -> Project Settings -> API -> Project URL)
+SUPABASE_URL = "https://gkffitfxqhxifibfwsfx.supabase.co" 
+
+# 2. LA TUA CHIAVE (Già inserita)
+SUPABASE_KEY = "sb_secret_s8jLpFKLhX3pNWXg6mBNOw_9HNs6rlG"
+
+# 3. CONFIGURAZIONE PORTA (Deve essere uguale all'EA su MT4)
 ZMQ_PORT = 5555 
 
 # ==========================================
@@ -25,20 +26,27 @@ def init_bridge():
     print("🚀 AVVIO SISTEMA BRIDGE: MT4 -> SUPABASE")
     print("-" * 50)
 
-    # 1. Connessione a Supabase
+    # Controllo che l'utente abbia messo l'URL
+    if "INSERISCI" in SUPABASE_URL:
+        print("\n❌ [ERRORE] Manca il SUPABASE_URL!")
+        print("Vai nel file bridge.py e incolla il Project URL alla riga 11.")
+        return None, None
+
+    # 1. Connessione al Cloud (Supabase)
     try:
         print("☁️  Connessione al Cloud Database...", end=" ")
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         print("[OK]")
     except Exception as e:
-        print(f"\n[ERRORE CRITICO] Impossibile connettersi a Supabase: {e}")
+        print(f"\n[ERRORE CRITICO] Connessione Supabase fallita: {e}")
+        print("Suggerimento: Controlla che l'URL sia corretto (es. https://xyz.supabase.co)")
         return None, None
 
     # 2. Connessione a ZeroMQ (Lato Locale)
     try:
         print(f"🔌 Apertura Porta Locale {ZMQ_PORT}...", end=" ")
         context = zmq.Context()
-        socket = context.socket(zmq.PULL) # PULL ascolta quello che MT4 (PUSH) invia
+        socket = context.socket(zmq.PULL) # PULL ascolta
         socket.bind(f"tcp://*:{ZMQ_PORT}")
         print("[OK]")
     except Exception as e:
@@ -56,51 +64,45 @@ def init_bridge():
 def main():
     socket, supabase = init_bridge()
     if not socket or not supabase:
+        input("\nPremi INVIO per chiudere...")
         return
 
     msg_count = 0
 
     while True:
         try:
-            # 1. Ricezione Pacchetto (Bloccante - aspetta finché non arriva qualcosa)
-            # Usiamo recv_string per vedere il dato grezzo, poi lo convertiamo
+            # 1. Ricezione Pacchetto (Bloccante)
             raw_msg = socket.recv_string()
             
             # Parsing JSON
             try:
                 data = json.loads(raw_msg)
             except json.JSONDecodeError:
-                print(f"⚠️ [WARN] Messaggio non JSON ricevuto: {raw_msg}")
+                print(f"⚠️ [WARN] Messaggio non valido ricevuto: {raw_msg}")
                 continue
 
-            # 2. Formattazione per Supabase
-            # Adattiamo i dati per la tabella 'mt4_feed'
-            # Se l'EA invia dati diversi, qui li mappiamo.
+            # 2. Preparazione Payload
             payload = {
                 "symbol": data.get("symbol", "Unknown"),
                 "price": data.get("price", 0.0),
                 "equity": data.get("equity", 0.0),
-                "comment": data.get("comment", ""),
-                # Timestamp automatico gestito dal DB, ma possiamo forzarlo se serve
+                "comment": data.get("comment", "")
             }
 
-            # 3. Invio al Cloud (Supabase)
-            # Usiamo 'insert' per tenere lo storico.
+            # 3. Invio al Cloud
             response = supabase.table("mt4_feed").insert(payload).execute()
             
-            # Feedback a video
+            # Feedback
             msg_count += 1
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             print(f"[{timestamp}] 📡 Dato #{msg_count} inviato: {payload['symbol']} @ {payload['price']}")
 
         except zmq.ZMQError as e:
             print(f"⚠️ [ZMQ ERROR] {e}")
-            time.sleep(1) # Pausa di sicurezza
+            time.sleep(1)
             
         except Exception as e:
-            # Errore generico (es. internet caduta)
             print(f"❌ [ERRORE] {e}")
-            print("Tentativo di riconnessione in 2 secondi...")
             time.sleep(2)
 
 if __name__ == "__main__":
