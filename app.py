@@ -1,94 +1,106 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
-import time
-import json
 import plotly.express as px
+import plotly.graph_objects as go
+import time
 from datetime import datetime
 
-# ================= CONFIGURAZIONE =================
+# CONFIGURAZIONE
 SUPABASE_URL = "https://gkffitfxqhxifibfwsfx.supabase.co"
 SUPABASE_KEY = "sb_secret_s8jLpFKLhX3pNWXg6mBNOw_9HNs6rlG"
 
-st.set_page_config(page_title="AI Trading Oracle", layout="wide", page_icon="🧿")
+st.set_page_config(page_title="Oracle AI Trader", layout="wide", page_icon="🔮")
 
-# CSS Personalizzato per le Card
+# CSS PERSONALIZZATO (Stile "Palantir")
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #1e1e1e;
-        border: 1px solid #333;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-    }
-    .buy-signal { color: #00ff00; font-weight: bold; }
-    .sell-signal { color: #ff4b4b; font-weight: bold; }
+    .big-font { font-size:24px !important; font-weight: bold; }
+    .rec-box { padding: 20px; border-radius: 10px; text-align: center; color: white; }
+    .buy { background-color: #00C805; }
+    .sell { background-color: #FF3B30; }
+    .wait { background-color: #FFCC00; color: black; }
 </style>
 """, unsafe_allow_html=True)
 
 @st.cache_resource
-def init_db(): return create_client(SUPABASE_URL, SUPABASE_KEY)
+def init_db():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
 supabase = init_db()
 
-# ================= LAYOUT PRINCIPALE =================
-st.title("🧿 ORACOL: Live AI Scalping System")
+# HEADER
+st.title("🔮 Oracle AI: Strategic Decision System")
 
-col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-chart_place = st.empty()
-st.markdown("---")
-st.subheader("⚡ TACTICAL SCALPING OPTIONS")
-options_place = st.empty()
+# LAYOUT
+col_kpi, col_oracle = st.columns([1, 2])
+chart_spot = st.empty()
 
 while True:
     try:
-        # Scarica l'ultimo dato
-        response = supabase.table("mt4_feed").select("*").order("id", desc=True).limit(30).execute()
+        # 1. PRENDI DATI LIVE (Prezzo)
+        feed_res = supabase.table("mt4_feed").select("*").order("id", desc=True).limit(1).execute()
         
-        if response.data:
-            df = pd.DataFrame(response.data)
-            df['created_at'] = pd.to_datetime(df['created_at'])
-            last = df.sort_values('created_at').iloc[-1]
+        # 2. PRENDI DATI ORACOLO (Predizioni)
+        oracle_res = supabase.table("ai_oracle").select("*").order("id", desc=True).limit(1).execute()
+        
+        if feed_res.data:
+            live = feed_res.data[0]
             
-            # 1. KPI
-            col_kpi1.metric("Asset", last['symbol'])
-            col_kpi2.metric("Live Price", f"{last['price']:.2f}")
-            col_kpi3.metric("Account Equity", f"€ {last['equity']:.2f}")
+            # --- COLONNA SINISTRA: DATI DI MERCATO ---
+            with col_kpi:
+                st.subheader(f"Asset: {live['symbol']}")
+                st.metric("Live Price", f"{live['price']}")
+                st.metric("Account Equity", f"€ {live['equity']}")
+                
+                # Grafico rapido ultimi 50 tick
+                hist_res = supabase.table("mt4_feed").select("*").order("id", desc=True).limit(50).execute()
+                df_hist = pd.DataFrame(hist_res.data).sort_values('created_at')
+                st.line_chart(df_hist, x='created_at', y='price', height=200)
 
-            # 2. GRAFICO
-            fig = px.line(df, x='created_at', y='price', title=f"{last['symbol']} Live Trend")
-            fig.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
-            chart_place.plotly_chart(fig, use_container_width=True, key=f"ch_{time.time()}")
-
-            # 3. LE 3 SCELTE DI TRADING (Decodifica JSON)
-            try:
-                # Il campo comment contiene il JSON con le strategie
-                ai_data = json.loads(last['comment'])
+            # --- COLONNA DESTRA: LE 3 SCELTE (ORACLE) ---
+            with col_oracle:
+                st.subheader("🤖 AI Strategic Analysis")
                 
-                direction = ai_data.get("direction", "N/A")
-                confidence = ai_data.get("confidence", 0)
-                options = ai_data.get("options", [])
-                
-                # Colore segnale
-                color_class = "buy-signal" if "LONG" in direction else "sell-signal"
-                
-                with options_place.container():
-                    st.markdown(f"### 🔮 PREDICTION: <span class='{color_class}'>{direction}</span> (Conf: {confidence:.0%})", unsafe_allow_html=True)
+                if oracle_res.data:
+                    pred = oracle_res.data[0]
                     
-                    if options:
-                        c1, c2, c3 = st.columns(3)
-                        # Mostriamo le 3 opzioni come card
-                        for i, col in enumerate([c1, c2, c3]):
-                            opt = options[i]
-                            with col:
-                                st.error(f"{opt['type']}") if "SHORT" in direction else st.success(f"{opt['type']}")
-                                st.markdown(f"**ENTRY:** {opt['entry']}")
-                                st.markdown(f"**🎯 TP:** {opt['tp']}")
-                                st.markdown(f"**🛡️ SL:** {opt['sl']}")
-                                st.caption(f"*{opt['desc']}*")
-            except:
-                with options_place.container():
-                    st.info("🧠 L'AI sta analizzando i dati storici... attendere.")
+                    # BOX RACCOMANDAZIONE PRINCIPALE
+                    rec = pred['recommendation']
+                    color_class = "wait"
+                    if "BUY" in rec: color_class = "buy"
+                    elif "SELL" in rec: color_class = "sell"
+                    
+                    st.markdown(f"""
+                    <div class="rec-box {color_class}">
+                        <h1>{rec}</h1>
+                        <p>{pred['analysis_depth']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.divider()
+                    
+                    # LE TRE PROBABILITÀ (Visualizzazione a Barre)
+                    c1, c2, c3 = st.columns(3)
+                    
+                    # 1. SCENARIO LONG
+                    c1.markdown("### 🟢 LONG")
+                    c1.progress(int(pred['prob_buy']))
+                    c1.caption(f"Probabilità: {pred['prob_buy']}%")
+                    
+                    # 2. SCENARIO HOLD
+                    c2.markdown("### 🟡 HOLD")
+                    c2.progress(int(pred['prob_hold']))
+                    c2.caption(f"Probabilità: {pred['prob_hold']}%")
+                    
+                    # 3. SCENARIO SHORT
+                    c3.markdown("### 🔴 SHORT")
+                    c3.progress(int(pred['prob_sell']))
+                    c3.caption(f"Probabilità: {pred['prob_sell']}%")
+                    
+                    st.info(f"Ultima analisi AI: {pd.to_datetime(pred['created_at']).strftime('%H:%M:%S')}")
+                else:
+                    st.warning("L'AI sta analizzando lo storico... attendere.")
 
         time.sleep(1)
 
