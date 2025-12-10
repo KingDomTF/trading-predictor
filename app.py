@@ -1,45 +1,29 @@
 import streamlit as st
 from supabase import create_client
 import time
+import pandas as pd
 
 # CONFIGURAZIONE
-st.set_page_config(page_title="AI Trade Signals", layout="wide", page_icon="🎯")
+st.set_page_config(page_title="AI Trade Signals", layout="wide", page_icon="🦅")
 
-# CSS OPERATIVO PULITO
+# CSS OPERATIVO
 st.markdown("""
 <style>
     .stApp { background-color: #0E1117; color: white; }
     
-    /* CARTA SEGNALE */
     .trade-card {
-        background: #1c1f26;
-        padding: 25px;
-        border-radius: 15px;
-        border: 1px solid #333;
-        text-align: center;
-        transition: transform 0.3s;
+        background: #1c1f26; padding: 25px; border-radius: 15px;
+        border: 1px solid #333; text-align: center; margin-bottom: 10px;
     }
-    .trade-card:hover { transform: scale(1.02); }
+    .card-title { font-size: 16px; color: #888; text-transform: uppercase; }
+    .card-value { font-size: 36px; font-weight: bold; color: white; }
     
-    .card-title { font-size: 18px; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .card-value { font-size: 32px; font-weight: bold; color: white; }
-    .card-sub { font-size: 14px; color: #666; margin-top: 5px; }
-
-    /* COLORI DINAMICI */
-    .buy-text { color: #00C805 !important; }
-    .sell-text { color: #FF3B30 !important; }
-    .tp-text { color: #00BFFF !important; }
+    .buy-text { color: #00C805; }
+    .sell-text { color: #FF3B30; }
+    .tp-text { color: #00BFFF; }
+    .wait-text { color: #FFD700; }
     
-    /* BOX PROBABILITA */
-    .prob-box {
-        background: #262626;
-        border-radius: 8px;
-        padding: 10px;
-        margin-top: 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
+    .status-box { padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #444; background: #222; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,90 +35,83 @@ SUPABASE_KEY = "sb_secret_s8jLpFKLhX3pNWXg6mBNOw_9HNs6rlG"
 def init_db(): return create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase = init_db()
 
-# HEADER
-st.title("🎯 AI OPERATIONAL SIGNALS")
-st.markdown("Analisi istituzionale live: Entry, Stop Loss & Take Profit dinamici.")
+st.title("🦅 AI STRATEGY ROOM")
 
 placeholder = st.empty()
 
 while True:
     try:
-        # Prendi l'ultimo segnale operativo
-        oracle = supabase.table("ai_oracle").select("*").order("id", desc=True).limit(1).execute()
+        # Prendi l'ultimo segnale
+        response = supabase.table("ai_oracle").select("*").order("id", desc=True).limit(1).execute()
         
-        if oracle.data:
-            sig = oracle.data[0]
-            rec = sig['recommendation']
-            
-            with placeholder.container():
+        with placeholder.container():
+            if response.data:
+                sig = response.data[0]
+                rec = sig.get('recommendation', 'WAIT')
                 
-                # --- RIGA 1: IL VERDETTO ---
-                st.markdown(f"### ASSET: {sig['symbol']} | PREZZO: {sig['current_price']}")
+                # COLORE DINAMICO
+                color = "#FFD700" # Giallo (Wait)
+                if "BUY" in rec: color = "#00C805"
+                elif "SELL" in rec: color = "#FF3B30"
                 
-                # Colore dinamico del titolo
-                title_color = "#888"
-                if "BUY" in rec: title_color = "#00C805"
-                elif "SELL" in rec: title_color = "#FF3B30"
+                # --- HEADER ---
+                c1, c2 = st.columns([3, 1])
+                c1.markdown(f"## {sig.get('symbol', '---')} | LIVE: {sig.get('current_price', 0)}")
+                c2.markdown(f"#### SIGNAL ID: #{sig['id']}")
                 
+                st.markdown("---")
+
+                # --- SEGNALE PRINCIPALE ---
                 st.markdown(f"""
-                <div style="text-align: center; padding: 20px; border: 2px solid {title_color}; border-radius: 10px; margin-bottom: 30px;">
-                    <h1 style="color: {title_color}; font-size: 48px; margin: 0;">{rec}</h1>
-                    <p style="color: #ccc;">{sig['details']}</p>
+                <div style="text-align: center; padding: 30px; border: 3px solid {color}; border-radius: 15px; margin-bottom: 30px; background: rgba(0,0,0,0.3);">
+                    <h1 style="color: {color}; font-size: 60px; margin: 0; letter-spacing: 2px;">{rec}</h1>
+                    <p style="color: #ccc; font-size: 18px; margin-top: 10px;">{sig.get('details', 'Analisi in corso...')}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
-                # --- RIGA 2: I TRE LIVELLI (LE CARTE) ---
-                if "WAIT" not in rec:
-                    c1, c2, c3 = st.columns(3)
+                # --- CARTE OPERATIVE (SOLO SE NON È WAIT) ---
+                if "WAIT" not in rec and "HOLD" not in rec:
+                    k1, k2, k3 = st.columns(3)
                     
-                    # CARTA ENTRY
-                    with c1:
+                    with k1:
                         st.markdown(f"""
                         <div class="trade-card">
                             <div class="card-title">ENTRY PRICE</div>
-                            <div class="card-value">{sig['entry_price']}</div>
-                            <div class="card-sub">Prezzo di Mercato</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    # CARTA STOP LOSS
-                    with c2:
+                            <div class="card-value">{sig.get('entry_price', 0)}</div>
+                        </div>""", unsafe_allow_html=True)
+                        
+                    with k2:
                         st.markdown(f"""
                         <div class="trade-card" style="border-color: #FF3B30;">
                             <div class="card-title sell-text">STOP LOSS</div>
-                            <div class="card-value sell-text">{sig['stop_loss']}</div>
-                            <div class="card-sub">Protezione Dinamica (ATR)</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            <div class="card-value sell-text">{sig.get('stop_loss', 0)}</div>
+                        </div>""", unsafe_allow_html=True)
                         
-                    # CARTA TAKE PROFIT
-                    with c3:
+                    with k3:
                         st.markdown(f"""
                         <div class="trade-card" style="border-color: #00BFFF;">
                             <div class="card-title tp-text">TAKE PROFIT</div>
-                            <div class="card-value tp-text">{sig['take_profit']}</div>
-                            <div class="card-sub">Target (RR {sig['risk_reward']})</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            <div class="card-value tp-text">{sig.get('take_profit', 0)}</div>
+                        </div>""", unsafe_allow_html=True)
                 
-                else:
-                    st.warning("⚠️ Mercato incerto o laterale. L'AI suggerisce di ATTENDERE un setup più chiaro.")
+                # --- PROBABILITA' ---
+                st.write("### 📊 AI Confidence")
+                p_buy = sig.get('prob_buy', 0)
+                p_sell = sig.get('prob_sell', 0)
+                
+                c_buy, c_sell = st.columns(2)
+                c_buy.progress(int(p_buy))
+                c_buy.caption(f"BULLISH: {p_buy}%")
+                
+                c_sell.progress(int(p_sell))
+                c_sell.caption(f"BEARISH: {p_sell}%")
 
-                # --- RIGA 3: PROBABILITA ---
-                st.markdown("### 📊 Analisi Probabilistica")
-                
-                st.write("LONG (Rialzo)")
-                st.progress(int(sig['prob_buy']))
-                
-                st.write("SHORT (Ribasso)")
-                st.progress(int(sig['prob_sell']))
-                
-                st.caption(f"Ultimo aggiornamento: {time.strftime('%H:%M:%S')}")
-                
-        else:
-            st.info("⏳ Attesa dati dal motore strategico...")
-            
+            else:
+                # STATO DI ATTESA (SE DB VUOTO)
+                st.warning("📡 IL SISTEMA È CONNESSO MA IN ATTESA DEL PRIMO SEGNALE...")
+                st.info("Assicurati che 'bridge.py' stia girando sul tuo PC.")
+
         time.sleep(1)
-        
+
     except Exception as e:
         time.sleep(1)
