@@ -1,37 +1,34 @@
 import streamlit as st
 from supabase import create_client
 import time
+import json
 
-st.set_page_config(page_title="Palantir Trading Desk", layout="wide", page_icon="🧿")
+st.set_page_config(page_title="Tri-Vector Trading", layout="wide", page_icon="🦅")
 
-# CSS ISTITUZIONALE
 st.markdown("""
 <style>
-    .stApp { background-color: #0b0d11; color: #c9d1d9; }
+    .stApp { background-color: #0b0c10; color: #c5c6c7; }
     
-    /* KPI MACRO */
-    .macro-card {
-        background: #161b22; padding: 15px; border-radius: 8px; border: 1px solid #30363d;
-        text-align: center; margin-bottom: 10px;
+    /* STRATEGY CARD */
+    .strat-card {
+        background: #1f2833; border: 1px solid #45a29e; border-radius: 15px;
+        padding: 20px; text-align: center; margin-bottom: 20px;
+        transition: transform 0.2s;
     }
-    .macro-title { font-size: 12px; color: #8b949e; letter-spacing: 1px; }
-    .macro-val { font-size: 20px; font-weight: bold; color: #f0f6fc; }
+    .strat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(69, 162, 158, 0.2); }
     
-    /* BOX SEGNALE */
-    .signal-box {
-        background: rgba(22, 27, 34, 0.8); border: 2px solid #30363d;
-        padding: 30px; border-radius: 12px; text-align: center; margin-top: 20px;
-    }
+    .strat-title { font-size: 20px; font-weight: bold; color: #66fcf1; margin-bottom: 10px; text-transform: uppercase; }
+    .strat-prob { font-size: 14px; color: #aaa; margin-bottom: 15px; }
     
-    /* CARTE OPERATIVE */
-    .trade-card {
-        background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
-        padding: 20px; text-align: center; height: 100%;
-    }
+    .data-row { display: flex; justify-content: space-between; margin: 10px 0; border-bottom: 1px solid #2b3642; padding-bottom: 5px; }
+    .data-label { font-size: 12px; color: #888; }
+    .data-val { font-size: 16px; font-weight: bold; color: white; }
     
-    .buy-color { color: #2ea043 !important; border-color: #2ea043 !important; }
-    .sell-color { color: #da3633 !important; border-color: #da3633 !important; }
-    .wait-color { color: #d29922 !important; border-color: #d29922 !important; }
+    .buy-tag { background: #1f4037; color: #4effbf; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
+    .sell-tag { background: #4a0d0d; color: #ff6b6b; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
+    
+    .main-header { text-align: center; margin-bottom: 40px; }
+    .live-price { font-size: 60px; font-weight: 800; color: #fff; text-shadow: 0 0 20px rgba(102, 252, 241, 0.5); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -42,70 +39,58 @@ SUPABASE_KEY = "sb_secret_s8jLpFKLhX3pNWXg6mBNOw_9HNs6rlG"
 def init_db(): return create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase = init_db()
 
-# SIDEBAR SELETTORE
 with st.sidebar:
-    st.title("🧿 ORACOL SYSTEM")
-    asset = st.radio("ASSET TARGET", ["XAUUSD", "BTCUSD", "US500", "ETHUSD"], index=0)
-    st.divider()
-    st.info("Modalità: Intraday Scalping (H1)")
+    st.title("🦅 TRI-VECTOR")
+    asset = st.radio("ASSET", ["XAUUSD", "BTCUSD", "US500", "ETHUSD"])
 
-# LOOP
 placeholder = st.empty()
 
 while True:
     try:
-        # Prendi dati
         resp = supabase.table("ai_oracle").select("*").eq("symbol", asset).order("id", desc=True).limit(1).execute()
         
         with placeholder.container():
             if resp.data:
-                sig = resp.data[0]
-                rec = sig.get('recommendation', 'WAIT')
+                data = resp.data[0]
                 
-                # --- 1. CONTESTO MACRO (VIX & SENTIMENT) ---
-                st.markdown("### 🌍 MACRO CONTEXT ANALYSIS")
-                m1, m2, m3, m4 = st.columns(4)
+                # HEADER
+                st.markdown(f"<div class='main-header'><h3>{asset} LIVE MARKET</h3><div class='live-price'>{data['current_price']}</div></div>", unsafe_allow_html=True)
                 
-                with m1:
-                    st.markdown(f"<div class='macro-card'><div class='macro-title'>VIX (FEAR INDEX)</div><div class='macro-val' style='color:#da3633'>{sig.get('vix_level', 0)}</div></div>", unsafe_allow_html=True)
-                with m2:
-                    st.markdown(f"<div class='macro-card'><div class='macro-title'>MARKET MOOD</div><div class='macro-val'>{sig.get('market_sentiment', '---')}</div></div>", unsafe_allow_html=True)
-                with m3:
-                    st.markdown(f"<div class='macro-card'><div class='macro-title'>DOLLAR TREND</div><div class='macro-val' style='color:#2ea043'>{sig.get('macro_filter', '---')}</div></div>", unsafe_allow_html=True)
-                with m4:
-                    st.markdown(f"<div class='macro-card'><div class='macro-title'>LIVE PRICE</div><div class='macro-val'>{sig.get('current_price', 0)}</div></div>", unsafe_allow_html=True)
-
-                # --- 2. IL SEGNALE OPERATIVO ---
-                color_class = "wait-color"
-                if "BUY" in rec: color_class = "buy-color"
-                elif "SELL" in rec: color_class = "sell-color"
+                # RECUPERO LE 3 STRATEGIE (JSON)
+                strategies = data.get('strategies')
                 
-                st.markdown(f"""
-                <div class="signal-box {color_class}">
-                    <h1 style="font-size: 50px; margin:0;">{rec}</h1>
-                    <p style="opacity:0.7; margin-top:10px;">{sig.get('details', '')}</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # --- 3. LIVELLI DI SCALPING (SOLO SE ACTIVE) ---
-                if "SCALP" in rec:
-                    k1, k2, k3 = st.columns(3)
-                    with k1:
-                        st.markdown(f"<div class='trade-card'><div class='macro-title'>ENTRY POINT</div><div class='macro-val'>{sig.get('entry_price')}</div></div>", unsafe_allow_html=True)
-                    with k2:
-                        st.markdown(f"<div class='trade-card' style='border:1px solid #da3633'><div class='macro-title' style='color:#da3633'>STOP LOSS (1 ATR)</div><div class='macro-val' style='color:#da3633'>{sig.get('stop_loss')}</div></div>", unsafe_allow_html=True)
-                    with k3:
-                        st.markdown(f"<div class='trade-card' style='border:1px solid #2ea043'><div class='macro-title' style='color:#2ea043'>TAKE PROFIT (2 ATR)</div><div class='macro-val' style='color:#2ea043'>{sig.get('take_profit')}</div></div>", unsafe_allow_html=True)
+                if strategies:
+                    c1, c2, c3 = st.columns(3)
                     
-                    st.success(f"⚡ SETUP VALIDO: Risk/Reward {sig.get('risk_reward')} | Operazione Intraday")
-                
-                elif "WAIT" in rec and "Macro" in rec:
-                    st.error("⛔ SEGNALE BLOCCATO DAL FILTRO MACRO. (Troppa volatilità o Dollaro contro). Attendi.")
+                    # Funzione per disegnare la card
+                    def draw_card(col, strat):
+                        with col:
+                            tag_class = "buy-tag" if strat['type'] == "BUY" else "sell-tag"
+                            st.markdown(f"""
+                            <div class='strat-card'>
+                                <div class='strat-title'>{strat['name']}</div>
+                                <span class='{tag_class}'>{strat['type']}</span>
+                                <div class='strat-prob'>Probabilità Stimata: {strat['prob']}%</div>
+                                <hr style='border-color: #45a29e; opacity: 0.3;'>
+                                <div class='data-row'><span class='data-label'>ENTRY</span><span class='data-val'>{strat['entry']}</span></div>
+                                <div class='data-row'><span class='data-label'>STOP LOSS</span><span class='data-val' style='color:#ff6b6b'>{strat['sl']}</span></div>
+                                <div class='data-row'><span class='data-label'>TAKE PROFIT</span><span class='data-val' style='color:#4effbf'>{strat['tp']}</span></div>
+                                <p style='font-size:12px; color:#888; margin-top:15px; font-style:italic;'>"{strat['desc']}"</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                    # Disegna le 3 strategie
+                    if len(strategies) >= 3:
+                        draw_card(c1, strategies[0]) # Fortress
+                        draw_card(c2, strategies[1]) # Tactician
+                        draw_card(c3, strategies[2]) # Hunter
+                    else:
+                        st.warning("Strategie in elaborazione...")
                 else:
-                    st.info("⏳ Scansione volatilità in corso... Nessun setup chiaro al momento.")
+                    st.info("Formattazione dati in corso... attendere il prossimo tick.")
 
             else:
-                st.warning(f"Nessun dato per {asset}. Attiva l'EA su MT4.")
+                st.warning(f"In attesa di dati per {asset}...")
         
         time.sleep(1)
         
