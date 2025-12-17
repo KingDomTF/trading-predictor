@@ -2,36 +2,33 @@ import streamlit as st
 from supabase import create_client
 import time
 
-st.set_page_config(page_title="Sovereign AI", layout="wide", page_icon="💎")
+st.set_page_config(page_title="Vantage Point", layout="wide", page_icon="🔭")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #050505; color: #e0e0e0; }
+    .stApp { background-color: #09090b; color: #e4e4e7; }
     
-    /* BOX PRINCIPALE */
-    .main-box {
-        border: 2px solid #333; border-radius: 20px; padding: 30px;
-        text-align: center; margin-bottom: 30px;
-        background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+    /* ZONA DI ATTIVAZIONE */
+    .zone-box {
+        background: rgba(39, 39, 42, 0.5); border: 2px dashed #52525b;
+        border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;
     }
+    .zone-label { color: #a1a1aa; font-size: 14px; text-transform: uppercase; }
+    .zone-val { font-size: 24px; font-weight: bold; color: #fff; }
     
-    /* LIVELLI OPERATIVI */
-    .level-card {
-        background: #111; border-left: 4px solid #555; padding: 15px;
-        border-radius: 8px; margin: 5px 0; text-align: left;
+    /* SEGNALE */
+    .rec-box {
+        padding: 30px; border-radius: 16px; text-align: center; margin-top: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
-    .lvl-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
-    .lvl-val { font-size: 24px; font-weight: bold; color: white; }
     
     /* COLORI */
-    .c-green { color: #00ff9d !important; border-color: #00ff9d !important; }
-    .c-red { color: #ff4d4d !important; border-color: #ff4d4d !important; }
-    .c-gold { color: #ffcc00 !important; border-color: #ffcc00 !important; }
+    .sniper-buy { background: linear-gradient(135deg, #064e3b, #10b981); border: 2px solid #34d399; }
+    .sniper-sell { background: linear-gradient(135deg, #7f1d1d, #ef4444); border: 2px solid #f87171; }
+    .wait-mode { background: #18181b; border: 2px solid #f59e0b; color: #fbbf24; }
     
-    .status-badge {
-        display: inline-block; padding: 5px 15px; border-radius: 20px;
-        background: #222; font-size: 14px; margin-top: 10px; border: 1px solid #444;
-    }
+    /* CARTE */
+    .card { background: #18181b; border: 1px solid #27272a; padding: 15px; border-radius: 8px; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -43,9 +40,9 @@ def init_db(): return create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase = init_db()
 
 with st.sidebar:
-    st.title("💎 SOVEREIGN")
+    st.title("🔭 VANTAGE")
     asset = st.radio("ASSET", ["XAUUSD", "BTCUSD", "US500", "ETHUSD"])
-    st.info("Logica: Trend H1 + Macro Filter + Dynamic ATR Levels")
+    st.caption("Analisi SMC: Fair Value Gaps + Liquidity Sweeps")
 
 placeholder = st.empty()
 
@@ -58,65 +55,44 @@ while True:
                 d = resp.data[0]
                 rec = d['recommendation']
                 
-                # STILE DINAMICO
-                theme = "c-gold"
-                if "BUY" in rec and "WAIT" not in rec: theme = "c-green"
-                elif "SELL" in rec and "WAIT" not in rec: theme = "c-red"
+                # DETERMINA STILE
+                css_class = "wait-mode"
+                if "SNIPER BUY" in rec or "TREND BUY" in rec: css_class = "sniper-buy"
+                elif "SNIPER SELL" in rec or "TREND SELL" in rec: css_class = "sniper-sell"
                 
-                # TITOLO E DETTAGLI
+                # --- HEADER ---
                 st.markdown(f"""
-                <div class="main-box" style="border-color: inherit;">
-                    <h4 style="color:#888; margin:0;">{asset} ANALYSIS</h4>
-                    <h1 class="{theme}" style="font-size: 64px; margin: 10px 0;">{rec}</h1>
-                    <p style="font-size: 18px; color: #ccc;">{d['details']}</p>
-                    <div class="status-badge">{d.get('macro_filter', 'Macro Check...')}</div>
+                <div class="{css_class} rec-box">
+                    <h4 style="margin:0; opacity:0.8;">{asset} SIGNAL</h4>
+                    <h1 style="font-size: 56px; margin: 10px 0; color:white;">{rec}</h1>
+                    <p style="font-size: 18px; color:white;">{d['details']}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
-                # LIVELLI (VISIBILI SOLO SE C'È SEGNALE ATTIVO)
-                if "WAIT" not in rec:
-                    c1, c2, c3 = st.columns(3)
-                    
-                    with c1:
-                        st.markdown(f"""
-                        <div class="level-card" style="border-color: #333;">
-                            <div class="lvl-label">ENTRY PRICE</div>
-                            <div class="lvl-val">{d['entry_price']}</div>
-                        </div>""", unsafe_allow_html=True)
-                    
-                    with c2:
-                        st.markdown(f"""
-                        <div class="level-card c-red">
-                            <div class="lvl-label" style="color:#ff4d4d">STOP LOSS</div>
-                            <div class="lvl-val" style="color:#ff4d4d">{d['stop_loss']}</div>
-                        </div>""", unsafe_allow_html=True)
-                        
-                    with c3:
-                        st.markdown(f"""
-                        <div class="level-card c-green">
-                            <div class="lvl-label" style="color:#00ff9d">TAKE PROFIT</div>
-                            <div class="lvl-val" style="color:#00ff9d">{d['take_profit']}</div>
-                        </div>""", unsafe_allow_html=True)
-                    
-                    st.success(f"⚡ Risk/Reward: 1:{d['risk_reward']} | Probabilità AI: {max(d['prob_buy'], d['prob_sell']):.0f}%")
-                
-                else:
-                    st.info("Il sistema attende una confluenza migliore. Trend e Macro non sono perfettamente allineati.")
+                # --- ZONA ISTITUZIONALE (SE PRESENTE) ---
+                if d['gap_type'] != "NONE" and "WAIT" in rec:
+                    st.markdown(f"""
+                    <div class="zone-box">
+                        <div class="zone-label">🎯 ZONA DI ATTIVAZIONE (ATTENDI IL PREZZO QUI)</div>
+                        <div class="zone-val">{d.get('institutional_zone_bottom', 0)} - {d.get('institutional_zone_top', 0)}</div>
+                        <div style="color: #71717a; font-size: 12px; margin-top:5px;">Tipo: {d['gap_type']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-                # PROBABILITA' AI
-                st.write("---")
-                pb = d['prob_buy']
-                ps = d['prob_sell']
+                # --- LIVELLI OPERATIVI ---
+                c1, c2, c3 = st.columns(3)
                 
-                c_b, c_s = st.columns(2)
-                c_b.progress(int(pb))
-                c_b.caption(f"BULLISH: {pb:.1f}%")
+                with c1:
+                    st.markdown(f"<div class='card'><div style='color:#a1a1aa'>ENTRY (LIMIT)</div><div style='font-size:24px; font-weight:bold; color:#60a5fa'>{d['entry_price']}</div></div>", unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f"<div class='card'><div style='color:#a1a1aa'>STOP LOSS</div><div style='font-size:24px; font-weight:bold; color:#f87171'>{d['stop_loss']}</div></div>", unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f"<div class='card'><div style='color:#a1a1aa'>TAKE PROFIT</div><div style='font-size:24px; font-weight:bold; color:#34d399'>{d['take_profit']}</div></div>", unsafe_allow_html=True)
                 
-                c_s.progress(int(ps))
-                c_s.caption(f"BEARISH: {ps:.1f}%")
+                st.success(f"💰 Potenziale Risk/Reward: 1:{d['risk_reward']}")
 
             else:
-                st.warning(f"In attesa di dati per {asset}...")
+                st.info(f"Attesa dati SMC per {asset}...")
         
         time.sleep(1)
         
