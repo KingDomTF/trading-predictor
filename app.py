@@ -2,27 +2,31 @@ import streamlit as st
 from supabase import create_client
 import time
 
-st.set_page_config(page_title="AEGIS Terminal", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="Oracle-X Trinity", layout="wide", page_icon="🔮")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0d1117; color: #c9d1d9; }
+    .stApp { background-color: #000000; color: #e0e0e0; font-family: 'Roboto Mono', monospace; }
     
-    .signal-card {
-        background: #161b22; border: 1px solid #30363d; border-radius: 12px;
-        padding: 30px; text-align: center; margin-bottom: 20px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    }
-    .buy-sig { border-color: #2ea043; background: linear-gradient(180deg, #161b22 0%, #0f2d1e 100%); }
-    .sell-sig { border-color: #da3633; background: linear-gradient(180deg, #161b22 0%, #3a1010 100%); }
-    
-    .macro-pill {
-        display: inline-block; padding: 4px 12px; border-radius: 20px;
-        background: #21262d; border: 1px solid #30363d; font-size: 12px; color: #8b949e; margin-top: 10px;
+    /* TERMINAL STYLE */
+    .terminal-box {
+        border: 1px solid #333; background: #0a0a0a; padding: 20px;
+        border-radius: 5px; margin-bottom: 20px;
+        box-shadow: 0 0 15px rgba(0, 255, 0, 0.05);
     }
     
-    .kpi-val { font-size: 28px; font-weight: bold; color: white; }
-    .kpi-lbl { font-size: 12px; color: #8b949e; text-transform: uppercase; }
+    .signal-text { font-size: 60px; font-weight: 900; letter-spacing: -2px; }
+    .buy { color: #00ff00; text-shadow: 0 0 20px rgba(0,255,0,0.4); }
+    .sell { color: #ff0000; text-shadow: 0 0 20px rgba(255,0,0,0.4); }
+    .wait { color: #ffff00; }
+    
+    .data-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 20px; }
+    .grid-item { background: #111; padding: 15px; border: 1px solid #222; text-align: center; }
+    .grid-label { font-size: 10px; color: #666; text-transform: uppercase; }
+    .grid-val { font-size: 20px; font-weight: bold; color: #fff; }
+    
+    .secular-bull { color: #00ff00; border: 1px solid #00ff00; padding: 2px 8px; font-size: 12px; }
+    .secular-bear { color: #ff0000; border: 1px solid #ff0000; padding: 2px 8px; font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -34,9 +38,10 @@ def init_db(): return create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase = init_db()
 
 with st.sidebar:
-    st.title("🛡️ AEGIS")
-    asset = st.radio("ASSET", ["XAUUSD", "BTCUSD", "US500", "ETHUSD"])
-    st.info("System: Ensemble AI + Intermarket Correlations")
+    st.title("🔮 ORACLE-X")
+    asset = st.radio("TARGET SYSTEM", ["XAUUSD", "BTCUSD", "US500", "ETHUSD"])
+    st.divider()
+    st.caption("Engine: 10-Year Macro + Intraday Micro")
 
 placeholder = st.empty()
 
@@ -49,43 +54,55 @@ while True:
                 d = resp.data[0]
                 rec = d['recommendation']
                 
-                # STILE
-                style = ""
-                color = "#8b949e"
-                if "BUY" in rec: 
-                    style = "buy-sig"
-                    color = "#2ea043"
-                elif "SELL" in rec: 
-                    style = "sell-sig"
-                    color = "#da3633"
+                # CLASSE COLORE
+                color_class = "wait"
+                if "BUY" in rec: color_class = "buy"
+                elif "SELL" in rec: color_class = "sell"
                 
-                # BOX PRINCIPALE
+                # TREND SECOLARE
+                secular_html = ""
+                if "BULL" in d['macro_filter']:
+                    secular_html = "<span class='secular-bull'>SECULAR BULL TREND (10Y)</span>"
+                elif "BEAR" in d['macro_filter']:
+                    secular_html = "<span class='secular-bear'>SECULAR BEAR TREND (10Y)</span>"
+
+                # MAIN UI
                 st.markdown(f"""
-                <div class="signal-card {style}">
-                    <h4 style="margin:0; opacity:0.7;">{asset} STRATEGY</h4>
-                    <h1 style="font-size: 72px; margin: 10px 0; color: {color};">{rec}</h1>
-                    <div style="font-size: 18px; margin-bottom: 10px;">{d['details']}</div>
-                    <div class="macro-pill">{d.get('macro_filter', 'ANALYZING...')}</div>
+                <div class="terminal-box">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; color:#888;">{asset} // SYSTEM STATUS</h3>
+                        {secular_html}
+                    </div>
+                    <div class="signal-text {color_class}">{rec}</div>
+                    <div style="color:#aaa; font-size:14px; margin-top:-10px;">{d['details']}</div>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # LIVELLI
+
                 if "WAIT" not in rec:
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.markdown(f"<div style='text-align:center'><div class='kpi-lbl'>ENTRY</div><div class='kpi-val' style='color:#58a6ff'>{d['entry_price']}</div></div>", unsafe_allow_html=True)
-                    with c2:
-                        st.markdown(f"<div style='text-align:center'><div class='kpi-lbl'>STOP LOSS</div><div class='kpi-val' style='color:#da3633'>{d['stop_loss']}</div></div>", unsafe_allow_html=True)
-                    with c3:
-                        st.markdown(f"<div style='text-align:center'><div class='kpi-lbl'>TAKE PROFIT</div><div class='kpi-val' style='color:#2ea043'>{d['take_profit']}</div></div>", unsafe_allow_html=True)
-                    
-                    st.divider()
-                    st.success(f"⚡ Risk/Reward Ratio: 1:{d['risk_reward']}")
+                    st.markdown(f"""
+                    <div class="data-grid">
+                        <div class="grid-item" style="border-color: #444;">
+                            <div class="grid-label">ENTRY EXECUTION</div>
+                            <div class="grid-val">{d['entry_price']}</div>
+                        </div>
+                        <div class="grid-item" style="border-color: #990000;">
+                            <div class="grid-label" style="color:#ff6666">STOP LOSS (ELASTIC)</div>
+                            <div class="grid-val" style="color:#ff6666">{d['stop_loss']}</div>
+                        </div>
+                        <div class="grid-item" style="border-color: #006600;">
+                            <div class="grid-label" style="color:#66ff66">TAKE PROFIT (TARGET)</div>
+                            <div class="grid-val" style="color:#66ff66">{d['take_profit']}</div>
+                        </div>
+                    </div>
+                    <div style="text-align:center; margin-top:15px; color:#555; font-size:12px;">
+                        Risk/Reward: 1:{d['risk_reward']} | AI Probability: {max(d['prob_buy'], d['prob_sell']):.0f}%
+                    </div>
+                    """, unsafe_allow_html=True)
                 else:
-                    st.info("Il sistema attende un allineamento tra AI (Tecnica) e Macro (Fondamentali).")
+                    st.info("System idling. Waiting for high-probability setup aligned with macro drivers.")
 
             else:
-                st.warning(f"Attesa dati per {asset}...")
+                st.warning(f"Initializing Oracle-X link for {asset}...")
         
         time.sleep(1)
     except: time.sleep(1)
