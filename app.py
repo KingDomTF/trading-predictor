@@ -1,32 +1,219 @@
 import streamlit as st
 from supabase import create_client
 import time
+import pandas as pd
 
-st.set_page_config(page_title="Oracle-X Trinity", layout="wide", page_icon="🔮")
+st.set_page_config(page_title="NEXUS - Causal Intelligence", layout="wide", page_icon="🔮")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #000000; color: #e0e0e0; font-family: 'Roboto Mono', monospace; }
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
     
-    /* TERMINAL STYLE */
-    .terminal-box {
-        border: 1px solid #333; background: #0a0a0a; padding: 20px;
-        border-radius: 5px; margin-bottom: 20px;
-        box-shadow: 0 0 15px rgba(0, 255, 0, 0.05);
+    .stApp { 
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+        color: #e0e0e0; 
+        font-family: 'JetBrains Mono', monospace;
     }
     
-    .signal-text { font-size: 60px; font-weight: 900; letter-spacing: -2px; }
-    .buy { color: #00ff00; text-shadow: 0 0 20px rgba(0,255,0,0.4); }
-    .sell { color: #ff0000; text-shadow: 0 0 20px rgba(255,0,0,0.4); }
-    .wait { color: #ffff00; }
+    /* HEADER */
+    .nexus-header {
+        background: linear-gradient(90deg, #16213e 0%, #0f3460 100%);
+        border: 1px solid #53a8b6;
+        border-radius: 15px;
+        padding: 30px;
+        margin-bottom: 25px;
+        box-shadow: 0 0 30px rgba(83, 168, 182, 0.2);
+    }
     
-    .data-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 20px; }
-    .grid-item { background: #111; padding: 15px; border: 1px solid #222; text-align: center; }
-    .grid-label { font-size: 10px; color: #666; text-transform: uppercase; }
-    .grid-val { font-size: 20px; font-weight: bold; color: #fff; }
+    .asset-title {
+        font-size: 18px;
+        color: #53a8b6;
+        font-weight: bold;
+        letter-spacing: 2px;
+        margin: 0;
+    }
     
-    .secular-bull { color: #00ff00; border: 1px solid #00ff00; padding: 2px 8px; font-size: 12px; }
-    .secular-bear { color: #ff0000; border: 1px solid #ff0000; padding: 2px 8px; font-size: 12px; }
+    .signal-display {
+        font-size: 72px;
+        font-weight: 900;
+        margin: 10px 0;
+        letter-spacing: -3px;
+        text-shadow: 0 0 25px currentColor;
+    }
+    
+    .signal-buy { color: #00ff88; }
+    .signal-sell { color: #ff4757; }
+    .signal-wait { color: #ffa502; }
+    
+    .regime-badge {
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid #53a8b6;
+        border-radius: 20px;
+        padding: 8px 20px;
+        font-size: 12px;
+        color: #53a8b6;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 10px;
+    }
+    
+    .details-text {
+        font-size: 16px;
+        color: #b8b8b8;
+        margin-top: 15px;
+        line-height: 1.6;
+    }
+    
+    /* LEVELS GRID */
+    .levels-container {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 15px;
+        margin: 25px 0;
+    }
+    
+    .level-card {
+        background: rgba(22, 33, 62, 0.6);
+        border: 1px solid #2c3e50;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+    
+    .level-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+    
+    .level-label {
+        font-size: 11px;
+        color: #7f8c8d;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        margin-bottom: 10px;
+    }
+    
+    .level-value {
+        font-size: 32px;
+        font-weight: bold;
+        color: #ecf0f1;
+    }
+    
+    .entry-card { border-left: 3px solid #3498db; }
+    .sl-card { border-left: 3px solid #e74c3c; }
+    .tp-card { border-left: 3px solid #2ecc71; }
+    
+    /* METRICS */
+    .metrics-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        margin-top: 20px;
+    }
+    
+    .metric-box {
+        background: rgba(15, 52, 96, 0.4);
+        border: 1px solid #34495e;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+    }
+    
+    .metric-label {
+        font-size: 11px;
+        color: #95a5a6;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+    
+    .metric-value {
+        font-size: 28px;
+        font-weight: bold;
+        color: #53a8b6;
+    }
+    
+    /* CAUSAL INSIGHT BOX */
+    .causal-box {
+        background: linear-gradient(135deg, #1e3a5f 0%, #2c5f7f 100%);
+        border: 1px solid #53a8b6;
+        border-radius: 12px;
+        padding: 20px;
+        margin-top: 25px;
+    }
+    
+    .causal-title {
+        font-size: 14px;
+        color: #53a8b6;
+        font-weight: bold;
+        margin-bottom: 15px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
+    
+    .causal-text {
+        font-size: 14px;
+        color: #ecf0f1;
+        line-height: 1.8;
+    }
+    
+    /* PROBABILITY BARS */
+    .prob-container {
+        margin-top: 25px;
+    }
+    
+    .prob-bar {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        height: 12px;
+        margin: 10px 0;
+        overflow: hidden;
+        position: relative;
+    }
+    
+    .prob-fill {
+        height: 100%;
+        border-radius: 10px;
+        transition: width 0.5s ease;
+    }
+    
+    .prob-bull { background: linear-gradient(90deg, #00ff88, #00d9ff); }
+    .prob-bear { background: linear-gradient(90deg, #ff4757, #ff6348); }
+    
+    .prob-label {
+        font-size: 12px;
+        color: #95a5a6;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+    }
+    
+    /* FOOTER */
+    .nexus-footer {
+        text-align: center;
+        margin-top: 40px;
+        padding: 20px;
+        color: #7f8c8d;
+        font-size: 11px;
+        border-top: 1px solid #2c3e50;
+    }
+    
+    /* ANIMATIONS */
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+    
+    .live-indicator {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: #00ff88;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+        margin-right: 8px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -34,75 +221,188 @@ SUPABASE_URL = "https://gkffitfxqhxifibfwsfx.supabase.co"
 SUPABASE_KEY = "sb_secret_s8jLpFKLhX3pNWXg6mBNOw_9HNs6rlG"
 
 @st.cache_resource
-def init_db(): return create_client(SUPABASE_URL, SUPABASE_KEY)
+def init_db():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
 supabase = init_db()
 
+# SIDEBAR
 with st.sidebar:
-    st.title("🔮 ORACLE-X")
-    asset = st.radio("TARGET SYSTEM", ["XAUUSD", "BTCUSD", "US500", "ETHUSD"])
-    st.divider()
-    st.caption("Engine: 10-Year Macro + Intraday Micro")
+    st.markdown("## 🔮 PROJECT NEXUS")
+    st.markdown("---")
+    
+    asset = st.radio(
+        "TARGET ASSET",
+        ["XAUUSD", "BTCUSD", "US500", "ETHUSD"],
+        label_visibility="visible"
+    )
+    
+    st.markdown("---")
+    
+    st.markdown("""
+    <div style='font-size: 11px; color: #7f8c8d; line-height: 1.6;'>
+    <b>NEXUS FRAMEWORK:</b><br>
+    • Causal Analysis (10Y)<br>
+    • Regime Detection<br>
+    • Adaptive Execution<br>
+    • Multi-Asset Intelligence
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    refresh_rate = st.slider("Refresh (sec)", 1, 10, 2)
 
+# MAIN CONTENT
 placeholder = st.empty()
 
 while True:
     try:
+        # Fetch latest signal
         resp = supabase.table("ai_oracle").select("*").eq("symbol", asset).order("id", desc=True).limit(1).execute()
         
         with placeholder.container():
-            if resp.data:
+            if resp.data and len(resp.data) > 0:
                 d = resp.data[0]
                 rec = d['recommendation']
                 
-                # CLASSE COLORE
-                color_class = "wait"
-                if "BUY" in rec: color_class = "buy"
-                elif "SELL" in rec: color_class = "sell"
+                # Determina colore segnale
+                signal_class = "signal-wait"
+                if "BUY" in rec:
+                    signal_class = "signal-buy"
+                elif "SELL" in rec:
+                    signal_class = "signal-sell"
                 
-                # TREND SECOLARE
-                secular_html = ""
-                if "BULL" in d['macro_filter']:
-                    secular_html = "<span class='secular-bull'>SECULAR BULL TREND (10Y)</span>"
-                elif "BEAR" in d['macro_filter']:
-                    secular_html = "<span class='secular-bear'>SECULAR BEAR TREND (10Y)</span>"
-
-                # MAIN UI
+                # HEADER PRINCIPALE
                 st.markdown(f"""
-                <div class="terminal-box">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h3 style="margin:0; color:#888;">{asset} // SYSTEM STATUS</h3>
-                        {secular_html}
+                <div class="nexus-header">
+                    <div class="asset-title">
+                        <span class="live-indicator"></span>
+                        {asset} // CAUSAL INTELLIGENCE
                     </div>
-                    <div class="signal-text {color_class}">{rec}</div>
-                    <div style="color:#aaa; font-size:14px; margin-top:-10px;">{d['details']}</div>
+                    <div class="signal-display {signal_class}">{rec}</div>
+                    <div class="regime-badge">{d.get('macro_filter', 'ANALYZING')}</div>
+                    <div class="details-text">{d['details']}</div>
                 </div>
                 """, unsafe_allow_html=True)
-
+                
+                # LIVELLI OPERATIVI (solo se non WAIT)
                 if "WAIT" not in rec:
-                    st.markdown(f"""
-                    <div class="data-grid">
-                        <div class="grid-item" style="border-color: #444;">
-                            <div class="grid-label">ENTRY EXECUTION</div>
-                            <div class="grid-val">{d['entry_price']}</div>
+                    st.markdown("""
+                    <div class="levels-container">
+                        <div class="level-card entry-card">
+                            <div class="level-label">🎯 ENTRY PRICE</div>
+                            <div class="level-value">{}</div>
                         </div>
-                        <div class="grid-item" style="border-color: #990000;">
-                            <div class="grid-label" style="color:#ff6666">STOP LOSS (ELASTIC)</div>
-                            <div class="grid-val" style="color:#ff6666">{d['stop_loss']}</div>
+                        <div class="level-card sl-card">
+                            <div class="level-label">🛡️ STOP LOSS</div>
+                            <div class="level-value">{}</div>
                         </div>
-                        <div class="grid-item" style="border-color: #006600;">
-                            <div class="grid-label" style="color:#66ff66">TAKE PROFIT (TARGET)</div>
-                            <div class="grid-val" style="color:#66ff66">{d['take_profit']}</div>
+                        <div class="level-card tp-card">
+                            <div class="level-label">💎 TAKE PROFIT</div>
+                            <div class="level-value">{}</div>
                         </div>
                     </div>
-                    <div style="text-align:center; margin-top:15px; color:#555; font-size:12px;">
-                        Risk/Reward: 1:{d['risk_reward']} | AI Probability: {max(d['prob_buy'], d['prob_sell']):.0f}%
+                    """.format(
+                        d['entry_price'],
+                        d['stop_loss'],
+                        d['take_profit']
+                    ), unsafe_allow_html=True)
+                    
+                    # METRICS
+                    st.markdown(f"""
+                    <div class="metrics-row">
+                        <div class="metric-box">
+                            <div class="metric-label">⚖️ Risk/Reward Ratio</div>
+                            <div class="metric-value">1:{d['risk_reward']}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">📊 Confidence Score</div>
+                            <div class="metric-value">{max(d['prob_buy'], d['prob_sell']):.0f}%</div>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
+                
                 else:
-                    st.info("System idling. Waiting for high-probability setup aligned with macro drivers.")
-
+                    # Modalità WAIT
+                    st.markdown("""
+                    <div class="causal-box">
+                        <div class="causal-title">🧠 System Status</div>
+                        <div class="causal-text">
+                        The causal engine is analyzing macro drivers and market regime. 
+                        Currently, there is no high-probability setup that aligns both 
+                        technical patterns and fundamental causal factors. System remains 
+                        in observation mode to avoid low-quality signals.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # PROBABILITÀ
+                st.markdown("""
+                <div class="prob-container">
+                    <div class="prob-label">
+                        <span>BULLISH PROBABILITY</span>
+                        <span><b>{}%</b></span>
+                    </div>
+                    <div class="prob-bar">
+                        <div class="prob-fill prob-bull" style="width: {}%"></div>
+                    </div>
+                    
+                    <div class="prob-label" style="margin-top: 15px;">
+                        <span>BEARISH PROBABILITY</span>
+                        <span><b>{}%</b></span>
+                    </div>
+                    <div class="prob-bar">
+                        <div class="prob-fill prob-bear" style="width: {}%"></div>
+                    </div>
+                </div>
+                """.format(
+                    int(d['prob_buy']),
+                    int(d['prob_buy']),
+                    int(d['prob_sell']),
+                    int(d['prob_sell'])
+                ), unsafe_allow_html=True)
+                
+                # CAUSAL INSIGHT (Spiegazione del "Perché")
+                st.markdown(f"""
+                <div class="causal-box" style="margin-top: 25px;">
+                    <div class="causal-title">🔬 Causal Analysis Insight</div>
+                    <div class="causal-text">
+                    {d['details']}<br><br>
+                    This recommendation is based on a 10-year historical analysis of 
+                    causal drivers that have statistically significant predictive power 
+                    over {asset}. The system identified the dominant macro forces currently 
+                    affecting this asset and adjusted its strategy accordingly.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # FOOTER
+                st.markdown("""
+                <div class="nexus-footer">
+                    PROJECT NEXUS v1.0 // CAUSAL TRADING INTELLIGENCE<br>
+                    Powered by 10-Year Historical Analysis • Regime Detection • Adaptive ML
+                </div>
+                """, unsafe_allow_html=True)
+                
             else:
-                st.warning(f"Initializing Oracle-X link for {asset}...")
+                # Nessun dato
+                st.markdown(f"""
+                <div class="nexus-header">
+                    <div class="asset-title">
+                        <span class="live-indicator"></span>
+                        {asset} // INITIALIZING
+                    </div>
+                    <div class="signal-display signal-wait">STANDBY</div>
+                    <div class="details-text">
+                    Waiting for market data feed. Ensure bridge_nexus.py is running 
+                    and MT4 is sending price updates.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
         
-        time.sleep(1)
-    except: time.sleep(1)
+        time.sleep(refresh_rate)
+        
+    except Exception as e:
+        st.error(f"⚠️ Connection Error: {e}")
+        time.sleep(refresh_rate)
