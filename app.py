@@ -6,7 +6,7 @@ import pandas as pd
 # CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="NEXUS - Causal Intelligence", layout="wide", page_icon="🔮")
 
-# STILI CSS (UI NEON/DARK)
+# STILI CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
@@ -219,9 +219,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# CREDENZIALI SUPABASE
-# NOTA DI SICUREZZA: Non lasciare le chiavi API direttamente nel codice in produzione.
-# Usa st.secrets per maggiore sicurezza.
 SUPABASE_URL = "https://gkffitfxqhxifibfwsfx.supabase.co"
 SUPABASE_KEY = "sb_secret_s8jLpFKLhX3pNWXg6mBNOw_9HNs6rlG"
 
@@ -248,15 +245,9 @@ with st.sidebar:
     
     st.markdown("---")
     
-    st.markdown("""
-    <div style='font-size: 11px; color: #7f8c8d; line-height: 1.6;'>
-    <b>NEXUS FRAMEWORK:</b><br>
-    • Causal Analysis (10Y)<br>
-    • Regime Detection<br>
-    • Adaptive Execution<br>
-    • Multi-Asset Intelligence
-    </div>
-    """, unsafe_allow_html=True)
+    # HTML su una sola riga per evitare errori di rendering
+    sidebar_html = """<div style='font-size: 11px; color: #7f8c8d; line-height: 1.6;'><b>NEXUS FRAMEWORK:</b><br>• Causal Analysis (10Y)<br>• Regime Detection<br>• Adaptive Execution<br>• Multi-Asset Intelligence</div>"""
+    st.markdown(sidebar_html, unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -283,45 +274,41 @@ while True:
                 elif "SELL" in rec:
                     signal_class = "signal-sell"
                 
-                # HEADER PRINCIPALE
-                st.markdown(f"""
+                # --- HEADER PRINCIPALE ---
+                # Usiamo f-string su una riga o blocchi puliti
+                header_html = f"""
                 <div class="nexus-header">
-                    <div class="asset-title">
-                        <span class="live-indicator"></span>
-                        {asset} // CAUSAL INTELLIGENCE
-                    </div>
+                    <div class="asset-title"><span class="live-indicator"></span>{asset} // CAUSAL INTELLIGENCE</div>
                     <div class="signal-display {signal_class}">{rec}</div>
                     <div class="regime-badge">{d.get('macro_filter', 'ANALYZING')}</div>
                     <div class="details-text">{d.get('details', 'Analyzing market structure...')}</div>
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                st.markdown(header_html, unsafe_allow_html=True)
                 
-                # LIVELLI OPERATIVI (solo se non WAIT)
+                # --- LIVELLI OPERATIVI (solo se non WAIT) ---
                 if "WAIT" not in rec:
-                    st.markdown("""
+                    levels_html = f"""
                     <div class="levels-container">
                         <div class="level-card entry-card">
                             <div class="level-label">🎯 ENTRY PRICE</div>
-                            <div class="level-value">{}</div>
+                            <div class="level-value">{d.get('entry_price', '---')}</div>
                         </div>
                         <div class="level-card sl-card">
                             <div class="level-label">🛡️ STOP LOSS</div>
-                            <div class="level-value">{}</div>
+                            <div class="level-value">{d.get('stop_loss', '---')}</div>
                         </div>
                         <div class="level-card tp-card">
                             <div class="level-label">💎 TAKE PROFIT</div>
-                            <div class="level-value">{}</div>
+                            <div class="level-value">{d.get('take_profit', '---')}</div>
                         </div>
                     </div>
-                    """.format(
-                        d.get('entry_price', '---'),
-                        d.get('stop_loss', '---'),
-                        d.get('take_profit', '---')
-                    ), unsafe_allow_html=True)
+                    """
+                    st.markdown(levels_html, unsafe_allow_html=True)
                     
                     # METRICS
                     prob_val = max(d.get('prob_buy', 0), d.get('prob_sell', 0))
-                    st.markdown(f"""
+                    metrics_html = f"""
                     <div class="metrics-row">
                         <div class="metric-box">
                             <div class="metric-label">⚖️ Risk/Reward Ratio</div>
@@ -332,11 +319,12 @@ while True:
                             <div class="metric-value">{prob_val:.0f}%</div>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                    st.markdown(metrics_html, unsafe_allow_html=True)
                 
                 else:
                     # Modalità WAIT
-                    st.markdown("""
+                    wait_html = """
                     <div class="causal-box">
                         <div class="causal-title">🧠 System Status</div>
                         <div class="causal-text">
@@ -346,34 +334,28 @@ while True:
                         in observation mode to avoid low-quality signals.
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                    st.markdown(wait_html, unsafe_allow_html=True)
                 
-                # PROBABILITÀ (Fixing the specific display error)
+                # --- PROBABILITÀ (Fix Definitivo) ---
+                # Rimuoviamo l'indentazione costruendo la stringa in modo piatto
                 p_buy = int(d.get('prob_buy', 0))
                 p_sell = int(d.get('prob_sell', 0))
                 
-                st.markdown("""
-                <div class="prob-container">
-                    <div class="prob-label">
-                        <span>BULLISH PROBABILITY</span>
-                        <span><b>{}%</b></span>
-                    </div>
-                    <div class="prob-bar">
-                        <div class="prob-fill prob-bull" style="width: {}%"></div>
-                    </div>
-                    
-                    <div class="prob-label" style="margin-top: 15px;">
-                        <span>BEARISH PROBABILITY</span>
-                        <span><b>{}%</b></span>
-                    </div>
-                    <div class="prob-bar">
-                        <div class="prob-fill prob-bear" style="width: {}%"></div>
-                    </div>
-                </div>
-                """.format(p_buy, p_buy, p_sell, p_sell), unsafe_allow_html=True)
+                # NOTA: Qui uso stringhe concatenate per evitare qualsiasi spazio iniziale indesiderato
+                prob_html = (
+                    f'<div class="prob-container">'
+                    f'<div class="prob-label"><span>BULLISH PROBABILITY</span><span><b>{p_buy}%</b></span></div>'
+                    f'<div class="prob-bar"><div class="prob-fill prob-bull" style="width: {p_buy}%"></div></div>'
+                    f'<div class="prob-label" style="margin-top: 15px;"><span>BEARISH PROBABILITY</span><span><b>{p_sell}%</b></span></div>'
+                    f'<div class="prob-bar"><div class="prob-fill prob-bear" style="width: {p_sell}%"></div></div>'
+                    f'</div>'
+                )
                 
-                # CAUSAL INSIGHT (Spiegazione del "Perché")
-                st.markdown(f"""
+                st.markdown(prob_html, unsafe_allow_html=True)
+                
+                # --- CAUSAL INSIGHT ---
+                insight_html = f"""
                 <div class="causal-box" style="margin-top: 25px;">
                     <div class="causal-title">🔬 Causal Analysis Insight</div>
                     <div class="causal-text">
@@ -384,31 +366,28 @@ while True:
                     affecting this asset and adjusted its strategy accordingly.
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                st.markdown(insight_html, unsafe_allow_html=True)
                 
                 # FOOTER
-                st.markdown("""
+                footer_html = """
                 <div class="nexus-footer">
                     PROJECT NEXUS v1.0 // CAUSAL TRADING INTELLIGENCE<br>
                     Powered by 10-Year Historical Analysis • Regime Detection • Adaptive ML
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                st.markdown(footer_html, unsafe_allow_html=True)
                 
             else:
                 # Nessun dato o Standby
-                st.markdown(f"""
+                empty_html = f"""
                 <div class="nexus-header">
-                    <div class="asset-title">
-                        <span class="live-indicator"></span>
-                        {asset} // INITIALIZING
-                    </div>
+                    <div class="asset-title"><span class="live-indicator"></span>{asset} // INITIALIZING</div>
                     <div class="signal-display signal-wait">STANDBY</div>
-                    <div class="details-text">
-                    Waiting for market data feed...<br>
-                    Ensure bridge_nexus.py is running and MT4 is sending price updates.
-                    </div>
+                    <div class="details-text">Waiting for market data feed...<br>Ensure bridge_nexus.py is running and MT4 is sending price updates.</div>
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                st.markdown(empty_html, unsafe_allow_html=True)
         
         time.sleep(refresh_rate)
         
