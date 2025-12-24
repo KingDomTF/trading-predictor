@@ -3,8 +3,10 @@ from supabase import create_client
 import time
 import pandas as pd
 
+# CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="NEXUS - Causal Intelligence", layout="wide", page_icon="🔮")
 
+# STILI CSS (UI NEON/DARK)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
@@ -217,12 +219,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# CREDENZIALI SUPABASE
+# NOTA DI SICUREZZA: Non lasciare le chiavi API direttamente nel codice in produzione.
+# Usa st.secrets per maggiore sicurezza.
 SUPABASE_URL = "https://gkffitfxqhxifibfwsfx.supabase.co"
 SUPABASE_KEY = "sb_secret_s8jLpFKLhX3pNWXg6mBNOw_9HNs6rlG"
 
 @st.cache_resource
 def init_db():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    try:
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        st.error(f"Errore connessione DB: {e}")
+        return None
 
 supabase = init_db()
 
@@ -259,10 +268,11 @@ placeholder = st.empty()
 while True:
     try:
         # Fetch latest signal
-        resp = supabase.table("ai_oracle").select("*").eq("symbol", asset).order("id", desc=True).limit(1).execute()
+        if supabase:
+            resp = supabase.table("ai_oracle").select("*").eq("symbol", asset).order("id", desc=True).limit(1).execute()
         
         with placeholder.container():
-            if resp.data and len(resp.data) > 0:
+            if supabase and resp.data and len(resp.data) > 0:
                 d = resp.data[0]
                 rec = d['recommendation']
                 
@@ -282,7 +292,7 @@ while True:
                     </div>
                     <div class="signal-display {signal_class}">{rec}</div>
                     <div class="regime-badge">{d.get('macro_filter', 'ANALYZING')}</div>
-                    <div class="details-text">{d['details']}</div>
+                    <div class="details-text">{d.get('details', 'Analyzing market structure...')}</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -304,21 +314,22 @@ while True:
                         </div>
                     </div>
                     """.format(
-                        d['entry_price'],
-                        d['stop_loss'],
-                        d['take_profit']
+                        d.get('entry_price', '---'),
+                        d.get('stop_loss', '---'),
+                        d.get('take_profit', '---')
                     ), unsafe_allow_html=True)
                     
                     # METRICS
+                    prob_val = max(d.get('prob_buy', 0), d.get('prob_sell', 0))
                     st.markdown(f"""
                     <div class="metrics-row">
                         <div class="metric-box">
                             <div class="metric-label">⚖️ Risk/Reward Ratio</div>
-                            <div class="metric-value">1:{d['risk_reward']}</div>
+                            <div class="metric-value">1:{d.get('risk_reward', '-')}</div>
                         </div>
                         <div class="metric-box">
                             <div class="metric-label">📊 Confidence Score</div>
-                            <div class="metric-value">{max(d['prob_buy'], d['prob_sell']):.0f}%</div>
+                            <div class="metric-value">{prob_val:.0f}%</div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -337,7 +348,10 @@ while True:
                     </div>
                     """, unsafe_allow_html=True)
                 
-                # PROBABILITÀ
+                # PROBABILITÀ (Fixing the specific display error)
+                p_buy = int(d.get('prob_buy', 0))
+                p_sell = int(d.get('prob_sell', 0))
+                
                 st.markdown("""
                 <div class="prob-container">
                     <div class="prob-label">
@@ -356,19 +370,14 @@ while True:
                         <div class="prob-fill prob-bear" style="width: {}%"></div>
                     </div>
                 </div>
-                """.format(
-                    int(d['prob_buy']),
-                    int(d['prob_buy']),
-                    int(d['prob_sell']),
-                    int(d['prob_sell'])
-                ), unsafe_allow_html=True)
+                """.format(p_buy, p_buy, p_sell, p_sell), unsafe_allow_html=True)
                 
                 # CAUSAL INSIGHT (Spiegazione del "Perché")
                 st.markdown(f"""
                 <div class="causal-box" style="margin-top: 25px;">
                     <div class="causal-title">🔬 Causal Analysis Insight</div>
                     <div class="causal-text">
-                    {d['details']}<br><br>
+                    {d.get('details', '')}<br><br>
                     This recommendation is based on a 10-year historical analysis of 
                     causal drivers that have statistically significant predictive power 
                     over {asset}. The system identified the dominant macro forces currently 
@@ -386,7 +395,7 @@ while True:
                 """, unsafe_allow_html=True)
                 
             else:
-                # Nessun dato
+                # Nessun dato o Standby
                 st.markdown(f"""
                 <div class="nexus-header">
                     <div class="asset-title">
@@ -395,14 +404,12 @@ while True:
                     </div>
                     <div class="signal-display signal-wait">STANDBY</div>
                     <div class="details-text">
-                    Waiting for market data feed. Ensure bridge_nexus.py is running 
-                    and MT4 is sending price updates.
+                    Waiting for market data feed...<br>
+                    Ensure bridge_nexus.py is running and MT4 is sending price updates.
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
         
         time.sleep(refresh_rate)
         
-    except Exception as e:
-        st.error(f"⚠️ Connection Error: {e}")
-        time.sleep(refresh_rate)
+    except Exception
