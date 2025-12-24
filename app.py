@@ -412,4 +412,6 @@ while True:
         
         time.sleep(refresh_rate)
         
-    except Exception
+    except Exception as e:
+        st.error(f"⚠️ Connection Error: {e}")
+        time.sleep(refresh_rate)
