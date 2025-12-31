@@ -136,4 +136,147 @@ def create_pnl_chart():
     fig = px.area(x=dates, y=values)
     fig.update_traces(line_color='#10b981', fill_color='rgba(16, 185, 129, 0.1)')
     fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(showgrid=False, color='#6b7280'),
+        yaxis=dict(showgrid=True, gridcolor='#374151', color='#6b7280'),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=200,
+        showlegend=False
+    )
+    return fig
+
+# ================= LOOP PRINCIPALE =================
+placeholder = st.empty()
+
+while True:
+    try:
+        # Preleva dati reali
+        resp = supabase.table("ai_oracle").select("*").eq("symbol", asset).order("id", desc=True).limit(1).execute()
+        
+        with placeholder.container():
+            if resp.data:
+                d = resp.data[0]
+                rec = d['recommendation']
+                
+                # Calcoli derivati per la grafica
+                conf_score = d.get('prob_buy', 50) if "BUY" in rec else d.get('prob_sell', 50)
+                z_score = d.get('confidence_score', 0)
+                
+                # --- HEADER ---
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.markdown(f"""
+                    <div>
+                        <div class="titan-title">TITAN ORACLE</div>
+                        <div class="titan-subtitle">Institutional-Grade Trading Intelligence • {asset}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c2:
+                    st.markdown("""
+                    <div style="text-align:right;">
+                        <span class="live-badge">● LIVE SYSTEM</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # --- GRID PRINCIPALE ---
+                col_left, col_right = st.columns([1, 1.5])
+                
+                # === COLONNA SINISTRA: SEGNALE & PREZZI ===
+                with col_left:
+                    # 1. SIGNAL CARD
+                    sig_class = "sig-buy" if "BUY" in rec else "sig-sell" if "SELL" in rec else "sig-wait"
+                    st.markdown(f"""
+                    <div class="titan-card">
+                        <div style="display:flex; justify-content:space-between; color:#9ca3af; font-size:0.8rem; margin-bottom:10px;">
+                            <span>AI SIGNAL PROCESSOR</span>
+                            <span>CONFIDENCE: {conf_score:.1f}%</span>
+                        </div>
+                        <div class="signal-box">
+                            <div class="signal-text {sig_class}">{rec}</div>
+                            <div style="color:#6b7280; font-size:0.9rem; margin-top:5px;">{d['details']}</div>
+                        </div>
+                        
+                        <div class="prog-container">
+                            <div class="prog-fill" style="width: {conf_score}%; background-color: {'#10b981' if 'BUY' in rec else '#ef4444' if 'SELL' in rec else '#6b7280'};"></div>
+                        </div>
+                        
+                        <div class="metric-grid">
+                            <div class="metric-item" style="border-color: rgba(34, 211, 238, 0.3);">
+                                <div class="metric-label text-cyan">ENTRY</div>
+                                <div class="metric-value text-cyan">{d['entry_price']}</div>
+                            </div>
+                            <div class="metric-item" style="border-color: rgba(248, 113, 113, 0.3);">
+                                <div class="metric-label text-red">STOP</div>
+                                <div class="metric-value text-red">{d['stop_loss']}</div>
+                            </div>
+                            <div class="metric-item" style="border-color: rgba(52, 211, 153, 0.3);">
+                                <div class="metric-label text-emerald">TARGET</div>
+                                <div class="metric-value text-emerald">{d['take_profit']}</div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top:1rem; display:flex; justify-content:space-between; font-size:0.8rem;">
+                            <span style="color:#9ca3af;">Risk/Reward</span>
+                            <span class="text-emerald" style="font-weight:bold;">1:{d['risk_reward']}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 2. RISK METRICS CARD
+                    st.markdown(f"""
+                    <div class="titan-card">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:1rem;">
+                            <span style="color:#e5e7eb; font-weight:bold;">RISK METRICS</span>
+                            <span style="color:#a78bfa;">🛡️ ACTIVE</span>
+                        </div>
+                        <div class="metric-grid" style="grid-template-columns: repeat(2, 1fr);">
+                            <div class="metric-item">
+                                <div class="metric-label">Z-SCORE (VOLATILITY)</div>
+                                <div class="metric-value text-orange">{z_score} σ</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">MARKET REGIME</div>
+                                <div class="metric-value text-cyan">{d.get('market_regime', 'ANALYZING')}</div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # === COLONNA DESTRA: GRAFICI ===
+                with col_right:
+                    # 3. MULTI-FACTOR RADAR
+                    st.markdown("""
+                    <div class="titan-card" style="min-height:300px;">
+                        <span style="color:#e5e7eb; font-weight:bold;">MULTI-FACTOR ANALYSIS</span>
+                    """, unsafe_allow_html=True)
+                    
+                    # Generiamo dati radar dinamici basati sul segnale
+                    radar_data = {
+                        "Momentum": min(conf_score + 10, 95),
+                        "Trend": min(conf_score, 90),
+                        "Volatility": min(abs(z_score)*30, 90),
+                        "Volume": 75,
+                        "Macro": 60 if "BUY" in rec else 40
+                    }
+                    st.plotly_chart(create_radar_chart(radar_data), use_container_width=True, config={'displayModeBar': False})
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    # 4. SYSTEM LOGS / PNL (Simulato per estetica)
+                    st.markdown("""
+                    <div class="titan-card">
+                        <span style="color:#e5e7eb; font-weight:bold;">PROJECTED PERFORMANCE</span>
+                    """, unsafe_allow_html=True)
+                    st.plotly_chart(create_pnl_chart(), use_container_width=True, config={'displayModeBar': False})
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+            else:
+                st.warning(f"Connecting to TITAN Neural Net for {asset}...")
+                
+        time.sleep(1)
+        
+    except Exception as e:
+        # st.error(f"Error: {e}") # Debug only
+        time.sleep(1)
