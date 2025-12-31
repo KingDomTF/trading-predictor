@@ -259,7 +259,6 @@ placeholder = st.empty()
 
 while True:
     try:
-        # Fetch Dati
         resp = supabase.table("ai_oracle").select("*").eq("symbol", st.session_state.selected_asset).order("id", desc=True).limit(1).execute()
         
         with placeholder.container():
@@ -277,7 +276,22 @@ while True:
                 bar_col = "#10b981" if "BUY" in rec else "#ef4444" if "SELL" in rec else "#6b7280"
                 icon = "TrendingUp" if "BUY" in rec else "TrendingDown" if "SELL" in rec else "Activity"
 
-                # ================= GRID LAYOUT (3 COLONNE: 30% - 40% - 30%) =================
+                # === LOGICA "ZERO HIDER" (LA CORREZIONE) ===
+                # Se il segnale è WAIT, nascondiamo i numeri 0 e mettiamo dei trattini
+                if "WAIT" in rec:
+                    display_entry = "---"
+                    display_sl = "---"
+                    display_tp = "---"
+                    display_rr = "WAITING FOR SETUP..."
+                    rr_color = "#6b7280" # Grigio
+                else:
+                    display_entry = f"${d['entry_price']}"
+                    display_sl = f"${d['stop_loss']}"
+                    display_tp = f"${d['take_profit']}"
+                    display_rr = f"1:{d['risk_reward']}"
+                    rr_color = "white"
+
+                # ================= GRID LAYOUT =================
                 col_left, col_mid, col_right = st.columns([1, 1.2, 0.8])
                 
                 # === COLONNA 1: AI SIGNAL ===
@@ -312,21 +326,21 @@ while True:
                         <div class="metric-grid">
                             <div class="metric-box" style="border-color:#0e7490; background:rgba(8,145,178,0.1);">
                                 <div class="m-label" style="color:#22d3ee">ENTRY</div>
-                                <div class="m-value" style="color:#22d3ee">{d['entry_price']}</div>
+                                <div class="m-value" style="color:#22d3ee">{display_entry}</div>
                             </div>
                             <div class="metric-box" style="border-color:#991b1b; background:rgba(127,29,29,0.1);">
                                 <div class="m-label" style="color:#f87171">STOP</div>
-                                <div class="m-value" style="color:#f87171">{d['stop_loss']}</div>
+                                <div class="m-value" style="color:#f87171">{display_sl}</div>
                             </div>
                             <div class="metric-box" style="border-color:#065f46; background:rgba(6,78,59,0.1);">
                                 <div class="m-label" style="color:#34d399">TARGET</div>
-                                <div class="m-value" style="color:#34d399">{d['take_profit']}</div>
+                                <div class="m-value" style="color:#34d399">{display_tp}</div>
                             </div>
                         </div>
                         
                         <div style="margin-top:15px; text-align:center;">
                             <span style="font-size:11px; color:#6b7280; background:#1f2937; padding:4px 10px; border-radius:20px;">
-                                Risk/Reward: <strong style="color:white">1:{d['risk_reward']}</strong>
+                                Risk/Reward: <strong style="color:{rr_color}">{display_rr}</strong>
                             </span>
                         </div>
                     </div>
@@ -334,13 +348,11 @@ while True:
 
                 # === COLONNA 2: CHARTS ===
                 with col_mid:
-                    # Multi-Factor
                     st.markdown('<div class="titan-card">', unsafe_allow_html=True)
                     st.markdown('<div class="section-title">MULTI-FACTOR ANALYSIS</div>', unsafe_allow_html=True)
                     st.plotly_chart(create_radar(d), use_container_width=True, config={'displayModeBar': False})
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # Cumulative P&L
                     st.markdown('<div class="titan-card">', unsafe_allow_html=True)
                     st.markdown('<div class="section-title">CUMULATIVE P&L (PROJ)</div>', unsafe_allow_html=True)
                     st.plotly_chart(create_area_chart(), use_container_width=True, config={'displayModeBar': False})
@@ -348,7 +360,6 @@ while True:
 
                 # === COLONNA 3: STATUS & METRICS ===
                 with col_right:
-                    # Market Regime
                     regime_active = "border-blue-500 bg-blue-900/20" if regime == "TRENDING" else "border-gray-700"
                     st.markdown(f"""
                     <div class="titan-card">
@@ -364,13 +375,11 @@ while True:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Order Flow (Mini)
                     st.markdown('<div class="titan-card">', unsafe_allow_html=True)
                     st.markdown('<div class="section-title">ORDER FLOW</div>', unsafe_allow_html=True)
                     st.plotly_chart(create_bar_chart(), use_container_width=True, config={'displayModeBar': False})
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # System Status
                     st.markdown("""
                     <div class="titan-card">
                         <div class="section-title">SYSTEM STATUS</div>
