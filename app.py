@@ -1,22 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell, ScatterChart, Scatter } from 'recharts';
-import { TrendingUp, TrendingDown, AlertTriangle, Activity, Target, Shield, Brain, Zap, DollarSign, BarChart3, Radio } from 'lucide-react';
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import { TrendingUp, TrendingDown, AlertTriangle, Activity, Target, Shield, Brain, Zap, Radio } from 'lucide-react';
 
 const TitanOracleTerminal = () => {
   const [selectedAsset, setSelectedAsset] = useState('XAUUSD');
   const [timeframe, setTimeframe] = useState('H1');
   const [liveData, setLiveData] = useState(null);
   const [marketRegime, setMarketRegime] = useState('RANGING');
-  const [riskLevel, setRiskLevel] = useState(2);
   const [isLive, setIsLive] = useState(true);
-
-  // Simulazione dati real-time (sostituire con fetch da Supabase)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLiveData(generateMarketData());
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [selectedAsset, timeframe]);
 
   const assets = [
     { symbol: 'XAUUSD', name: 'Gold', correlation: 0.85, volatility: 1.2 },
@@ -39,23 +30,19 @@ const TitanOracleTerminal = () => {
     const trend = Math.random() > 0.5 ? 'BULLISH' : 'BEARISH';
     const strength = 60 + Math.random() * 35;
     
-    // Calcolo segnale ML-based
     const mlScore = calculateMLScore(price, trend, strength);
     const signal = mlScore > 70 ? 'STRONG BUY' : 
                    mlScore > 55 ? 'BUY' :
                    mlScore < 30 ? 'STRONG SELL' :
                    mlScore < 45 ? 'SELL' : 'WAIT';
     
-    // Risk metrics
     const volatility = 0.8 + Math.random() * 2.5;
     const sharpeRatio = 1.2 + Math.random() * 1.8;
     const maxDrawdown = -(5 + Math.random() * 15);
     const winRate = 55 + Math.random() * 25;
     
-    // Pattern recognition
     const patterns = detectPatterns();
     
-    // Order flow
     const orderFlow = {
       buyVolume: Math.random() * 100,
       sellVolume: Math.random() * 100,
@@ -83,7 +70,6 @@ const TitanOracleTerminal = () => {
   }
 
   function calculateMLScore(price, trend, strength) {
-    // Simulazione algoritmo ML multifattoriale
     const trendScore = trend === 'BULLISH' ? 30 : 20;
     const momentumScore = strength * 0.4;
     const volumeScore = Math.random() * 20;
@@ -103,13 +89,18 @@ const TitanOracleTerminal = () => {
       { name: 'Cup & Handle', probability: 0.79, bullish: true }
     ];
     
-    // Randomizza e prendi 2-3 pattern
     return allPatterns
       .sort(() => Math.random() - 0.5)
       .slice(0, 2 + Math.floor(Math.random() * 2));
   }
 
-  // Generazione dati storici per grafici
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLiveData(generateMarketData());
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [selectedAsset, timeframe]);
+
   const historicalPerformance = useMemo(() => {
     return Array.from({ length: 30 }, (_, i) => ({
       date: `Day ${i + 1}`,
@@ -137,14 +128,14 @@ const TitanOracleTerminal = () => {
   ], []);
 
   const getSignalColor = (signal) => {
-    if (signal?.includes('BUY')) return '#10b981';
-    if (signal?.includes('SELL')) return '#ef4444';
+    if (signal && signal.includes('BUY')) return '#10b981';
+    if (signal && signal.includes('SELL')) return '#ef4444';
     return '#6b7280';
   };
 
   const getSignalIcon = (signal) => {
-    if (signal?.includes('BUY')) return <TrendingUp className="w-8 h-8" />;
-    if (signal?.includes('SELL')) return <TrendingDown className="w-8 h-8" />;
+    if (signal && signal.includes('BUY')) return <TrendingUp className="w-8 h-8" />;
+    if (signal && signal.includes('SELL')) return <TrendingDown className="w-8 h-8" />;
     return <Radio className="w-8 h-8" />;
   };
 
@@ -161,7 +152,6 @@ const TitanOracleTerminal = () => {
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
-      {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
@@ -183,7 +173,6 @@ const TitanOracleTerminal = () => {
           </div>
         </div>
 
-        {/* Asset Selection */}
         <div className="flex gap-2 flex-wrap">
           {assets.map(asset => (
             <button
@@ -201,13 +190,10 @@ const TitanOracleTerminal = () => {
         </div>
       </div>
 
-      {/* Main Grid */}
       <div className="grid grid-cols-12 gap-6">
         
-        {/* Left Column - Signal & Entry */}
         <div className="col-span-12 lg:col-span-4 space-y-6">
           
-          {/* Primary Signal */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-300">AI SIGNAL</h3>
@@ -221,7 +207,6 @@ const TitanOracleTerminal = () => {
               </div>
               <div className="text-gray-400 text-sm mb-4">{selectedAsset} • {timeframe}</div>
               
-              {/* ML Score Bar */}
               <div className="mb-4">
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
                   <span>ML Confidence</span>
@@ -243,7 +228,6 @@ const TitanOracleTerminal = () => {
               </div>
             </div>
 
-            {/* Trade Levels */}
             {liveData.signal !== 'WAIT' && (
               <div className="space-y-3">
                 <div className="bg-gray-800 rounded-lg p-4">
@@ -271,7 +255,6 @@ const TitanOracleTerminal = () => {
                   </div>
                 </div>
 
-                {/* Risk/Reward */}
                 <div className="bg-gray-800 rounded-lg p-3">
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-400">Risk/Reward Ratio</span>
@@ -284,7 +267,6 @@ const TitanOracleTerminal = () => {
             )}
           </div>
 
-          {/* Pattern Recognition */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-300">PATTERNS DETECTED</h3>
@@ -313,7 +295,6 @@ const TitanOracleTerminal = () => {
             </div>
           </div>
 
-          {/* Risk Metrics */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-300">RISK METRICS</h3>
@@ -341,10 +322,8 @@ const TitanOracleTerminal = () => {
 
         </div>
 
-        {/* Middle Column - Charts */}
         <div className="col-span-12 lg:col-span-5 space-y-6">
           
-          {/* Performance Chart */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <h3 className="text-lg font-bold text-gray-300 mb-4">CUMULATIVE P&L</h3>
             <ResponsiveContainer width="100%" height={250}>
@@ -367,7 +346,6 @@ const TitanOracleTerminal = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* Factor Analysis Radar */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <h3 className="text-lg font-bold text-gray-300 mb-4">MULTI-FACTOR ANALYSIS</h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -392,7 +370,6 @@ const TitanOracleTerminal = () => {
             </div>
           </div>
 
-          {/* Order Flow */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <h3 className="text-lg font-bold text-gray-300 mb-4">ORDER FLOW ANALYSIS</h3>
             <ResponsiveContainer width="100%" height={200}>
@@ -426,10 +403,8 @@ const TitanOracleTerminal = () => {
 
         </div>
 
-        {/* Right Column - Market Intelligence */}
         <div className="col-span-12 lg:col-span-3 space-y-6">
           
-          {/* Market Regime */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-300">MARKET REGIME</h3>
@@ -456,7 +431,6 @@ const TitanOracleTerminal = () => {
             </div>
           </div>
 
-          {/* Correlation Matrix */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <h3 className="text-lg font-bold text-gray-300 mb-4">CROSS-ASSET CORRELATION</h3>
             <div className="space-y-2">
@@ -477,7 +451,6 @@ const TitanOracleTerminal = () => {
             </div>
           </div>
 
-          {/* Economic Calendar */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <h3 className="text-lg font-bold text-gray-300 mb-4">HIGH IMPACT EVENTS</h3>
             <div className="space-y-3">
@@ -501,7 +474,6 @@ const TitanOracleTerminal = () => {
             </div>
           </div>
 
-          {/* System Status */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
             <h3 className="text-lg font-bold text-gray-300 mb-4">SYSTEM STATUS</h3>
             <div className="space-y-2">
@@ -514,8 +486,8 @@ const TitanOracleTerminal = () => {
                 <div key={idx} className="flex items-center justify-between bg-gray-800 rounded-lg p-2">
                   <span className="text-xs text-gray-400">{sys.name}</span>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full bg-${sys.color}-500 ${sys.status === 'ACTIVE' ? 'animate-pulse' : ''}`} />
-                    <span className={`text-xs font-mono text-${sys.color}-400`}>{sys.status}</span>
+                    <div className={`w-2 h-2 rounded-full ${sys.color === 'emerald' ? 'bg-emerald-500' : 'bg-yellow-500'} ${sys.status === 'ACTIVE' ? 'animate-pulse' : ''}`} />
+                    <span className={`text-xs font-mono ${sys.color === 'emerald' ? 'text-emerald-400' : 'text-yellow-400'}`}>{sys.status}</span>
                   </div>
                 </div>
               ))}
@@ -524,3 +496,12 @@ const TitanOracleTerminal = () => {
 
         </div>
       </div>
+
+      <div className="mt-6 text-center text-xs text-gray-600">
+        <p>TITAN Oracle v4.0 | Institutional-Grade Trading Intelligence</p>
+      </div>
+    </div>
+  );
+};
+
+export default TitanOracleTerminal;
