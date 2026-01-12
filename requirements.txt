@@ -1,4 +1,6 @@
-streamlit
-supabase
 pandas
-plotly
+numpy
+yfinance
+supabase
+python-dotenv
+scipy
