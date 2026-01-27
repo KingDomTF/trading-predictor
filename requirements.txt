@@ -1,6 +1,5 @@
 streamlit
 supabase
-python-dotenv
-numpy
 pandas
 plotly
+python-dotenv
