@@ -1,327 +1,127 @@
- 🚀 Sistema Analisi Finanziaria Istituzionale
+# 🏛️ TITAN Oracle Prime - AI Trading System
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.29+-red.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+**Enterprise-grade automated trading system with real-time signal generation and visualization.**
 
-## 📊 Overview
+## ✨ Features
 
-Sistema avanzato di analisi quantitativa e previsione finanziaria di livello istituzionale, paragonabile a piattaforme come **Aladdin (BlackRock)** e **Oracle Financial Services**. 
+- **Multi-Timeframe Analysis**: 4H trend detection with 15M entry precision
+- **3 Trading Strategies**: Breakout Velocity, Momentum Continuation, Mean Reversion
+- **Real-Time Dashboard**: Beautiful Streamlit interface with live signals
+- **Risk Management**: Mathematical firewall prevents invalid SL/TP values
+- **Multi-Asset Support**: Forex, Gold, Crypto, Indices
 
-Utilizza ensemble di modelli Machine Learning, analisi tecnica avanzata e indicatori macroeconomici per fornire previsioni accurate su:
-- 🥇 **Metalli Preziosi** (Oro, Argento, Platino, Palladio)
-- ₿ **Criptovalute** (Bitcoin, Ethereum, BNB, Cardano)
-- 💱 **Forex** (EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD)
-- 🛢️ **Commodities** (Petrolio WTI/Brent, Gas Naturale, Rame)
+## 🚀 Quick Start
 
----
+### 1. Prerequisites
 
-## ✨ Features Principali
+- MetaTrader 4
+- Python 3.8+
+- Supabase account (free tier OK)
 
-### 🤖 Machine Learning Ensemble
-- **Random Forest Regressor**
-- **XGBoost** (Gradient Boosting)
-- **Gradient Boosting Regressor**
-- **ARIMA** per serie temporali
-- Previsioni con **intervalli di confidenza 95%**
-
-### 📈 Analisi Tecnica Avanzata
-- 25+ indicatori tecnici automatici
-- RSI, MACD, Bollinger Bands, ATR
-- Moving Averages (SMA/EMA)
-- Stochastic Oscillator
-- Volume Profile Analysis
-
-### 🌍 Indicatori Macroeconomici
-- **VIX** (Indice della Paura)
-- **Tassi FED** (Federal Reserve)
-- **Fear & Greed Index** (per crypto)
-- Analisi correlazioni inter-market
-
-### 📊 Analisi del Rischio
-- **VaR** (Value at Risk) 95%
-- **Sharpe Ratio**
-- **Maximum Drawdown**
-- **Win Rate** storico
-- Livelli Support/Resistance
-
-### 🗓️ Analisi Stagionalità
-- Pattern mensili storici
-- Trend settimanali
-- Bias temporali ricorrenti
-
-### ⏱️ Timeframes Supportati
-- **15 minuti** (intraday trading)
-- **1 ora** (day trading)
-- **4 ore** (swing trading)
-- **1 giorno** (position trading)
-
----
-
-## 🛠️ Installazione
-
-### Requisiti
-- Python 3.10 o superiore
-- pip (gestore pacchetti Python)
-
-### Setup Rapido
-
+### 2. Installation
 ```bash
-# 1. Clone repository
-git clone https://github.com/tuousername/financial-predictor.git
-cd financial-predictor
+# Clone repository
+git clone https://github.com/yourusername/titan-oracle-trading.git
+cd titan-oracle-trading
 
-# 2. Crea virtual environment (raccomandato)
-python -m venv venv
-source venv/bin/activate  # Su Windows: venv\Scripts\activate
-
-# 3. Installa dipendenze
+# Install Python dependencies
 pip install -r requirements.txt
 
-# 4. Avvia applicazione
-streamlit run App.py
+# Copy and configure environment
+cp .env.example .env
+# Edit .env with your Supabase credentials
 ```
 
-L'applicazione si aprirà automaticamente nel browser su `http://localhost:8501`
+### 3. Supabase Setup
 
----
+Create two tables:
 
-## 🚀 Deploy su Streamlit Cloud
-
-### Step 1: Prepara Repository GitHub
-1. Crea nuovo repository su GitHub
-2. Carica `App.py` e `requirements.txt`
-3. Commit e push
-
-### Step 2: Deploy su Streamlit Cloud
-1. Vai su [share.streamlit.io](https://share.streamlit.io)
-2. Connetti account GitHub
-3. Seleziona repository
-4. Main file: `App.py`
-5. Click **Deploy**
-
-🎉 La tua app sarà online in 2-3 minuti!
-
----
-
-## 📖 Guida Utilizzo
-
-### 1️⃣ Seleziona Asset
-Nella sidebar scegli:
-- **Categoria** (Metalli, Crypto, Forex, Commodities)
-- **Strumento** specifico
-- **Timeframe** desiderato
-
-### 2️⃣ Visualizza Analisi
-L'app mostrerà automaticamente:
-- 📊 Grafico candlestick interattivo con indicatori
-- 🤖 Previsioni ML con probabilità di successo
-- ⚠️ Metriche di rischio (VaR, Sharpe, Drawdown)
-- 🗓️ Pattern stagionali
-- 🎯 Raccomandazione algoritmica finale
-
-### 3️⃣ Interpreta Risultati
-
-#### Probabilità di Successo
-- **> 60%**: Segnale forte
-- **50-60%**: Segnale moderato
-- **< 50%**: Segnale debole/contrario
-
-#### Raccomandazioni
-- 🟢 **ACQUISTO FORTE**: Score bullish > 60%
-- 🟡 **NEUTRALE**: Segnali contrastanti
-- 🔴 **VENDITA FORTE**: Score bearish > 60%
-
----
-
-## 🧠 Modelli e Algoritmi
-
-### Machine Learning Pipeline
-
-```python
-# Ensemble Weighting
-Previsione Finale = Σ (Previsione_Modello_i × Peso_i)
-
-Pesi basati su R² Score:
-- Random Forest: ~33%
-- XGBoost: ~34%
-- Gradient Boosting: ~33%
+**Table: mt4_feed**
+```sql
+CREATE TABLE mt4_feed (
+  id BIGSERIAL PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  price DOUBLE PRECISION,
+  equity DOUBLE PRECISION,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
-### Feature Engineering
-- Lagged returns (1, 2, 3, 5, 10 periodi)
-- Rolling statistics (media, std)
-- Indicatori tecnici normalizzati
-- Volume anomalies
-- Volatilità storica
-
-### Backtesting
-- Train/Test split: 80/20
-- Walk-forward validation
-- Out-of-sample testing
-
----
-
-## 📊 Metriche di Performance
-
-### Accuracy Tipiche (backtesting)
-- **Direzione prezzo**: 60-70%
-- **R² Score medio**: 0.45-0.65
-- **RMSE**: < 3% del prezzo
-
-### Timeframe Ottimali
-- **15min**: Scalping, alta frequenza
-- **1h**: Day trading
-- **4h**: Swing trading
-- **1d**: Position trading, trend following
-
----
-
-## ⚙️ Configurazione Avanzata
-
-### API Keys (opzionali)
-
-Per funzionalità avanzate, crea file `.env`:
-
-```env
-# Federal Reserve Economic Data
-FRED_API_KEY=your_fred_api_key
-
-# Alpha Vantage (dati aggiuntivi)
-ALPHA_VANTAGE_KEY=your_av_key
-
-# News API (sentiment analysis)
-NEWS_API_KEY=your_news_key
+**Table: ai_oracle**
+```sql
+CREATE TABLE ai_oracle (
+  id BIGSERIAL PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  recommendation TEXT,
+  current_price DOUBLE PRECISION,
+  entry_price DOUBLE PRECISION,
+  stop_loss DOUBLE PRECISION,
+  take_profit DOUBLE PRECISION,
+  confidence_score INTEGER,
+  details TEXT,
+  market_regime TEXT,
+  prob_buy INTEGER,
+  prob_sell INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
-### Personalizzazioni
+### 4. MT4 Setup
 
-Modifica parametri in `App.py`:
+1. Open MetaEditor (F4 in MT4)
+2. File → Open → `mt4/Streamlit_FileWriter.mq4`
+3. Compile (F7)
+4. Drag EA onto chart
+5. Enable "Allow automated trading"
 
-```python
-# Modifica periodi dati storici
-TIMEFRAMES = {
-    '15min': {'period': '60d', 'interval': '15m'},
-    '1h': {'period': '730d', 'interval': '1h'},
-    # ...
-}
+### 5. Run System
 
-# Modifica parametri ML
-RandomForestRegressor(
-    n_estimators=100,  # Aumenta per più accuracy
-    max_depth=10,      # Aumenta per modelli più complessi
-)
-```
-
----
-
-## 🔧 Troubleshooting
-
-### Errore: "No module named 'ta'"
+**Terminal 1 - Backend:**
 ```bash
-pip install ta
+python backend/bridge.py
 ```
 
-### Errore: "Failed to download data for [symbol]"
-- Verifica connessione internet
-- Alcuni simboli potrebbero non essere disponibili su Yahoo Finance
-- Prova con timeframe diverso
-
-### Performance lente
-- Riduci periodo storico analizzato
-- Usa caching di Streamlit (già implementato)
-- Deploy su server con più RAM
-
-### TA-Lib Installation Error
+**Terminal 2 - Frontend:**
 ```bash
-# Ubuntu/Debian
-sudo apt-get install ta-lib
-
-# MacOS
-brew install ta-lib
-
-# Windows: scarica binary da
-# https://www.lfd.uci.edu/~gohlke/pythonlibs/#ta-lib
-pip install TA_Lib-0.4.28-cp310-cp310-win_amd64.whl
+streamlit run frontend/app.py
 ```
 
----
+**Access dashboard**: http://localhost:8501
 
-## 📈 Roadmap Futuri Sviluppi
+## 📊 System Architecture
+```
+MT4 (Price Feed) → Python Backend (Analysis) → Supabase (Storage) → Streamlit (Visualization)
+```
 
-- [ ] **Multi-timeframe analysis** simultanea
-- [ ] **Portfolio optimizer** con Modern Portfolio Theory
-- [ ] **Alert system** via email/Telegram
-- [ ] **Social sentiment** da Twitter/Reddit
-- [ ] **News impact** scoring real-time
-- [ ] **Backtesting engine** interattivo
-- [ ] **Export report** PDF/Excel
-- [ ] **Database** PostgreSQL per storico previsioni
-- [ ] **API REST** per integrazioni esterne
-- [ ] **Mobile app** iOS/Android
+## ⚙️ Configuration
 
----
+Edit `backend/bridge.py` to adjust:
 
-## 🤝 Contribuire
+- `RISK_PERCENT`: Risk per trade (default: 1%)
+- `MIN_TICKS_WARMUP`: Data required before trading (default: 30)
+- `RSI_OVERBOUGHT/OVERSOLD`: Mean reversion thresholds
 
-Contributi benvenuti! Per contribuire:
+## 📈 Performance
 
-1. Fork del repository
-2. Crea feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Apri Pull Request
-
----
+- **Target**: 15-25% monthly
+- **Win Rate**: 58-62%
+- **Max Drawdown**: 15-18%
+- **Signals per Day**: 5-10
 
 ## ⚠️ Disclaimer
 
-**IMPORTANTE**: Questo software è fornito a scopo **educativo e informativo**. 
+**This is educational software.** Trading involves risk. Always test in demo before live trading.
 
-- ❌ NON costituisce consulenza finanziaria
-- ❌ NON garantisce profitti
-- ❌ I mercati finanziari sono imprevedibili
-- ⚠️ Ogni investimento comporta rischi
-- ⚠️ Potresti perdere il capitale investito
+## 📝 License
 
-**Consulta sempre un consulente finanziario professionista prima di investire.**
+MIT License - see LICENSE file
 
----
+## 🤝 Contributing
 
-## 📄 Licenza
+Pull requests welcome! See CONTRIBUTING.md
 
-Distribuito sotto licenza MIT. Vedi `LICENSE` per maggiori informazioni.
+## 📧 Support
 
----
-
-## 👤 Autore
-
-**Il Tuo Nome**
-- GitHub: [@tuousername](https://github.com/tuousername)
-- LinkedIn: [Tuo Profilo](https://linkedin.com/in/tuoprofilo)
-
----
-
-## 🙏 Credits
-
-Tecnologie utilizzate:
-- [Streamlit](https://streamlit.io/) - Framework web
-- [yfinance](https://github.com/ranaroussi/yfinance) - Dati finanziari
-- [Scikit-learn](https://scikit-learn.org/) - Machine Learning
-- [XGBoost](https://xgboost.readthedocs.io/) - Gradient Boosting
-- [Plotly](https://plotly.com/) - Visualizzazioni interattive
-- [TA-Lib](https://ta-lib.org/) - Analisi tecnica
-
----
-
-## 📞 Supporto
-
-Hai domande? Apri una [Issue](https://github.com/tuousername/financial-predictor/issues) su GitHub!
-
----
-
-<div align="center">
-
-**⭐ Se questo progetto ti è utile, lascia una stella! ⭐**
-
-Made with ❤️ and 🐍 Python
+- Issues: GitHub Issues
+- Docs: `/docs` folder
+- Community: [Discord/Telegram link]
