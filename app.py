@@ -14,12 +14,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. CSS DARK MODE ESTREMO & STILE CARD (Il ritorno del look professionale) ---
+# --- 2. CSS DARK MODE ESTREMO & STILE CARD ---
 st.markdown("""
 <style>
-    /* Sfondo Generale Profondo */
+    /* Sfondo Generale e Testo */
     .stApp {
-        background-color: #0E1117 !important; /* Nero profondo */
+        background-color: #0E1117 !important;
         color: #FAFAFA;
     }
     /* Sidebar */
@@ -32,11 +32,11 @@ st.markdown("""
     .metric-container {
         background-color: #1E2127;
         border: 1px solid #30333D;
-        border-radius: 12px; /* Arrotondamento maggiore */
+        border-radius: 12px;
         padding: 25px;
         text-align: center;
         height: 100%;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.3); /* Ombra più profonda */
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -44,7 +44,7 @@ st.markdown("""
         transition: transform 0.2s;
     }
     .metric-container:hover {
-        transform: translateY(-2px); /* Leggero effetto hover */
+        transform: translateY(-2px);
     }
 
     /* Etichette e Valori */
@@ -57,7 +57,7 @@ st.markdown("""
         font-weight: 700;
     }
     .metric-value {
-        font-size: 42px; /* Testo più grande */
+        font-size: 42px;
         font-weight: 900;
         color: #ffffff;
         margin-bottom: 10px;
@@ -70,7 +70,7 @@ st.markdown("""
         font-style: italic;
     }
 
-    /* Segnali Luminosi (Glow Effect) */
+    /* Segnali Luminosi */
     .buy-signal { 
         color: #27C469 !important; 
         font-size: 64px !important; 
@@ -86,7 +86,7 @@ st.markdown("""
         font-size: 64px !important;
     }
 
-    /* Bordi colorati specifici per i box inferiori */
+    /* Bordi colorati specifici */
     .entry-box { border-bottom: 4px solid #5865F2 !important; }
     .stop-box { border-bottom: 4px solid #E74C3C !important; }
     .target-box { border-bottom: 4px solid #27C469 !important; }
@@ -113,7 +113,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. CONNESSIONE DATABASE (Robustezza V90) ---
+# --- 3. CONNESSIONE DATABASE ---
 try:
     load_dotenv()
     SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -167,7 +167,7 @@ def get_price_history(symbol):
     except: pass
     return pd.DataFrame()
 
-# --- 5. INTERFACCIA UTENTE (Layout Professionale) ---
+# --- 5. INTERFACCIA UTENTE ---
 
 # Sidebar
 with st.sidebar:
@@ -196,7 +196,7 @@ if not history_df.empty:
 elif signal_data:
     current_price = signal_data.get('current_price', 0.0)
 
-# --- SEZIONE 1: KPI CARDS (Il look che volevi) ---
+# --- VISUALIZZAZIONE KPI ---
 if signal_data and signal_data.get('market_regime') != 'SCANNING':
     rec = signal_data.get('recommendation', 'WAIT')
     conf = signal_data.get('confidence_score', 0)
@@ -286,7 +286,7 @@ if not history_df.empty:
         name='Price',
         line=dict(color='#5865F2', width=3),
         fill='tozeroy',
-        fillcolor='rgba(88, 101, 242, 0.15)' # Area più visibile
+        fillcolor='rgba(88, 101, 242, 0.15)'
     ))
 
     # Linee Livelli (Entry/SL/TP) se presenti
