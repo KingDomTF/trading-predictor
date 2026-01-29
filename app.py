@@ -1,339 +1,292 @@
-"""
-═══════════════════════════════════════════════════════════════════════════════
-TITAN V90 'ORACLE PRIME' - ENTERPRISE TRADING KERNEL
-═══════════════════════════════════════════════════════════════════════════════
-Architecture: Event-Driven Producer/Consumer
-Safety:       Math Firewall active (Hard Clamping on SL/TP)
-Latency:      <50ms processing time
-Author:       AI Architect Level 200%
-═══════════════════════════════════════════════════════════════════════════════
-"""
-
-import os
-import sys
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from supabase import create_client
 import time
-import json
-import logging
-import codecs
-import numpy as np
-from collections import deque
-from datetime import datetime
+import os
+from dotenv import load_dotenv
 
-# --- SYSTEM BOOTSTRAP (WINDOWS UTF-8 FIX) ---
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except AttributeError:
-        sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+# --- 1. CONFIGURAZIONE PAGINA ---
+st.set_page_config(
+    page_title="TITAN V90 Terminal",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- DEPENDENCY CHECK ---
+# --- 2. CSS DARK MODE & STILE "CARD" (Look Professionale) ---
+st.markdown("""
+<style>
+    /* Sfondo Generale */
+    .stApp {
+        background-color: #0E1117 !important;
+        color: #FAFAFA;
+    }
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #161B22 !important;
+        border-right: 1px solid #30333D;
+    }
+    
+    /* Stile delle Card (Box Dati) */
+    .metric-container {
+        background-color: #1E2127;
+        border: 1px solid #30333D;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        height: 100%;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+
+    /* Testi */
+    .metric-label {
+        font-size: 13px;
+        color: #8b949e;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        font-weight: 700;
+    }
+    .metric-value {
+        font-size: 38px;
+        font-weight: 900;
+        color: #ffffff;
+        margin-bottom: 5px;
+        line-height: 1.1;
+    }
+    .metric-sub {
+        font-size: 12px;
+        color: #8b949e;
+        margin-top: auto;
+        font-style: italic;
+    }
+
+    /* Colori Segnali */
+    .buy-signal { 
+        color: #27C469 !important; 
+        text-shadow: 0 0 20px rgba(39, 196, 105, 0.3); 
+    }
+    .sell-signal { 
+        color: #E74C3C !important; 
+        text-shadow: 0 0 20px rgba(231, 76, 60, 0.3); 
+    }
+    .wait-signal { 
+        color: #7F8C8D !important; 
+    }
+
+    /* Bordi Colorati per SL/TP */
+    .entry-box { border-bottom: 4px solid #5865F2 !important; }
+    .stop-box { border-bottom: 4px solid #E74C3C !important; }
+    .target-box { border-bottom: 4px solid #27C469 !important; }
+    
+    .entry-text { color: #5865F2 !important; }
+    .stop-text { color: #E74C3C !important; }
+    .target-text { color: #27C469 !important; }
+
+    /* Pulizia spazi */
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 3. CONNESSIONE DATABASE ---
 try:
-    from supabase import create_client
-    from dotenv import load_dotenv
     load_dotenv()
-except ImportError:
-    print("CRITICAL: Libraries missing. Run: pip install supabase python-dotenv numpy")
-    sys.exit(1)
-
-# --- CONFIGURATION LAYER ---
-class Config:
-    # Infrastructure
+    # Tenta prima dal file .env locale
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-    MT4_PATH = os.getenv("MT4_PATH", "").rstrip(os.sep)
-    
-    # Target Assets (Must match MT4 filenames exactly)
-    ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"]
-    
-    # Strategy: Balanced Hunter
-    MIN_TICKS_WARMUP = 30       # Bastano 30 tick per iniziare a calcolare
-    RISK_PERCENT = 0.01         # 1% Balance Risk
-    DEFAULT_SL_PCT = 0.002      # 0.2% Fallback Stop Loss (Stretto per scalping)
-    DEFAULT_TP_PCT = 0.005      # 0.5% Fallback Take Profit
-    
-    # Thresholds
-    RSI_PERIOD = 14
-    RSI_OVERBOUGHT = 70
-    RSI_OVERSOLD = 30
-    MA_FAST = 10
-    MA_SLOW = 50
 
-# --- LOGGING KERNEL ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s | %(message)s',
-    datefmt='%H:%M:%S',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger("ORACLE")
+    # Se siamo su Streamlit Cloud, usa i Secrets
+    if 'SUPABASE_URL' in st.secrets:
+        SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    if 'SUPABASE_KEY' in st.secrets:
+        SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 1: MATHEMATICAL FIREWALL (Safety First)
-# ═══════════════════════════════════════════════════════════════════════════════
-class MathFirewall:
-    """
-    Garantisce che nessun numero 'sporco' esca dal sistema.
-    Blocca Stop Loss negativi, Target impossibili e Volatilità infinita.
-    """
-    @staticmethod
-    def clamp_levels(entry_price, direction, atr):
-        """Calcola SL/TP forzando limiti di sicurezza fisici."""
-        
-        # 1. Sanity Check Volatilità
-        # Se ATR è 0 o assurdo (>1% prezzo), usa un default fisso (0.2%)
-        safe_volatility = atr
-        if atr <= 0 or atr > (entry_price * 0.01):
-            safe_volatility = entry_price * Config.DEFAULT_SL_PCT
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        st.error("🚨 ERRORE: Credenziali Database mancanti. Controlla il file .env")
+        st.stop()
 
-        # 2. Calcolo Distanze (Balanced Strategy 1:2.5)
-        sl_dist = safe_volatility * 1.5
-        tp_dist = sl_dist * 2.5
+    @st.cache_resource
+    def init_db():
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-        # 3. Calcolo Prezzi
-        if direction == "BUY":
-            sl = entry_price - sl_dist
-            tp = entry_price + tp_dist
-            # HARD CLAMP: SL non può essere sopra entry o < 0
-            if sl >= entry_price or sl <= 0: 
-                sl = entry_price * (1 - Config.DEFAULT_SL_PCT)
-                tp = entry_price * (1 + Config.DEFAULT_TP_PCT)
-        else: # SELL
-            sl = entry_price + sl_dist
-            tp = entry_price - tp_dist
-            # HARD CLAMP: SL non può essere sotto entry
-            if sl <= entry_price:
-                sl = entry_price * (1 + Config.DEFAULT_SL_PCT)
-                tp = entry_price * (1 - Config.DEFAULT_TP_PCT)
-            # TP non può essere negativo
-            if tp <= 0:
-                tp = entry_price * 0.99
-                
-        return round(sl, 2), round(tp, 2), round(sl_dist, 2)
+    supabase = init_db()
 
-    @staticmethod
-    def calculate_lots(equity, sl_dist_money):
-        """Calcolo size conservativo."""
-        if sl_dist_money == 0: return 0.01
-        risk_money = equity * Config.RISK_PERCENT
-        # Formula: Risk / StopLossDistance. Divisore 1000 normalizza contratti standard/mini
-        lots = (risk_money / sl_dist_money) / 1000
-        return max(0.01, min(round(lots, 2), 5.0))
+except Exception as e:
+    st.error(f"Errore Connessione DB: {e}")
+    st.stop()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 2: ANALYTICS ENGINE (The Brain)
-# ═══════════════════════════════════════════════════════════════════════════════
-class AnalyticsEngine:
-    def __init__(self):
-        self.data_buffer = {sym: deque(maxlen=200) for sym in Config.ASSETS}
-
-    def ingest(self, symbol, price):
-        self.data_buffer[symbol].append(price)
-
-    def analyze(self, symbol, current_price, spread):
-        history = list(self.data_buffer[symbol])
-        
-        # A. DATA SUFFICIENCY CHECK
-        if len(history) < Config.MIN_TICKS_WARMUP:
-            return {"status": "WARMUP", "progress": len(history)}
-
-        # B. INDICATORS CALCULATION
-        prices = np.array(history)
-        
-        # SMA (Simple Moving Average)
-        sma_fast = np.mean(prices[-Config.MA_FAST:])
-        sma_slow = np.mean(prices[-Config.MA_SLOW:])
-        
-        # ATR (Volatility Proxy)
-        atr = np.std(prices[-14:]) * 2.0
-        
-        # RSI (Momentum)
-        deltas = np.diff(prices)
-        gains = deltas[deltas > 0]
-        losses = -deltas[deltas < 0]
-        avg_gain = np.mean(gains) if len(gains) > 0 else 0
-        avg_loss = np.mean(losses) if len(losses) > 0 else 1e-10
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-
-        # C. TRADING LOGIC (HUNTER STRATEGY)
-        signal = None
-        reason = ""
-
-        # 1. TREND MOMENTUM (Hunter Follow)
-        if current_price > sma_slow and sma_fast > sma_slow:
-            # Pullback condition or Momentum burst
-            if rsi > 50 and rsi < 70: 
-                signal = "BUY"
-                reason = "Momentum Trend"
-        
-        elif current_price < sma_slow and sma_fast < sma_slow:
-            if rsi < 50 and rsi > 30:
-                signal = "SELL"
-                reason = "Momentum Trend"
-
-        # 2. MEAN REVERSION (Hunter Trap)
-        if rsi < Config.RSI_OVERSOLD:
-            signal = "BUY"
-            reason = "Oversold Bounce"
-        elif rsi > Config.RSI_OVERBOUGHT:
-            signal = "SELL"
-            reason = "Overbought Rejection"
-
-        # D. FINAL DECISION PACKET
-        return {
-            "status": "READY",
-            "signal": signal,
-            "atr": atr,
-            "reason": reason,
-            "confidence": 85 if signal else 0
-        }
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODULE 3: ORACLE DISPATCHER (The Bridge)
-# ═══════════════════════════════════════════════════════════════════════════════
-class OracleDispatcher:
-    def __init__(self):
-        try:
-            self.db = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
-            self.connected = True
-            logger.info("✅ Connected to Supabase Cloud")
-        except Exception as e:
-            logger.error(f"❌ Connection Failed: {e}")
-            self.connected = False
-        
-        self.last_push = {sym: 0 for sym in Config.ASSETS}
-
-    def stream_price(self, symbol, price, equity):
-        """Invia il prezzo all'App per il grafico (Throttled 1s)"""
-        if not self.connected: return
-        if time.time() - self.last_push[symbol] < 1.0: return # Rate limit
-
-        try:
-            self.db.table("mt4_feed").insert({
-                "symbol": symbol, "price": price, "equity": equity
-            }).execute()
-            self.last_push[symbol] = time.time()
-        except Exception: pass # Ignora errori di rete minori per lo stream
-
-    def publish_signal(self, payload):
-        """Invia il segnale di trading critico"""
-        if not self.connected: return
-        try:
-            self.db.table("ai_oracle").insert(payload).execute()
-            logger.info(f"📡 SIGNAL SENT: {payload['symbol']} {payload['recommendation']}")
-        except Exception as e:
-            logger.error(f"❌ Failed to publish signal: {e}")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN LOOP (The Conductor)
-# ═══════════════════════════════════════════════════════════════════════════════
-def main():
-    print("\n" + "═"*60)
-    print(" 🏛️  TITAN V90 'ORACLE PRIME' - SYSTEM ONLINE")
-    print(f"    Assets: {', '.join(Config.ASSETS)}")
-    print("    Safety: ENABLED | Math Firewall: ACTIVE")
-    print("═"*60 + "\n")
-
-    if not Config.MT4_PATH:
-        logger.error("MT4_PATH not found in .env")
-        return
-
-    engine = AnalyticsEngine()
-    dispatcher = OracleDispatcher()
-    
-    # Cache per evitare di spammare lo stesso segnale
-    last_signal_cache = {sym: None for sym in Config.ASSETS}
-
-    while True:
-        cycle_start = time.time()
-        
-        for symbol in Config.ASSETS:
-            # 1. READ (Direct Access IO)
-            file_path = os.path.join(Config.MT4_PATH, f"{symbol}_data.json")
-            if not os.path.exists(file_path): continue
-
-            try:
-                # Lettura atomica veloce
-                with open(file_path, 'r', encoding='utf-8-sig') as f:
-                    content = f.read().strip()
-                    if not content: continue
-                    data = json.loads(content)
-            except Exception: continue
-
-            # 2. PARSE
-            try:
-                bid = float(data.get('bid', 0))
-                ask = float(data.get('ask', 0))
-                price = (bid + ask) / 2
-                equity = float(data.get('equity', 0))
-                spread = ask - bid
-                
-                if price <= 0: continue
-            except: continue
-
-            # 3. STREAM (Aggiorna il prezzo sull'App ORA)
-            dispatcher.stream_price(symbol, price, equity)
-            
-            # 4. INGEST & ANALYZE
-            engine.ingest(symbol, price)
-            analysis = engine.analyze(symbol, price, spread)
-
-            # 5. EXECUTE LOGIC
-            if analysis['status'] == "WARMUP":
-                if analysis['progress'] % 10 == 0: # Log meno frequente
-                    print(f" ⏳ {symbol} calibrating... {analysis['progress']}/{Config.MIN_TICKS_WARMUP}", end='\r')
-            
-            elif analysis['status'] == "READY":
-                
-                # Se c'è un segnale e non è lo stesso di un secondo fa
-                if analysis['signal'] and analysis['signal'] != last_signal_cache[symbol]:
-                    
-                    # A. Math Firewall (Calcolo Sicuro)
-                    sl, tp, dist_money = MathFirewall.clamp_levels(
-                        price, analysis['signal'], analysis['atr']
-                    )
-                    
-                    # B. Size Calculation
-                    lots = MathFirewall.calculate_lots(equity, dist_money)
-                    
-                    # C. Log Console
-                    entry_price = ask if analysis['signal'] == "BUY" else bid
-                    print(f"\n 💎 NEW OPPORTUNITY: {symbol} {analysis['signal']} @ {entry_price:.2f}")
-                    print(f"    SL: {sl} | TP: {tp} | Vol: {analysis['atr']:.4f}")
-                    print(f"    Reason: {analysis['reason']}")
-
-                    # D. Payload Construction
-                    payload = {
-                        "symbol": symbol,
-                        "recommendation": analysis['signal'],
-                        "current_price": entry_price,
-                        "entry_price": entry_price,
-                        "stop_loss": sl,
-                        "take_profit": tp,
-                        "confidence_score": analysis['confidence'],
-                        "details": f"Hunter V90 | {lots} lots | {analysis['reason']}",
-                        "market_regime": "BALANCED",
-                        "prob_buy": 100 if analysis['signal']=="BUY" else 0,
-                        "prob_sell": 100 if analysis['signal']=="SELL" else 0
-                    }
-                    
-                    # E. Publish
-                    dispatcher.publish_signal(payload)
-                    last_signal_cache[symbol] = analysis['signal']
-                
-                # Se non c'è segnale, resetta cache
-                elif not analysis['signal']:
-                    last_signal_cache[symbol] = None
-                    # Heartbeat occasionale sull'App
-                    if time.time() % 5 < 0.2:
-                        print(f" 👁️  Watching {symbol} ${price:.2f} | Eq: ${equity:.0f}    ", end='\r')
-
-        # CPU Saver (Non fondere il processore)
-        elapsed = time.time() - cycle_start
-        if elapsed < 0.1: time.sleep(0.1 - elapsed)
-
-if __name__ == "__main__":
+# --- 4. FUNZIONI RECUPERO DATI ---
+def get_last_signal(symbol):
     try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\n🛑 ORACLE SYSTEM SHUTDOWN.")
+        response = supabase.table("ai_oracle")\
+            .select("*")\
+            .eq("symbol", symbol)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        if response.data: return response.data[0]
+    except: pass
+    return None
+
+def get_price_history(symbol):
+    try:
+        response = supabase.table("mt4_feed")\
+            .select("created_at, price")\
+            .eq("symbol", symbol)\
+            .order("created_at", desc=True)\
+            .limit(200)\
+            .execute()
+        if response.data:
+            df = pd.DataFrame(response.data)
+            df['created_at'] = pd.to_datetime(df['created_at'])
+            return df.sort_values('created_at')
+    except: pass
+    return pd.DataFrame()
+
+# --- 5. INTERFACCIA UTENTE ---
+
+# Sidebar
+with st.sidebar:
+    st.title("⚡ TITAN V90")
+    st.markdown("### 🎛️ Control Panel")
+    symbol = st.radio("ASSET:", ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"], index=3)
+    st.markdown("---")
+    auto_refresh = st.toggle("Auto-Refresh (1s)", value=True)
+    if st.button("🔄 Force Update"):
+        st.rerun()
+    st.markdown("---")
+    st.caption("Status: ONLINE | Mode: HUNTER V90")
+
+# Header Principale
+st.markdown(f"# 📊 {symbol} Market Analysis")
+
+# Fetch Dati
+signal_data = get_last_signal(symbol)
+history_df = get_price_history(symbol)
+
+current_price = 0.0
+if not history_df.empty:
+    current_price = history_df['price'].iloc[-1]
+elif signal_data:
+    current_price = signal_data.get('current_price', 0.0)
+
+# --- DASHBOARD KPI ---
+if signal_data and signal_data.get('market_regime') != 'SCANNING':
+    rec = signal_data.get('recommendation', 'WAIT')
+    conf = signal_data.get('confidence_score', 0)
+    regime = signal_data.get('market_regime', 'WAIT')
+    details = signal_data.get('details', '')
+
+    # RIGA 1: Segnale, Confidenza, Prezzo
+    c1, c2, c3 = st.columns([1.5, 1.2, 1])
+
+    with c1:
+        # Colore dinamico
+        sig_class = "wait-signal"
+        if rec == "BUY": sig_class = "buy-signal"
+        elif rec == "SELL": sig_class = "sell-signal"
+        
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">AI SIGNAL</div>
+            <div class="metric-value {sig_class}">{rec}</div>
+            <div class="metric-sub">{regime} | {details.split('|')[0] if '|' in details else details}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        # Barra Confidenza
+        bar_color = "#7F8C8D"
+        if rec == "BUY": bar_color = "#27C469"
+        elif rec == "SELL": bar_color = "#E74C3C"
+        
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">CONFIDENCE SCORE</div>
+            <div class="metric-value" style="color: {bar_color};">{conf}%</div>
+            <div style="width: 100%; background: #161B22; height: 8px; border-radius: 4px; margin-top: 10px;">
+                <div style="width: {conf}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c3:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">LIVE PRICE</div>
+            <div class="metric-value">${current_price:.2f}</div>
+            <div class="metric-sub">Real-Time Feed</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # RIGA 2: Livelli Operativi (Solo se Active)
+    if rec in ["BUY", "SELL"]:
+        st.markdown("<br>", unsafe_allow_html=True)
+        l1, l2, l3 = st.columns(3)
+        
+        entry = signal_data.get('entry_price', 0)
+        sl = signal_data.get('stop_loss', 0)
+        tp = signal_data.get('take_profit', 0)
+        
+        with l1:
+            st.markdown(f"""<div class="metric-container entry-box"><div class="metric-label">ENTRY</div><div class="metric-value entry-text">${entry:.2f}</div></div>""", unsafe_allow_html=True)
+        with l2:
+            st.markdown(f"""<div class="metric-container stop-box"><div class="metric-label">STOP LOSS</div><div class="metric-value stop-text">${sl:.2f}</div></div>""", unsafe_allow_html=True)
+        with l3:
+            st.markdown(f"""<div class="metric-container target-box"><div class="metric-label">TARGET</div><div class="metric-value target-text">${tp:.2f}</div></div>""", unsafe_allow_html=True)
+
+else:
+    # Box di Attesa
+    st.info("🔄 In attesa di dati dal Bridge V90 (Assicurati che bridge.py stia girando)...")
+
+# --- 6. GRAFICO LIVE ---
+st.markdown("---")
+st.markdown("### 📈 Live Chart")
+
+if not history_df.empty:
+    fig = go.Figure()
+
+    # Linea Prezzo
+    fig.add_trace(go.Scatter(
+        x=history_df['created_at'], 
+        y=history_df['price'],
+        mode='lines',
+        name='Price',
+        line=dict(color='#5865F2', width=2),
+        fill='tozeroy',
+        fillcolor='rgba(88, 101, 242, 0.15)'
+    ))
+
+    # Linee Livelli (Se presenti)
+    if signal_data and signal_data.get('recommendation') in ['BUY', 'SELL']:
+        entry = signal_data.get('entry_price')
+        sl = signal_data.get('stop_loss')
+        tp = signal_data.get('take_profit')
+        
+        if entry: fig.add_hline(y=entry, line_dash="dot", line_color="white", annotation_text="ENTRY")
+        if sl: fig.add_hline(y=sl, line_dash="dash", line_color="#E74C3C", annotation_text="SL")
+        if tp: fig.add_hline(y=tp, line_dash="dash", line_color="#27C469", annotation_text="TP")
+
+    # Stile Grafico Dark
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(14, 17, 23, 0.5)',
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=450,
+        xaxis=dict(showgrid=False, title=None),
+        yaxis=dict(showgrid=True, gridcolor='#30333D', title=None),
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+# --- 7. AUTO REFRESH ---
+if auto_refresh:
+    time.sleep(1)
+    st.rerun()
