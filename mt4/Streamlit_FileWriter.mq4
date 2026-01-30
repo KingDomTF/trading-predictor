@@ -1,102 +1,101 @@
 //+------------------------------------------------------------------+
-//|                                     Streamlit_FileWriter.mq4     |
-//|                        TITAN Trading Systems                     |
-//|           Esporta Dati JSON per il Ponte Python (V90)            |
+//| Streamlit_FileWriter.mq4                                          |
+//| TITAN Trading Systems - Optimized for V90                        |
 //+------------------------------------------------------------------+
-#property copyright "TITAN V90"
-#property link      "https://github.com/"
-#property version   "2.00"
 #property strict
+#property copyright "TITAN Trading Systems"
+#property version   "2.0"
 
-// --- INPUT ---
-input int RefreshRateSeconds = 1; // Ogni quanti secondi aggiornare il file
+input int UpdateIntervalMs = 500;  // Update every 500ms
 
-// --- VARIABILI GLOBALI ---
-string fileName;
+datetime lastUpdate = 0;
 
-//+------------------------------------------------------------------+
-//| Inizializzazione                                                 |
-//+------------------------------------------------------------------+
 int OnInit()
-  {
-   // Il nome del file sarà AUTOMATICO in base al grafico (es: EURUSD_data.json)
-   fileName = Symbol() + "_data.json";
+{
+   Print("═════════════════════════════════════════════");
+   Print("TITAN FileWriter v2.0 Started");
+   Print("Symbol: ", Symbol());
+   Print("Path: ", TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\");
+   Print("═════════════════════════════════════════════");
    
-   // Imposta il timer per l'aggiornamento
-   EventSetTimer(RefreshRateSeconds);
+   // Test write
+   string testFile = "test.txt";
+   int handle = FileOpen(testFile, FILE_WRITE|FILE_TXT);
    
-   Print("🚀 TITAN WRITER AVVIATO: Scrivo su ", fileName);
+   if(handle == INVALID_HANDLE)
+   {
+      Print("❌ ERROR: Cannot write files!");
+      Print("Enable: Tools → Options → Expert Advisors → Allow DLL imports");
+      return(INIT_FAILED);
+   }
+   
+   FileWriteString(handle, "TITAN FileWriter OK");
+   FileClose(handle);
+   FileDelete(testFile);
+   
+   Print("✅ Write test SUCCESSFUL");
    return(INIT_SUCCEEDED);
-  }
+}
 
-//+------------------------------------------------------------------+
-//| Chiusura                                                         |
-//+------------------------------------------------------------------+
 void OnDeinit(const int reason)
-  {
-   EventKillTimer();
-   Print("🛑 TITAN WRITER FERMATO");
-  }
+{
+   Print("TITAN FileWriter stopped");
+}
 
-//+------------------------------------------------------------------+
-//| Timer Loop (Esegue ogni X secondi)                               |
-//+------------------------------------------------------------------+
-void OnTimer()
-  {
-   WriteData();
-  }
-
-//+------------------------------------------------------------------+
-//| Tick Loop (Esegue ad ogni movimento di prezzo)                   |
-//+------------------------------------------------------------------+
 void OnTick()
-  {
-   // Decommenta la riga sotto se vuoi aggiornamenti istantanei (usa più CPU)
-   // WriteData(); 
-  }
-
-//+------------------------------------------------------------------+
-//| Funzione di Scrittura File JSON                                  |
-//+------------------------------------------------------------------+
-void WriteData()
-  {
-   // 1. RECUPERA I DATI DI MERCATO
+{
+   if(GetTickCount() - lastUpdate < UpdateIntervalMs)
+      return;
+   
+   lastUpdate = GetTickCount();
+   
+   // Get market data
    double bid = MarketInfo(Symbol(), MODE_BID);
    double ask = MarketInfo(Symbol(), MODE_ASK);
    double spread = ask - bid;
-   double price = (bid + ask) / 2.0;
-   
-   // Recupera Equity e Saldo
+   double mid = (bid + ask) / 2.0;
    double equity = AccountEquity();
    double balance = AccountBalance();
    
-   // 2. CREA LA STRINGA JSON MANUALMENTE
-   // Attenzione: MQL4 non ha librerie JSON native, lo costruiamo come stringa
+   // Validate data
+   if(bid <= 0 || ask <= 0 || ask < bid)
+   {
+      Print("⚠️ Invalid bid/ask: ", bid, " / ", ask);
+      return;
+   }
+   
+   // Build JSON
    string json = "{";
-   json += "\"symbol\": \"" + Symbol() + "\",";
-   json += "\"time\": \"" + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "\",";
-   json += "\"bid\": " + DoubleToString(bid, Digits) + ",";
-   json += "\"ask\": " + DoubleToString(ask, Digits) + ",";
-   json += "\"price\": " + DoubleToString(price, Digits) + ",";
-   json += "\"spread\": " + DoubleToString(spread, Digits) + ",";
-   json += "\"equity\": " + DoubleToString(equity, 2) + ",";
-   json += "\"balance\": " + DoubleToString(balance, 2);
+   json += "\"symbol\":\"" + Symbol() + "\",";
+   json += "\"bid\":" + DoubleToString(bid, Digits) + ",";
+   json += "\"ask\":" + DoubleToString(ask, Digits) + ",";
+   json += "\"spread\":" + DoubleToString(spread, Digits) + ",";
+   json += "\"price\":" + DoubleToString(mid, Digits) + ",";
+   json += "\"equity\":" + DoubleToString(equity, 2) + ",";
+   json += "\"balance\":" + DoubleToString(balance, 2) + ",";
+   json += "\"timestamp\":\"" + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "\"";
    json += "}";
    
-   // 3. SCRIVI SU FILE
-   // FILE_WRITE sovrascrive il file ogni volta (così Python legge sempre l'ultimo)
-   // I file vengono salvati in: MQL4/Files/
-   int file_handle = FileOpen(fileName, FILE_WRITE|FILE_TXT|FILE_ANSI);
+   // Write to file
+   string filename = Symbol() + "_data.json";
+   int handle = FileOpen(filename, FILE_WRITE|FILE_TXT);
    
-   if(file_handle != INVALID_HANDLE)
-     {
-      FileWrite(file_handle, json);
-      FileClose(file_handle);
-     }
+   if(handle != INVALID_HANDLE)
+   {
+      FileWriteString(handle, json);
+      FileClose(handle);
+      
+      // Visual feedback every 10s
+      static datetime lastPrint = 0;
+      if(TimeCurrent() - lastPrint >= 10)
+      {
+         Print("✅ ", Symbol(), " | Bid: ", bid, " | Ask: ", ask, " | Spread: ", spread);
+         lastPrint = TimeCurrent();
+      }
+   }
    else
-     {
-      // Stampa errore solo se grave, per non spammare il log
-      // Print("Errore scrittura file: ", GetLastError());
-     }
-  }
+   {
+      Print("❌ Cannot write: ", filename, " | Error: ", GetLastError());
+   }
+}
 //+------------------------------------------------------------------+
