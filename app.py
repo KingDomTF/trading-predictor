@@ -17,11 +17,8 @@ import os
 from supabase import create_client
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
+# CONFIGURATION & SETUP
 # ═══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
@@ -31,21 +28,35 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Caricamento Variabili d'Ambiente (Ibrido: Locale + Cloud)
+load_dotenv()
+
+# Tenta di prendere le credenziali da Streamlit Secrets (Cloud) o .env (Locale)
+try:
+    if 'SUPABASE_URL' in st.secrets:
+        SUPABASE_URL = st.secrets["SUPABASE_URL"]
+        SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    else:
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+except FileNotFoundError:
+    # Fallback per locale se secrets.toml non esiste
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Assets tracking
 ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CUSTOM CSS
+# CUSTOM CSS (CYBERPUNK THEME)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 st.markdown("""
 <style>
     /* Main theme */
-    .main {
+    .stApp {
         background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+        color: white;
     }
     
     /* Metric cards */
@@ -54,104 +65,91 @@ st.markdown("""
         border-radius: 15px;
         padding: 20px;
         margin: 10px 0;
-        border: 2px solid #00d9ff;
-        box-shadow: 0 8px 32px rgba(0, 217, 255, 0.2);
+        border: 1px solid #00d9ff;
+        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.1);
     }
     
     /* Signal cards */
     .signal-buy {
-        background: linear-gradient(135deg, #1e3c28 0%, #2d5f3e 100%);
+        background: linear-gradient(135deg, #0f2e1d 0%, #1a4a30 100%);
         border: 2px solid #00ff88;
         border-radius: 12px;
         padding: 20px;
         margin: 15px 0;
-        box-shadow: 0 6px 24px rgba(0, 255, 136, 0.3);
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
     }
     
     .signal-sell {
-        background: linear-gradient(135deg, #3c1e1e 0%, #5f2d2d 100%);
+        background: linear-gradient(135deg, #2e0f0f 0%, #4a1a1a 100%);
         border: 2px solid #ff0044;
         border-radius: 12px;
         padding: 20px;
         margin: 15px 0;
-        box-shadow: 0 6px 24px rgba(255, 0, 68, 0.3);
+        box-shadow: 0 0 15px rgba(255, 0, 68, 0.2);
     }
     
     .signal-wait {
-        background: linear-gradient(135deg, #2a2a3c 0%, #3a3a4e 100%);
-        border: 2px solid #888888;
+        background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+        border: 1px solid #444;
         border-radius: 12px;
         padding: 20px;
         margin: 15px 0;
-        opacity: 0.6;
+        opacity: 0.8;
     }
     
-    /* Text styles */
+    /* Typography */
     .price-big {
-        font-size: 48px;
-        font-weight: bold;
-        color: #00d9ff;
-        text-shadow: 0 0 20px rgba(0, 217, 255, 0.5);
+        font-size: 36px;
+        font-weight: 800;
+        color: #fff;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
     }
     
     .signal-title {
-        font-size: 24px;
+        font-size: 20px;
         font-weight: bold;
         margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     
     .stat-label {
-        font-size: 14px;
-        color: #aaaaaa;
-        margin-bottom: 5px;
+        font-size: 12px;
+        color: #8b949e;
+        margin-bottom: 2px;
+        text-transform: uppercase;
     }
     
     .stat-value {
-        font-size: 28px;
+        font-size: 18px;
         font-weight: bold;
         color: #ffffff;
     }
     
-    /* Status indicators */
+    /* Animations */
     .status-active {
         display: inline-block;
-        width: 12px;
-        height: 12px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
         background: #00ff88;
-        box-shadow: 0 0 12px rgba(0, 255, 136, 0.8);
+        box-shadow: 0 0 10px #00ff88;
         animation: pulse 2s infinite;
     }
     
     @keyframes pulse {
-        0%, 100% { opacity: 1; }
+        0% { opacity: 1; }
         50% { opacity: 0.5; }
+        100% { opacity: 1; }
     }
     
     /* Buttons */
     .stButton>button {
-        background: linear-gradient(135deg, #00d9ff 0%, #0099ff 100%);
-        color: #000;
+        background: linear-gradient(90deg, #00d9ff 0%, #0099ff 100%);
+        color: white;
         border: none;
-        border-radius: 8px;
-        padding: 10px 20px;
         font-weight: bold;
-        transition: all 0.3s;
     }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 217, 255, 0.4);
-    }
-    
-    /* Sidebar */
-    .css-1d391kg {
-        background: #1a1a2e;
-    }
-    
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -161,7 +159,9 @@ st.markdown("""
 
 @st.cache_resource
 def init_supabase():
-    """Initialize Supabase client"""
+    """Initialize Supabase client safely"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
     try:
         client = create_client(SUPABASE_URL, SUPABASE_KEY)
         return client
@@ -177,11 +177,9 @@ supabase = init_supabase()
 
 def get_latest_signals():
     """Fetch latest trading signals for all assets"""
-    if not supabase:
-        return {}
+    if not supabase: return {}
     
     try:
-        # Get latest signal for each symbol
         signals = {}
         for symbol in ASSETS:
             response = supabase.table("ai_oracle")\
@@ -193,20 +191,16 @@ def get_latest_signals():
             
             if response.data:
                 signals[symbol] = response.data[0]
-        
         return signals
-    except Exception as e:
-        st.error(f"Error fetching signals: {e}")
+    except Exception:
         return {}
 
 def get_price_history(symbol, hours=4):
     """Fetch price history for charting"""
-    if not supabase:
-        return pd.DataFrame()
+    if not supabase: return pd.DataFrame()
     
     try:
         cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
-        
         response = supabase.table("mt4_feed")\
             .select("*")\
             .eq("symbol", symbol)\
@@ -218,35 +212,27 @@ def get_price_history(symbol, hours=4):
             df = pd.DataFrame(response.data)
             df['created_at'] = pd.to_datetime(df['created_at'])
             return df
-        
         return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Error fetching price history: {e}")
+    except Exception:
         return pd.DataFrame()
 
 def get_performance_stats():
     """Calculate overall performance statistics"""
-    if not supabase:
-        return None
+    if not supabase: return None
     
     try:
-        # Get all signals from last 24 hours
         cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
-        
         response = supabase.table("ai_oracle")\
             .select("*")\
             .gte("created_at", cutoff)\
             .in_("recommendation", ["BUY", "SELL"])\
             .execute()
         
-        if not response.data:
-            return None
+        if not response.data: return None
         
         total_signals = len(response.data)
         buy_signals = sum(1 for s in response.data if s['recommendation'] == 'BUY')
         sell_signals = sum(1 for s in response.data if s['recommendation'] == 'SELL')
-        
-        # Calculate average confidence
         avg_confidence = sum(s.get('confidence_score', 0) for s in response.data) / total_signals if total_signals > 0 else 0
         
         return {
@@ -255,8 +241,7 @@ def get_performance_stats():
             'sell': sell_signals,
             'confidence': avg_confidence
         }
-    except Exception as e:
-        st.error(f"Error calculating stats: {e}")
+    except Exception:
         return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -265,20 +250,16 @@ def get_performance_stats():
 
 def create_price_chart(df, signal_data):
     """Create interactive price chart with Plotly"""
-    if df.empty:
-        return None
+    if df.empty: return None
     
     fig = go.Figure()
     
     # Price line
     fig.add_trace(go.Scatter(
-        x=df['created_at'],
-        y=df['price'],
-        mode='lines',
-        name='Price',
+        x=df['created_at'], y=df['price'],
+        mode='lines', name='Price',
         line=dict(color='#00d9ff', width=2),
-        fill='tozeroy',
-        fillcolor='rgba(0, 217, 255, 0.1)'
+        fill='tozeroy', fillcolor='rgba(0, 217, 255, 0.1)'
     ))
     
     # Add entry/SL/TP lines if signal exists
@@ -287,130 +268,84 @@ def create_price_chart(df, signal_data):
         sl = signal_data.get('stop_loss', 0)
         tp = signal_data.get('take_profit', 0)
         
-        # Entry line
-        fig.add_hline(y=entry, line_dash="dash", line_color="#ffffff", 
-                     annotation_text="Entry", annotation_position="right")
-        
-        # Stop Loss
-        fig.add_hline(y=sl, line_dash="dot", line_color="#ff0044",
-                     annotation_text="Stop Loss", annotation_position="right")
-        
-        # Take Profit
-        fig.add_hline(y=tp, line_dash="dot", line_color="#00ff88",
-                     annotation_text="Take Profit", annotation_position="right")
+        if entry: fig.add_hline(y=entry, line_dash="dash", line_color="white", annotation_text="ENTRY")
+        if sl: fig.add_hline(y=sl, line_dash="dot", line_color="#ff0044", annotation_text="SL")
+        if tp: fig.add_hline(y=tp, line_dash="dot", line_color="#00ff88", annotation_text="TP")
     
-    # Styling
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        height=400,
-        margin=dict(l=20, r=20, t=40, b=20),
-        xaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(255,255,255,0.1)',
-            title=""
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(255,255,255,0.1)',
-            title="Price"
-        ),
-        hovermode='x unified'
+        height=350,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis=dict(showgrid=False, title=""),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title="Price"),
+        hovermode='x unified',
+        showlegend=False
     )
-    
     return fig
 
 def render_signal_card(symbol, signal_data):
     """Render a trading signal card"""
-    
     if not signal_data:
         st.markdown(f"""
         <div class="signal-wait">
-            <div class="signal-title">⚪ {symbol} - NO DATA</div>
-            <p>Waiting for signal...</p>
+            <div class="signal-title">⚪ {symbol}</div>
+            <div style="color: #aaa; font-size: 14px;">Scanning Market...</div>
         </div>
         """, unsafe_allow_html=True)
         return
     
-    recommendation = signal_data.get('recommendation', 'WAIT')
-    current_price = signal_data.get('current_price', 0)
-    entry_price = signal_data.get('entry_price', 0)
-    stop_loss = signal_data.get('stop_loss', 0)
-    take_profit = signal_data.get('take_profit', 0)
-    confidence = signal_data.get('confidence_score', 0)
-    details = signal_data.get('details', 'No details')
-    created_at = signal_data.get('created_at', '')
+    rec = signal_data.get('recommendation', 'WAIT')
+    price = signal_data.get('current_price', 0)
+    entry = signal_data.get('entry_price', 0)
+    sl = signal_data.get('stop_loss', 0)
+    tp = signal_data.get('take_profit', 0)
+    conf = signal_data.get('confidence_score', 0)
+    details = signal_data.get('details', '')
     
-    # Calculate PnL if active trade
-    pnl = 0
-    pnl_pct = 0
-    if recommendation == 'BUY' and entry_price > 0:
-        pnl = current_price - entry_price
-        pnl_pct = (pnl / entry_price) * 100
-    elif recommendation == 'SELL' and entry_price > 0:
-        pnl = entry_price - current_price
-        pnl_pct = (pnl / entry_price) * 100
+    # Card Logic
+    card_class = "signal-wait"
+    icon = "⚪"
+    color = "#888"
     
-    # Determine card style
-    if recommendation == 'BUY':
+    if rec == 'BUY':
         card_class = "signal-buy"
         icon = "🟢"
         color = "#00ff88"
-    elif recommendation == 'SELL':
+    elif rec == 'SELL':
         card_class = "signal-sell"
         icon = "🔴"
         color = "#ff0044"
-    else:
-        card_class = "signal-wait"
-        icon = "⚪"
-        color = "#888888"
     
-    # Time ago
-    try:
-        signal_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-        time_ago = (datetime.now(signal_time.tzinfo) - signal_time).total_seconds()
-        if time_ago < 60:
-            time_str = f"{int(time_ago)}s ago"
-        elif time_ago < 3600:
-            time_str = f"{int(time_ago/60)}m ago"
-        else:
-            time_str = f"{int(time_ago/3600)}h ago"
-    except:
-        time_str = "Unknown"
-    
-    # Render card
     st.markdown(f"""
     <div class="{card_class}">
-        <div class="signal-title">{icon} {symbol} - {recommendation}</div>
-        <div class="price-big">${current_price:,.2f}</div>
-        <div style="margin-top: 20px;">
-            <div class="stat-label">CONFIDENCE</div>
-            <div class="stat-value" style="color: {color};">{confidence}%</div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="signal-title">{icon} {symbol} &nbsp; {rec}</div>
+            <div style="background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 5px; font-weight: bold; color: {color};">
+                {conf}% CONFIDENCE
+            </div>
         </div>
-        <hr style="border-color: rgba(255,255,255,0.2); margin: 15px 0;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+        
+        <div class="price-big">${price:,.2f}</div>
+        
+        <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
             <div>
                 <div class="stat-label">ENTRY</div>
-                <div class="stat-value" style="font-size: 20px;">${entry_price:,.2f}</div>
+                <div class="stat-value" style="color: #fff;">${entry:,.2f}</div>
             </div>
             <div>
                 <div class="stat-label">STOP LOSS</div>
-                <div class="stat-value" style="font-size: 20px; color: #ff0044;">${stop_loss:,.2f}</div>
+                <div class="stat-value" style="color: #ff0044;">${sl:,.2f}</div>
             </div>
             <div>
                 <div class="stat-label">TAKE PROFIT</div>
-                <div class="stat-value" style="font-size: 20px; color: #00ff88;">${take_profit:,.2f}</div>
+                <div class="stat-value" style="color: #00ff88;">${tp:,.2f}</div>
             </div>
         </div>
-        {f'''<div style="margin-top: 15px;">
-            <div class="stat-label">CURRENT P&L</div>
-            <div class="stat-value" style="font-size: 24px; color: {'#00ff88' if pnl >= 0 else '#ff0044'};">
-                ${pnl:,.2f} ({pnl_pct:+.2f}%)
-            </div>
-        </div>''' if recommendation in ['BUY', 'SELL'] else ''}
-        <div style="margin-top: 15px; font-size: 14px; color: #aaaaaa;">
-            {details} • {time_str}
+        
+        <div style="margin-top: 15px; font-size: 12px; color: #888; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+            DETAILS: {details}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -422,104 +357,75 @@ def render_signal_card(symbol, signal_data):
 def main():
     # Header
     st.markdown("""
-    <div style="text-align: center; padding: 20px 0;">
-        <h1 style="color: #00d9ff; font-size: 48px; margin: 0;">
+    <div style="text-align: center; padding-bottom: 20px;">
+        <h1 style="color: #00d9ff; font-size: 42px; margin: 0; text-shadow: 0 0 20px rgba(0,217,255,0.5);">
             🏛️ TITAN ORACLE PRIME
         </h1>
-        <p style="color: #aaaaaa; font-size: 18px;">
-            Enterprise Trading Intelligence • Real-Time Signals
-        </p>
-        <div class="status-active" style="margin: 10px auto;"></div>
+        <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 10px;">
+            <div class="status-active"></div>
+            <span style="color: #00ff88; font-weight: bold; font-size: 14px;">SYSTEM ONLINE</span>
+            <span style="color: #666;">•</span>
+            <span style="color: #aaa; font-size: 14px;">V90 ENTERPRISE CORE</span>
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
         st.markdown("### ⚙️ CONTROL PANEL")
-        
-        # Auto-refresh toggle
         auto_refresh = st.checkbox("🔄 Auto Refresh", value=True)
-        refresh_interval = st.slider("Refresh Interval (seconds)", 1, 30, 5)
         
         st.markdown("---")
-        
-        # Asset filter
         st.markdown("### 📊 ASSETS")
-        selected_assets = st.multiselect(
-            "Select assets to display",
-            ASSETS,
-            default=ASSETS
-        )
+        selected_assets = st.multiselect("Active Feeds", ASSETS, default=ASSETS)
         
         st.markdown("---")
-        
-        # Performance stats
         st.markdown("### 📈 24H STATISTICS")
         stats = get_performance_stats()
         
         if stats:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Signals", stats['total'])
-                st.metric("Buy Signals", stats['buy'], delta_color="normal")
-            with col2:
-                st.metric("Sell Signals", stats['sell'], delta_color="inverse")
-                st.metric("Avg Confidence", f"{stats['confidence']:.0f}%")
+            c1, c2 = st.columns(2)
+            c1.metric("Signals", stats['total'])
+            c1.metric("Buy", stats['buy'])
+            c2.metric("Confidence", f"{stats['confidence']:.0f}%")
+            c2.metric("Sell", stats['sell'])
         else:
-            st.info("No signals in last 24h")
-        
-        st.markdown("---")
-        
-        # Manual refresh button
-        if st.button("🔄 Refresh Now"):
+            st.info("No data in 24h")
+            
+        if st.button("🔄 Force Refresh", use_container_width=True):
             st.rerun()
+
+    # Main Grid
+    if not supabase:
+        st.error("🚨 CRITICAL: Database connection failed. Check Credentials.")
+        st.stop()
         
-        st.markdown("---")
-        st.markdown("""
-        <div style="text-align: center; color: #666; font-size: 12px;">
-            <p>TITAN Trading Systems</p>
-            <p>v1.0 Oracle Prime</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Main content
     signals = get_latest_signals()
     
-    # Display signals
     if not selected_assets:
-        st.warning("⚠️ Please select at least one asset from the sidebar")
+        st.warning("Select assets from sidebar")
         return
-    
-    # Grid layout for signal cards
+
+    # Dynamic Grid
     cols = st.columns(2)
-    
     for idx, symbol in enumerate(selected_assets):
         with cols[idx % 2]:
             signal_data = signals.get(symbol)
             render_signal_card(symbol, signal_data)
             
-            # Price chart
-            with st.expander(f"📈 {symbol} Price Chart (4H)", expanded=False):
+            # Chart Toggle
+            with st.expander(f"📈 {symbol} Analysis Chart", expanded=False):
                 df = get_price_history(symbol, hours=4)
                 if not df.empty:
                     chart = create_price_chart(df, signal_data)
-                    if chart:
-                        st.plotly_chart(chart, use_container_width=True)
+                    st.plotly_chart(chart, use_container_width=True)
                 else:
-                    st.info("No price history available")
-    
-    # Auto-refresh logic
+                    st.caption("Waiting for price feed...")
+
+    # Auto Refresh Loop
     if auto_refresh:
-        time.sleep(refresh_interval)
+        time.sleep(2)
         st.rerun()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════════
-
 if __name__ == "__main__":
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        st.error("❌ Environment variables not set. Create a .env file with SUPABASE_URL and SUPABASE_KEY")
-        st.stop()
-    
     main()
