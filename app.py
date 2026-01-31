@@ -30,7 +30,7 @@ except ImportError:
 class AppConfig:
     """Frontend Configuration"""
     PAGE_TITLE = "TITAN Oracle Prime"
-    PAGE_ICON = "🏛️"
+    PAGE_ICON = "⚡"
     LAYOUT = "wide"
     
     # --- LISTA ASSET AGGIORNATA ---
@@ -48,104 +48,509 @@ st.set_page_config(
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# VISUAL STYLING (CSS ENGINE)
+# VISUAL STYLING (CSS ENGINE) - REDESIGNED
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def load_custom_css():
-    """Injects the Premium 'Cyberpunk/Bloomberg' Style"""
+    """Injects the Premium Professional & Futuristic Style"""
     st.markdown("""
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Space+Mono:wght@400;700&family=Rajdhani:wght@300;400;500;600;700&display=swap');
+        
         /* === GLOBAL THEME === */
-        .main { background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0a0e27 100%); }
+        * { box-sizing: border-box; }
+        
+        .main { 
+            background: #0B0C10;
+            background-image: 
+                radial-gradient(ellipse at top, rgba(30, 39, 73, 0.3) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom, rgba(17, 24, 39, 0.5) 0%, transparent 50%);
+            color: #E4E8F0;
+            font-family: 'Rajdhani', sans-serif;
+        }
+        
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
+        .block-container { padding-top: 2rem !important; padding-bottom: 3rem !important; }
         
         /* === HEADER === */
         .titan-header {
-            background: linear-gradient(135deg, rgba(0,217,255,0.1) 0%, rgba(0,153,255,0.1) 100%);
-            border: 2px solid rgba(0,217,255,0.3);
-            border-radius: 20px;
-            padding: 30px;
-            text-align: center;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 40px rgba(0,217,255,0.2);
+            background: linear-gradient(135deg, 
+                rgba(15, 23, 42, 0.95) 0%, 
+                rgba(30, 41, 59, 0.9) 100%);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            border-radius: 24px;
+            padding: 3rem 2rem;
+            margin-bottom: 2.5rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
+        
+        .titan-header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                linear-gradient(135deg, transparent 0%, rgba(56, 189, 248, 0.03) 50%, transparent 100%);
+            pointer-events: none;
+        }
+        
+        .titan-header-content {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+        
+        .titan-branding {
+            flex: 1;
+            min-width: 300px;
+        }
+        
         .titan-title {
-            font-size: 56px; font-weight: 900;
-            background: linear-gradient(135deg, #00d9ff 0%, #0099ff 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            margin: 0; text-shadow: 0 0 30px rgba(0,217,255,0.5);
+            font-family: 'Orbitron', monospace;
+            font-size: 3.5rem;
+            font-weight: 900;
+            letter-spacing: 2px;
+            margin: 0;
+            background: linear-gradient(135deg, #38BDF8 0%, #818CF8 50%, #C084FC 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 40px rgba(56, 189, 248, 0.3));
+            line-height: 1.1;
         }
-        .titan-subtitle { font-size: 18px; color: #aaaaaa; margin-top: 10px; }
+        
+        .titan-subtitle {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.95rem;
+            color: #94A3B8;
+            margin-top: 0.75rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            font-weight: 400;
+        }
+        
+        .titan-meta {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
         
         /* === STATUS BADGE === */
         .status-badge {
-            display: inline-block; background: rgba(0,255,136,0.2);
-            border: 1px solid #00ff88; padding: 8px 20px;
-            border-radius: 20px; font-size: 14px; color: #00ff88; margin-top: 15px;
+            display: inline-flex;
+            align-items: center;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 0.6rem 1.2rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #10B981;
+            letter-spacing: 1px;
+            font-family: 'Space Mono', monospace;
+            backdrop-filter: blur(10px);
         }
+        
         .status-dot {
-            display: inline-block; width: 10px; height: 10px;
-            background: #00ff88; border-radius: 50%; margin-right: 8px;
-            animation: pulse 2s infinite;
+            width: 8px;
+            height: 8px;
+            background: #10B981;
+            border-radius: 50%;
+            margin-right: 10px;
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 12px #10B981;
         }
+        
         @keyframes pulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 10px #00ff88; }
-            50% { opacity: 0.5; box-shadow: 0 0 20px #00ff88; }
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+        
+        .live-time {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.85rem;
+            color: #64748B;
+            padding: 0.6rem 1.2rem;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
         }
 
         /* === TABS STYLING === */
+        .stTabs {
+            background: transparent;
+        }
+        
         .stTabs [data-baseweb="tab-list"] {
-            gap: 10px; background: rgba(26,31,58,0.6);
-            padding: 15px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);
+            gap: 0.5rem;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 0.75rem;
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            backdrop-filter: blur(20px);
         }
+        
         .stTabs [data-baseweb="tab"] {
-            background: linear-gradient(135deg, rgba(22,33,62,0.8) 0%, rgba(15,52,96,0.8) 100%);
-            border: 2px solid rgba(0,217,255,0.3); border-radius: 12px;
-            padding: 12px 24px; color: #ffffff; font-weight: 600;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            padding: 0.75rem 1.5rem;
+            color: #94A3B8;
+            font-weight: 600;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1rem;
+            letter-spacing: 0.5px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
+        
+        .stTabs [data-baseweb="tab"]:hover {
+            background: rgba(56, 189, 248, 0.1);
+            border-color: rgba(56, 189, 248, 0.3);
+            color: #E4E8F0;
+        }
+        
         .stTabs [aria-selected="true"] {
-            background: linear-gradient(135deg, #00d9ff 0%, #0099ff 100%);
-            border-color: #00d9ff; color: #000000; box-shadow: 0 8px 25px rgba(0,217,255,0.4);
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(129, 140, 248, 0.15) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            color: #F0F9FF;
+            box-shadow: 
+                0 4px 20px rgba(56, 189, 248, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
 
         /* === SIGNAL CARDS === */
+        .signal-card {
+            background: linear-gradient(135deg, 
+                rgba(15, 23, 42, 0.95) 0%, 
+                rgba(30, 41, 59, 0.9) 100%);
+            border-radius: 20px;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 
+                0 10px 40px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        
+        .signal-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, currentColor, transparent);
+            opacity: 0.8;
+        }
+        
         .signal-card-buy {
-            background: linear-gradient(135deg, rgba(30,60,40,0.95) 0%, rgba(45,95,62,0.95) 100%);
-            border: 2px solid #00ff88; border-radius: 20px; padding: 25px;
-            box-shadow: 0 10px 40px rgba(0,255,136,0.3); margin: 20px 0;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #10B981;
         }
+        
+        .signal-card-buy::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(ellipse at top right, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
+            pointer-events: none;
+        }
+        
         .signal-card-sell {
-            background: linear-gradient(135deg, rgba(60,30,30,0.95) 0%, rgba(95,45,45,0.95) 100%);
-            border: 2px solid #ff0044; border-radius: 20px; padding: 25px;
-            box-shadow: 0 10px 40px rgba(255,0,68,0.3); margin: 20px 0;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #EF4444;
         }
+        
+        .signal-card-sell::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(ellipse at top right, rgba(239, 68, 68, 0.08) 0%, transparent 50%);
+            pointer-events: none;
+        }
+        
         .signal-card-wait {
-            background: linear-gradient(135deg, rgba(42,42,60,0.8) 0%, rgba(58,58,78,0.8) 100%);
-            border: 2px solid rgba(136,136,136,0.5); border-radius: 20px;
-            padding: 25px; margin: 20px 0; opacity: 0.7;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            color: #64748B;
+            opacity: 0.75;
+        }
+        
+        .signal-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
 
-        /* === TYPOGRAPHY & METRICS === */
-        .signal-icon { font-size: 48px; margin-bottom: 15px; }
-        .signal-type { font-size: 32px; font-weight: bold; margin-bottom: 10px; }
-        .price-display { font-size: 56px; font-weight: 900; margin: 20px 0; text-shadow: 0 0 20px currentColor; }
+        /* === SIGNAL CONTENT === */
+        .signal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
         
-        .confidence-bar { background: rgba(255,255,255,0.1); height: 8px; border-radius: 10px; margin: 15px 0; overflow: hidden; }
-        .confidence-fill { height: 100%; background: linear-gradient(90deg, #00ff88 0%, #00d9ff 100%); border-radius: 10px; }
-
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 25px 0; }
-        .stat-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; text-align: center; }
-        .stat-label { font-size: 12px; color: #888888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
-        .stat-value { font-size: 28px; font-weight: bold; color: #ffffff; }
+        .signal-icon {
+            font-size: 2.5rem;
+            line-height: 1;
+            filter: drop-shadow(0 0 20px currentColor);
+        }
         
-        .stat-value-green { color: #00ff88; }
-        .stat-value-red { color: #ff0044; }
-        .stat-value-blue { color: #00d9ff; }
+        .signal-type {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: 1px;
+        }
+        
+        .signal-symbol {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.9rem;
+            color: #94A3B8;
+            letter-spacing: 2px;
+            margin-top: 0.25rem;
+        }
+        
+        .price-display {
+            font-family: 'Orbitron', monospace;
+            font-size: 3.5rem;
+            font-weight: 900;
+            margin: 1.5rem 0;
+            line-height: 1;
+            position: relative;
+            z-index: 1;
+            text-shadow: 0 0 40px currentColor;
+        }
+        
+        .price-label {
+            font-size: 0.75rem;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 0.5rem;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+        }
 
+        /* === CONFIDENCE BAR === */
+        .confidence-container {
+            margin: 2rem 0;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .confidence-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+            color: #94A3B8;
+            font-family: 'Space Mono', monospace;
+        }
+        
+        .confidence-bar {
+            background: rgba(30, 41, 59, 0.6);
+            height: 10px;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            border-radius: 10px;
+            background: linear-gradient(90deg, currentColor 0%, rgba(255, 255, 255, 0.8) 100%);
+            position: relative;
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 20px currentColor;
+        }
+        
+        .confidence-fill::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* === STATS GRID === */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin: 2rem 0;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .stat-box {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 12px;
+            padding: 1.25rem;
+            text-align: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .stat-box:hover {
+            background: rgba(30, 41, 59, 0.6);
+            border-color: rgba(148, 163, 184, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            font-family: 'Rajdhani', sans-serif;
+        }
+        
+        .stat-value {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #E4E8F0;
+            line-height: 1;
+        }
+        
+        .stat-value-green { color: #10B981; text-shadow: 0 0 20px rgba(16, 185, 129, 0.5); }
+        .stat-value-red { color: #EF4444; text-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
+        .stat-value-blue { color: #38BDF8; text-shadow: 0 0 20px rgba(56, 189, 248, 0.5); }
+        .stat-value-purple { color: #818CF8; text-shadow: 0 0 20px rgba(129, 140, 248, 0.5); }
+
+        /* === STRATEGY DETAILS === */
+        .strategy-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-left: 3px solid currentColor;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-top: 1.5rem;
+            position: relative;
+            z-index: 1;
+            backdrop-filter: blur(10px);
+        }
+        
+        .strategy-label {
+            font-size: 0.75rem;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-family: 'Rajdhani', sans-serif;
+        }
+        
+        .strategy-text {
+            color: #94A3B8;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            font-family: 'Space Mono', monospace;
+        }
+
+        /* === METRICS CARDS === */
         .metric-card {
-            background: linear-gradient(135deg, rgba(22,33,62,0.6) 0%, rgba(15,52,96,0.6) 100%);
-            border: 1px solid rgba(0,217,255,0.3); border-radius: 15px; padding: 20px; margin: 10px 0;
+            background: linear-gradient(135deg, 
+                rgba(15, 23, 42, 0.8) 0%, 
+                rgba(30, 41, 59, 0.6) 100%);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(20px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 
+                0 4px 20px rgba(0, 0, 0, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 
+                0 12px 40px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            border-color: rgba(148, 163, 184, 0.3);
+        }
+        
+        /* === CHART CONTAINER === */
+        .chart-container {
+            background: linear-gradient(135deg, 
+                rgba(15, 23, 42, 0.95) 0%, 
+                rgba(30, 41, 59, 0.9) 100%);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            border-radius: 20px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 
+                0 10px 40px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        .chart-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #E4E8F0;
+            letter-spacing: 1px;
+        }
+        
+        .chart-timeframe {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.8rem;
+            color: #64748B;
+            background: rgba(30, 41, 59, 0.6);
+            padding: 0.4rem 0.9rem;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        /* === SCROLLBAR === */
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+        ::-webkit-scrollbar-thumb { 
+            background: rgba(56, 189, 248, 0.3); 
+            border-radius: 5px; 
+        }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.5); }
+        
+        /* === RESPONSIVE === */
+        @media (max-width: 768px) {
+            .titan-title { font-size: 2rem; }
+            .price-display { font-size: 2.5rem; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .titan-header-content { flex-direction: column; text-align: center; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -237,49 +642,112 @@ def get_24h_stats():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def create_price_chart(df, signal_data):
-    """Render interactive Plotly chart"""
+    """Render interactive Plotly chart with enhanced styling"""
     if df.empty: return None
     
     fig = go.Figure()
     
-    # Main Price Line
+    # Main Price Line with gradient fill
     fig.add_trace(go.Scatter(
-        x=df['created_at'], y=df['price'], mode='lines', name='Price',
-        line=dict(color='#00d9ff', width=3),
-        fill='tozeroy', fillcolor='rgba(0,217,255,0.1)'
+        x=df['created_at'], 
+        y=df['price'], 
+        mode='lines',
+        name='Price',
+        line=dict(color='#38BDF8', width=3, shape='spline'),
+        fill='tozeroy',
+        fillcolor='rgba(56, 189, 248, 0.1)',
+        hovertemplate='<b>%{y:,.2f}</b><br>%{x}<extra></extra>'
     ))
     
-    # Trading Levels (Entry/SL/TP)
+    # Trading Levels with enhanced styling
     if signal_data and signal_data.get('recommendation') in ['BUY', 'SELL']:
         entry = signal_data.get('entry_price', 0)
         sl = signal_data.get('stop_loss', 0)
         tp = signal_data.get('take_profit', 0)
         
-        if entry > 0: fig.add_hline(y=entry, line_dash="dash", line_color="#ffffff", annotation_text="ENTRY")
-        if sl > 0: fig.add_hline(y=sl, line_dash="dot", line_color="#ff0044", annotation_text="SL")
-        if tp > 0: fig.add_hline(y=tp, line_dash="dot", line_color="#00ff88", annotation_text="TP")
+        if entry > 0:
+            fig.add_hline(
+                y=entry, 
+                line_dash="dash", 
+                line_color="#F0F9FF", 
+                line_width=2,
+                annotation_text="ENTRY",
+                annotation_position="right",
+                annotation_font=dict(color="#F0F9FF", size=11, family="Space Mono")
+            )
+        if sl > 0:
+            fig.add_hline(
+                y=sl, 
+                line_dash="dot", 
+                line_color="#EF4444", 
+                line_width=2,
+                annotation_text="STOP LOSS",
+                annotation_position="right",
+                annotation_font=dict(color="#EF4444", size=11, family="Space Mono")
+            )
+        if tp > 0:
+            fig.add_hline(
+                y=tp, 
+                line_dash="dot", 
+                line_color="#10B981", 
+                line_width=2,
+                annotation_text="TAKE PROFIT",
+                annotation_position="right",
+                annotation_font=dict(color="#10B981", size=11, family="Space Mono")
+            )
     
-    # Styling
+    # Enhanced Styling
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(10,14,39,0.5)',
-        height=450,
-        margin=dict(l=20, r=20, t=40, b=20),
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title=""),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="Price"),
-        hovermode='x unified', font=dict(color='#ffffff')
+        plot_bgcolor='rgba(15, 23, 42, 0.6)',
+        height=500,
+        margin=dict(l=20, r=60, t=20, b=40),
+        xaxis=dict(
+            showgrid=True, 
+            gridcolor='rgba(148, 163, 184, 0.1)',
+            gridwidth=1,
+            title="",
+            color='#94A3B8',
+            showline=False,
+            zeroline=False
+        ),
+        yaxis=dict(
+            showgrid=True, 
+            gridcolor='rgba(148, 163, 184, 0.1)',
+            gridwidth=1,
+            title="",
+            color='#94A3B8',
+            showline=False,
+            zeroline=False
+        ),
+        hovermode='x unified',
+        font=dict(color='#E4E8F0', family='Rajdhani'),
+        hoverlabel=dict(
+            bgcolor='rgba(15, 23, 42, 0.95)',
+            bordercolor='rgba(56, 189, 248, 0.3)',
+            font=dict(family='Space Mono', size=12, color='#E4E8F0')
+        ),
+        showlegend=False
     )
+    
     return fig
 
 def render_signal_panel(symbol, signal_data):
-    """Render the Premium Card for a specific symbol"""
+    """Render the Premium Card for a specific symbol - REDESIGNED"""
     if not signal_data:
         st.markdown(f"""
-        <div class="signal-card-wait">
-            <div class="signal-icon">⚪</div>
-            <div class="signal-type">{symbol}</div>
-            <p style="color: #888;">Scanning Market...</p>
+        <div class="signal-card signal-card-wait">
+            <div class="signal-header">
+                <div>
+                    <div class="signal-type">SCANNING</div>
+                    <div class="signal-symbol">{symbol}</div>
+                </div>
+                <div class="signal-icon">⚪</div>
+            </div>
+            <div style="text-align: center; padding: 2rem 0; color: #64748B; font-family: 'Space Mono', monospace; font-size: 0.9rem;">
+                Analyzing market conditions...
+            </div>
         </div>
         """, unsafe_allow_html=True)
         return
@@ -291,31 +759,45 @@ def render_signal_panel(symbol, signal_data):
     sl = signal_data.get('stop_loss', 0)
     tp = signal_data.get('take_profit', 0)
     conf = signal_data.get('confidence_score', 0)
-    details = signal_data.get('details', 'No details')
+    details = signal_data.get('details', 'No strategy details available')
 
     # Styling Logic
     if rec == 'BUY':
-        card_class, icon, p_color = "signal-card-buy", "🟢", "#00ff88"
+        card_class, icon, color = "signal-card-buy", "🟢", "#10B981"
     elif rec == 'SELL':
-        card_class, icon, p_color = "signal-card-sell", "🔴", "#ff0044"
+        card_class, icon, color = "signal-card-sell", "🔴", "#EF4444"
     else:
-        card_class, icon, p_color = "signal-card-wait", "⚪", "#888888"
+        card_class, icon, color = "signal-card-wait", "⚪", "#64748B"
 
-    # HTML Render
+    # HTML Render with enhanced design
     st.markdown(f"""
-    <div class="{card_class}">
-        <div class="signal-icon">{icon}</div>
-        <div class="signal-type">{symbol} - {rec}</div>
-        <div class="price-display" style="color: {p_color};">${price:,.2f}</div>
-        
-        <div class="confidence-bar">
-            <div class="confidence-fill" style="width: {conf}%;"></div>
+    <div class="signal-card {card_class}">
+        <div class="signal-header">
+            <div>
+                <div class="signal-type">{rec}</div>
+                <div class="signal-symbol">{symbol}</div>
+            </div>
+            <div class="signal-icon">{icon}</div>
         </div>
-        <div style="text-align: center; color: #aaa; font-size: 14px;">Confidence: {conf}%</div>
+        
+        <div>
+            <div class="price-label">Current Price</div>
+            <div class="price-display" style="color: {color};">${price:,.2f}</div>
+        </div>
+        
+        <div class="confidence-container">
+            <div class="confidence-label">
+                <span>AI CONFIDENCE</span>
+                <span style="color: {color}; font-weight: 700;">{conf}%</span>
+            </div>
+            <div class="confidence-bar">
+                <div class="confidence-fill" style="width: {conf}%; color: {color};"></div>
+            </div>
+        </div>
         
         <div class="stats-grid">
             <div class="stat-box">
-                <div class="stat-label">Entry</div>
+                <div class="stat-label">Entry Point</div>
                 <div class="stat-value stat-value-blue">${entry:,.2f}</div>
             </div>
             <div class="stat-box">
@@ -327,8 +809,10 @@ def render_signal_panel(symbol, signal_data):
                 <div class="stat-value stat-value-green">${tp:,.2f}</div>
             </div>
         </div>
-        <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; color: #aaa; font-size: 13px;">
-            Strategy: {details}
+        
+        <div class="strategy-box" style="color: {color};">
+            <div class="strategy-label">Strategy Analysis</div>
+            <div class="strategy-text">{details}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -346,26 +830,49 @@ def main():
         st.error("❌ CRITICAL: Database connection failed. Check .env or Secrets.")
         st.stop()
     
-    # 3. Render Header
-    st.markdown("""
+    # 3. Render Enhanced Header
+    current_time = datetime.now().strftime("%H:%M:%S UTC")
+    st.markdown(f"""
     <div class="titan-header">
-        <div class="titan-title">🏛️ TITAN ORACLE PRIME</div>
-        <div class="titan-subtitle">Enterprise Trading Intelligence • V90 Core</div>
-        <div class="status-badge"><span class="status-dot"></span>SYSTEM ONLINE</div>
+        <div class="titan-header-content">
+            <div class="titan-branding">
+                <div class="titan-title">⚡ TITAN ORACLE</div>
+                <div class="titan-subtitle">Enterprise Trading Intelligence • V90 Core</div>
+            </div>
+            <div class="titan-meta">
+                <div class="status-badge">
+                    <span class="status-dot"></span>
+                    SYSTEM ONLINE
+                </div>
+                <div class="live-time">⏱ {current_time}</div>
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 4. Top Statistics
+    # 4. Top Statistics Dashboard
     stats = get_24h_stats()
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(f'<div class="metric-card"><div class="stat-label">Total Signals</div><div class="stat-value stat-value-blue">{stats["total"] if stats else 0}</div></div>', unsafe_allow_html=True)
-    with c2: st.markdown(f'<div class="metric-card"><div class="stat-label">Buy Signals</div><div class="stat-value stat-value-green">{stats["buy"] if stats else 0}</div></div>', unsafe_allow_html=True)
-    with c3: st.markdown(f'<div class="metric-card"><div class="stat-label">Sell Signals</div><div class="stat-value stat-value-red">{stats["sell"] if stats else 0}</div></div>', unsafe_allow_html=True)
-    with c4: st.markdown(f'<div class="metric-card"><div class="stat-label">Avg Confidence</div><div class="stat-value">{stats["confidence"] if stats else 0:.0f}%</div></div>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    
+    metrics = [
+        (col1, "Total Signals", stats["total"] if stats else 0, "stat-value-blue"),
+        (col2, "Buy Signals", stats["buy"] if stats else 0, "stat-value-green"),
+        (col3, "Sell Signals", stats["sell"] if stats else 0, "stat-value-red"),
+        (col4, "Avg Confidence", f'{stats["confidence"] if stats else 0:.0f}%', "stat-value-purple")
+    ]
+    
+    for col, label, value, color_class in metrics:
+        with col:
+            st.markdown(f'''
+            <div class="metric-card">
+                <div class="stat-label">{label}</div>
+                <div class="stat-value {color_class}">{value}</div>
+            </div>
+            ''', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 5. Asset Tabs (The Core UI)
+    # 5. Asset Tabs with Enhanced UI
     tabs = st.tabs(AppConfig.ASSETS)
     
     for idx, symbol in enumerate(AppConfig.ASSETS):
@@ -380,13 +887,27 @@ def main():
                 render_signal_panel(symbol, signal_data)
                 
             with col_right:
-                st.markdown(f"### 📈 {symbol} Analysis (4H)")
+                st.markdown(f"""
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">📈 {symbol} Price Action</div>
+                        <div class="chart-timeframe">4H Timeframe</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
                 df = get_price_history(symbol, hours=4)
                 if not df.empty:
                     chart = create_price_chart(df, signal_data)
-                    st.plotly_chart(chart, use_container_width=True)
+                    if chart:
+                        st.plotly_chart(chart, use_container_width=True)
                 else:
-                    st.info(f"Waiting for Price Feed data for {symbol}...")
+                    st.markdown("""
+                    <div style="text-align: center; padding: 3rem 0; color: #64748B; font-family: 'Space Mono', monospace;">
+                        ⏳ Waiting for price feed data...
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("</div>", unsafe_allow_html=True)
 
     # 6. Auto-Refresh
     time.sleep(AppConfig.AUTO_REFRESH_RATE)
