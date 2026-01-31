@@ -8,18 +8,19 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1. CONFIGURAZIONE PAGINA & SETUP
+# 1. CONFIGURAZIONE PAGINA
 # ═══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="TITAN V90 Terminal",
-    page_icon="⚡",
+    page_title="TITAN Oracle Prime",
+    page_icon="🏛️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Caricamento Credenziali (Ibrido: Locale + Cloud)
+# Caricamento Variabili d'Ambiente (Ibrido: Locale + Cloud)
 load_dotenv()
+
 try:
     if 'SUPABASE_URL' in st.secrets:
         SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -32,130 +33,141 @@ except:
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2. CSS "BLACK & GREEN" PROFESSIONAL THEME
+# 2. CSS STYLE (Esattamente quello richiesto: Cyberpunk Neon)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 st.markdown("""
 <style>
-    /* --- SFONDO E TESTI GLOBALI --- */
+    /* Main theme - Background Gradiente Viola/Blu scuro */
     .stApp {
-        background-color: #000000 !important; /* Nero Assoluto */
-        color: #e0e0e0;
-        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%) !important;
+        color: white;
     }
     
-    /* --- SIDEBAR --- */
+    /* Sidebar */
     [data-testid="stSidebar"] {
-        background-color: #0a0a0a !important; /* Nero leggermente meno profondo */
-        border-right: 1px solid #1a1a1a;
+        background-color: #161b22 !important;
+        border-right: 1px solid #00d9ff33;
     }
     
-    /* --- TITOLI --- */
-    h1, h2, h3 {
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        letter-spacing: -0.5px;
-    }
-    
-    /* --- CARD CONTAINER (Il cuore del design) --- */
-    .metric-container {
-        background-color: #0e0e0e;
-        border: 1px solid #1f1f1f;
-        border-radius: 8px;
+    /* Metric cards (Blu/Viola con bordo Ciano) */
+    .metric-card {
+        background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+        border-radius: 15px;
         padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.5);
-        transition: transform 0.2s, border-color 0.2s;
+        margin: 10px 0;
+        border: 1px solid #00d9ff;
+        box-shadow: 0 0 15px rgba(0, 217, 255, 0.15);
+        text-align: center;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
     }
     
-    .metric-container:hover {
-        border-color: #333;
-        transform: translateY(-2px);
-    }
-
-    /* --- TYPOGRAPHY INTERNA --- */
-    .metric-label {
-        font-size: 12px;
-        color: #666;
-        text-transform: uppercase;
-        letter-spacing: 1.5px;
-        margin-bottom: 8px;
-        font-weight: 600;
-    }
-    
-    .metric-value {
-        font-size: 36px;
-        font-weight: 800;
-        color: #fff;
-        line-height: 1.1;
-    }
-    
-    .metric-sub {
-        font-size: 13px;
-        color: #444;
-        margin-top: 5px;
-    }
-
-    /* --- SEGNALI TRADING (Colori Professionali) --- */
-    /* GREEN NEON per BUY */
-    .buy-signal { 
-        color: #00FF9D !important; 
-        text-shadow: 0 0 15px rgba(0, 255, 157, 0.2);
-    }
-    
-    /* RED NEON per SELL */
-    .sell-signal { 
-        color: #FF3B30 !important; 
-        text-shadow: 0 0 15px rgba(255, 59, 48, 0.2);
-    }
-    
-    /* GRAY per WAIT */
-    .wait-signal { 
-        color: #555 !important; 
-    }
-
-    /* --- BORDATURE LIVELLI (Entry, SL, TP) --- */
-    .entry-box { border-left: 3px solid #2979FF !important; } /* Blu Elettrico */
-    .stop-box { border-left: 3px solid #FF3B30 !important; }  /* Rosso */
-    .target-box { border-left: 3px solid #00FF9D !important; } /* Verde */
-
-    .level-value { font-family: 'Consolas', 'Courier New', monospace; font-size: 24px; font-weight: bold; }
-    .level-entry { color: #2979FF; }
-    .level-sl { color: #FF3B30; }
-    .level-tp { color: #00FF9D; }
-
-    /* --- STATUS BADGE --- */
-    .status-badge-online {
-        display: inline-block;
-        padding: 4px 12px;
+    /* Signal cards - BUY (Verde) */
+    .signal-buy {
+        background: linear-gradient(135deg, #1e3c28 0%, #2d5f3e 100%);
+        border: 2px solid #00ff88;
         border-radius: 12px;
-        background: rgba(0, 255, 157, 0.1);
-        border: 1px solid rgba(0, 255, 157, 0.3);
-        color: #00FF9D;
-        font-size: 12px;
-        font-weight: bold;
+        padding: 20px;
+        margin: 10px 0;
+        box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        text-align: center;
     }
-
-    /* --- PULSANTI --- */
-    .stButton>button {
-        background-color: #1a1a1a;
+    
+    /* Signal cards - SELL (Rosso) */
+    .signal-sell {
+        background: linear-gradient(135deg, #3c1e1e 0%, #5f2d2d 100%);
+        border: 2px solid #ff0044;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 10px 0;
+        box-shadow: 0 0 20px rgba(255, 0, 68, 0.3);
+        text-align: center;
+    }
+    
+    /* Signal cards - WAIT (Grigio) */
+    .signal-wait {
+        background: linear-gradient(135deg, #2a2a3c 0%, #3a3a4e 100%);
+        border: 2px solid #888888;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 10px 0;
+        opacity: 0.8;
+        text-align: center;
+    }
+    
+    /* Typography */
+    .price-big {
+        font-size: 42px;
+        font-weight: bold;
+        color: #00d9ff;
+        text-shadow: 0 0 20px rgba(0, 217, 255, 0.6);
+        line-height: 1;
+    }
+    
+    .signal-title {
+        font-size: 28px;
+        font-weight: 900;
+        margin-bottom: 5px;
+        letter-spacing: 1px;
         color: #fff;
-        border: 1px solid #333;
-        border-radius: 4px;
-        font-weight: 600;
+    }
+    
+    .stat-label {
+        font-size: 13px;
+        color: #aaaaaa;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #ffffff;
+    }
+    
+    /* Status indicators */
+    .status-active {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #00ff88;
+        box-shadow: 0 0 12px rgba(0, 255, 136, 0.8);
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    /* Buttons */
+    .stButton>button {
+        background: linear-gradient(135deg, #00d9ff 0%, #0099ff 100%);
+        color: #000;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        transition: all 0.3s;
     }
     .stButton>button:hover {
-        border-color: #00FF9D;
-        color: #00FF9D;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 217, 255, 0.4);
     }
-
-    /* Rimuovere padding extra */
-    .block-container { padding-top: 2rem; padding-bottom: 3rem; }
+    
+    /* Pulizia */
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+    h1 { color: #00d9ff !important; text-shadow: 0 0 15px rgba(0, 217, 255, 0.3); }
 </style>
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3. LOGICA DATABASE & DATI
+# 3. LOGICA DATABASE (La mia robusta)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource
@@ -190,28 +202,34 @@ def get_latest_data(symbol):
     return signal, history
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 4. INTERFACCIA UTENTE (UI)
+# 4. INTERFACCIA UTENTE (Layout Mio + Stile Tuo)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# --- SIDEBAR PROFESSIONALE ---
+# --- HEADER STILE TITAN ---
+st.markdown("""
+<div style="text-align: center; padding-bottom: 20px;">
+    <h1 style="color: #00d9ff; font-size: 48px; margin: 0; display: inline-block;">
+        🏛️ TITAN ORACLE PRIME
+    </h1>
+    <div style="margin-top: 10px;">
+        <span class="status-active"></span> 
+        <span style="color: #00ff88; font-weight: bold; margin-left: 8px;">SYSTEM ONLINE</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("## ⚡ TITAN V90")
-    st.markdown("<div style='margin-bottom: 20px;'><span class='status-badge-online'>● SYSTEM ONLINE</span></div>", unsafe_allow_html=True)
-    
-    st.markdown("### 📡 Asset Feed")
-    symbol = st.radio("SELECT MARKET", ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"], index=3, label_visibility="collapsed")
+    st.markdown("### ⚙️ CONTROL PANEL")
+    symbol = st.radio("ASSET SELECTION:", ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"], index=3)
     
     st.markdown("---")
-    st.markdown("### ⚙️ Operations")
-    auto_refresh = st.checkbox("Live Refresh (1s)", value=True)
-    if st.button("Force Sync", use_container_width=True): st.rerun()
+    auto_refresh = st.checkbox("🔄 Auto Refresh", value=True)
+    if st.button("🚀 Force Refresh", use_container_width=True):
+        st.rerun()
 
-# --- HEADER PRINCIPALE ---
-c_head1, c_head2 = st.columns([3, 1])
-with c_head1:
-    st.markdown(f"# {symbol} <span style='font-size:20px; color:#555;'>/ USD</span>", unsafe_allow_html=True)
-with c_head2:
-    st.markdown("<div style='text-align:right; color:#444; font-family:monospace;'>ORACLE PRIME CORE</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.caption("TITAN Trading Systems v1.0")
 
 # Fetch Dati
 signal_data, history_df = get_latest_data(symbol)
@@ -221,110 +239,132 @@ current_price = 0.0
 if not history_df.empty: current_price = history_df['price'].iloc[-1]
 elif signal_data: current_price = signal_data.get('current_price', 0.0)
 
-# --- DASHBOARD CARD (LAYOUT GRIGLIA) ---
-
 if not supabase:
-    st.error("🚨 Database Connection Failed. Check .env")
+    st.error("❌ Database Connection Failed. Check .env")
     st.stop()
 
-# Estrazione Dati Segnale
+# Estrazione Dati
 rec = signal_data.get('recommendation', 'WAIT') if signal_data else 'WAIT'
 conf = signal_data.get('confidence_score', 0) if signal_data else 0
 details = signal_data.get('details', 'Scanning...') if signal_data else 'Initializing...'
 
-# 1. RIGA KPI PRINCIPALI
+# ═══════════════════════════════════════════════════════════════════════════════
+# KPI CARDS ROW (Stile: Neon Cards)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 col1, col2, col3 = st.columns([1.5, 1, 1])
 
 with col1:
-    # Colore dinamico per il segnale
-    sig_class = "wait-signal"
-    if rec == "BUY": sig_class = "buy-signal"
-    elif rec == "SELL": sig_class = "sell-signal"
+    # Selezione Classe CSS in base al segnale
+    card_class = "signal-wait"
+    icon = "⚪"
+    if rec == "BUY": 
+        card_class = "signal-buy"
+        icon = "🟢"
+    elif rec == "SELL": 
+        card_class = "signal-sell"
+        icon = "🔴"
     
     st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-label">AI DECISION</div>
-        <div class="metric-value {sig_class}">{rec}</div>
-        <div class="metric-sub">{details.split('|')[0] if '|' in details else details}</div>
+    <div class="{card_class}">
+        <div class="stat-label">AI SIGNAL</div>
+        <div class="signal-title">{icon} {rec}</div>
+        <div style="color: #ccc; font-size: 14px;">{details.split('|')[0] if '|' in details else details}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
-    # Colore barra confidenza
-    bar_c = "#333"
-    if rec == "BUY": bar_c = "#00FF9D"
-    elif rec == "SELL": bar_c = "#FF3B30"
-    
+    # Card Confidenza (Stile Blu/Viola)
+    bar_color = "#888"
+    if rec == "BUY": bar_color = "#00ff88"
+    elif rec == "SELL": bar_color = "#ff0044"
+
     st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-label">CONFIDENCE</div>
-        <div class="metric-value" style="color: {bar_c};">{conf}%</div>
-        <div style="width: 100%; background: #222; height: 4px; margin-top: 15px;">
-            <div style="width: {conf}%; background: {bar_c}; height: 100%; box-shadow: 0 0 10px {bar_c};"></div>
+    <div class="metric-card">
+        <div class="stat-label">CONFIDENCE</div>
+        <div class="price-big" style="font-size: 36px; color: {bar_color}; text-shadow: 0 0 15px {bar_color};">{conf}%</div>
+        <div style="width: 80%; background: #0f1525; height: 6px; border-radius: 3px; margin-top: 10px;">
+            <div style="width: {conf}%; background: {bar_color}; height: 100%; border-radius: 3px;"></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 with col3:
+    # Card Prezzo (Stile Blu/Viola)
     st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-label">LIVE QUOTE</div>
-        <div class="metric-value">${current_price:,.2f}</div>
-        <div class="metric-sub" style="color: #00FF9D;">● Real-Time</div>
+    <div class="metric-card">
+        <div class="stat-label">LIVE PRICE</div>
+        <div class="price-big">${current_price:,.2f}</div>
+        <div style="color: #00d9ff; font-size: 12px; margin-top: 5px;">● REAL-TIME FEED</div>
     </div>
     """, unsafe_allow_html=True)
 
-# 2. RIGA LIVELLI OPERATIVI (Solo se attivo)
+# ═══════════════════════════════════════════════════════════════════════════════
+# LEVELS ROW (Stile: Custom Cards)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 if rec in ["BUY", "SELL"] and signal_data:
     st.markdown("<br>", unsafe_allow_html=True)
-    
     l1, l2, l3 = st.columns(3)
+    
     entry = signal_data.get('entry_price', 0)
     sl = signal_data.get('stop_loss', 0)
     tp = signal_data.get('take_profit', 0)
     
+    # Helper per creare le card dei livelli con lo stile Cyberpunk
+    def level_card(label, value, color):
+        return f"""
+        <div class="metric-card" style="border-color: {color}; box-shadow: 0 0 10px {color}44;">
+            <div class="stat-label">{label}</div>
+            <div class="stat-value" style="color: {color}; font-size: 28px;">${value:,.2f}</div>
+        </div>
+        """
+        
     with l1:
-        st.markdown(f"""<div class="metric-container entry-box"><div class="metric-label">ENTRY PRICE</div><div class="level-value level-entry">${entry:,.2f}</div></div>""", unsafe_allow_html=True)
+        st.markdown(level_card("ENTRY PRICE", entry, "#ffffff"), unsafe_allow_html=True)
     with l2:
-        st.markdown(f"""<div class="metric-container stop-box"><div class="metric-label">STOP LOSS</div><div class="level-value level-sl">${sl:,.2f}</div></div>""", unsafe_allow_html=True)
+        st.markdown(level_card("STOP LOSS", sl, "#ff0044"), unsafe_allow_html=True)
     with l3:
-        st.markdown(f"""<div class="metric-container target-box"><div class="metric-label">TAKE PROFIT</div><div class="level-value level-tp">${tp:,.2f}</div></div>""", unsafe_allow_html=True)
+        st.markdown(level_card("TAKE PROFIT", tp, "#00ff88"), unsafe_allow_html=True)
 
-# 3. GRAFICO PROFESSIONALE (BLACK CHART)
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHART (Stile Neon Cyan)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 st.markdown("---")
-st.markdown("### 📉 Market Depth")
+st.markdown("### 📈 Market Analysis")
 
 if not history_df.empty:
     fig = go.Figure()
     
-    # Linea Prezzo (Blu Elettrico Sottile)
+    # Linea Prezzo (Ciano Neon)
     fig.add_trace(go.Scatter(
         x=history_df['created_at'], y=history_df['price'],
         mode='lines', name='Price',
-        line=dict(color='#2979FF', width=2),
-        fill='tozeroy', fillcolor='rgba(41, 121, 255, 0.1)'
+        line=dict(color='#00d9ff', width=2),
+        fill='tozeroy', fillcolor='rgba(0, 217, 255, 0.1)'
     ))
     
-    # Aggiunta Livelli se trade attivo
+    # Livelli
     if rec in ['BUY', 'SELL']:
-        # Entry (Bianco tratteggiato)
-        fig.add_hline(y=entry, line_dash="dash", line_color="white", line_width=1, annotation_text="ENTRY", annotation_font_color="white")
-        # SL (Rosso)
-        fig.add_hline(y=sl, line_dash="dot", line_color="#FF3B30", line_width=2, annotation_text="SL", annotation_font_color="#FF3B30")
-        # TP (Verde)
-        fig.add_hline(y=tp, line_dash="dot", line_color="#00FF9D", line_width=2, annotation_text="TP", annotation_font_color="#00FF9D")
+        # Entry
+        fig.add_hline(y=entry, line_dash="dash", line_color="white", annotation_text="ENTRY")
+        # SL
+        fig.add_hline(y=sl, line_dash="dot", line_color="#ff0044", annotation_text="SL")
+        # TP
+        fig.add_hline(y=tp, line_dash="dot", line_color="#00ff88", annotation_text="TP")
 
-    # Stile Bloomberg/Terminal
+    # Layout Plotly Dark/Transparent
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(10,10,10,1)', # Sfondo grafico quasi nero
+        plot_bgcolor='rgba(0,0,0,0)',
         height=450,
-        margin=dict(l=0, r=40, t=20, b=20),
-        xaxis=dict(showgrid=True, gridcolor='#222', title=None),
-        yaxis=dict(showgrid=True, gridcolor='#222', title=None, side='right'), # Prezzo a destra come nei terminali pro
-        showlegend=False,
-        hovermode="x unified"
+        margin=dict(l=20, r=20, t=20, b=20),
+        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title=""),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title="Price"),
+        hovermode="x unified",
+        showlegend=False
     )
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 else:
@@ -332,5 +372,5 @@ else:
 
 # Auto-Refresh Loop
 if auto_refresh:
-    time.sleep(1)
+    time.sleep(2)
     st.rerun()
