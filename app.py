@@ -39,8 +39,10 @@ try:
     else:
         SUPABASE_URL = os.getenv("SUPABASE_URL")
         SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-except FileNotFoundError:
-    # Fallback per locale se secrets.toml non esiste
+except:
+    # Fallback a .env (locale)
+    from dotenv import load_dotenv
+    load_dotenv()
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
