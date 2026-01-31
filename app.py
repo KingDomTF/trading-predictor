@@ -34,7 +34,7 @@ class AppConfig:
     LAYOUT = "wide"
     
     # Assets to display
-    ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30", "ETHUSD"]
+    ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD","XAGUSD"]
     
     # Refresh rates
     AUTO_REFRESH_RATE = 5  # Seconds
