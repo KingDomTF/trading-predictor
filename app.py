@@ -1,431 +1,491 @@
 """
 ═══════════════════════════════════════════════════════════════════════════════
-TITAN ORACLE DASHBOARD - STREAMLIT FRONTEND
+TITAN V90 'ORACLE PRIME' - SIMPLIFIED FOR APP.PY STRUCTURE
 ═══════════════════════════════════════════════════════════════════════════════
-Real-time trading signals visualization powered by TITAN V90 Oracle Prime
-Author: TITAN Trading Systems
-Version: 1.0
+Backend engine optimized for your Streamlit dashboard structure
+Generates clean signals compatible with your app.py visualization
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import time
 import os
-from supabase import create_client
-from dotenv import load_dotenv
+import sys
+import time
+import json
+import logging
+import codecs
+import numpy as np
+from collections import deque
+from datetime import datetime
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION & SETUP
-# ═══════════════════════════════════════════════════════════════════════════════
+# Windows UTF-8 fix
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
 
-st.set_page_config(
-    page_title="TITAN Oracle Prime",
-    page_icon="🏛️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Caricamento Variabili d'Ambiente (Ibrido: Locale + Cloud)
-load_dotenv()
-
-# Tenta di prendere le credenziali da Streamlit Secrets (Cloud) o .env (Locale)
+# Dependencies check
 try:
-    if 'SUPABASE_URL' in st.secrets:
-        SUPABASE_URL = st.secrets["SUPABASE_URL"]
-        SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    else:
-        SUPABASE_URL = os.getenv("SUPABASE_URL")
-        SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-except FileNotFoundError:
-    # Fallback per locale se secrets.toml non esiste
+    from supabase import create_client
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("❌ Missing libraries. Run: pip install supabase python-dotenv numpy")
+    sys.exit(1)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class Config:
+    """System configuration from .env file"""
+    
+    # Supabase credentials
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+    
+    # MT4 data path
+    MT4_PATH = os.getenv("MT4_PATH", "").rstrip(os.sep)
+    
+    # Trading assets (adjust to your needs)
+    ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30", "ETHUSD"]
+    
+    # Strategy parameters
+    MIN_TICKS_WARMUP = 30          # Minimum data points before trading
+    RISK_PERCENT = 0.01            # 1% risk per trade
+    
+    # Technical indicators
+    RSI_PERIOD = 14
+    RSI_OVERBOUGHT = 70
+    RSI_OVERSOLD = 30
+    MA_FAST = 10
+    MA_SLOW = 50
+    
+    # Safety limits
+    MAX_SL_PERCENT = 0.03          # Max 3% stop loss
+    MIN_RR_RATIO = 2.0             # Minimum 2:1 risk/reward
+    
+    @classmethod
+    def validate(cls):
+        """Check if configuration is valid"""
+        if not cls.SUPABASE_URL or not cls.SUPABASE_KEY:
+            print("❌ Missing SUPABASE_URL or SUPABASE_KEY in .env")
+            return False
+        if not cls.MT4_PATH:
+            print("❌ Missing MT4_PATH in .env")
+            return False
+        if not os.path.exists(cls.MT4_PATH):
+            print(f"❌ MT4_PATH does not exist: {cls.MT4_PATH}")
+            return False
+        return True
 
-# Assets tracking
-ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"]
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CUSTOM CSS (CYBERPUNK THEME)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-st.markdown("""
-<style>
-    /* Main theme */
-    .stApp {
-        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
-        color: white;
-    }
-    
-    /* Metric cards */
-    .metric-card {
-        background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
-        border-radius: 15px;
-        padding: 20px;
-        margin: 10px 0;
-        border: 1px solid #00d9ff;
-        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.1);
-    }
-    
-    /* Signal cards */
-    .signal-buy {
-        background: linear-gradient(135deg, #0f2e1d 0%, #1a4a30 100%);
-        border: 2px solid #00ff88;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 15px 0;
-        box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
-    }
-    
-    .signal-sell {
-        background: linear-gradient(135deg, #2e0f0f 0%, #4a1a1a 100%);
-        border: 2px solid #ff0044;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 15px 0;
-        box-shadow: 0 0 15px rgba(255, 0, 68, 0.2);
-    }
-    
-    .signal-wait {
-        background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
-        border: 1px solid #444;
-        border-radius: 12px;
-        padding: 20px;
-        margin: 15px 0;
-        opacity: 0.8;
-    }
-    
-    /* Typography */
-    .price-big {
-        font-size: 36px;
-        font-weight: 800;
-        color: #fff;
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-    }
-    
-    .signal-title {
-        font-size: 20px;
-        font-weight: bold;
-        margin-bottom: 10px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    .stat-label {
-        font-size: 12px;
-        color: #8b949e;
-        margin-bottom: 2px;
-        text-transform: uppercase;
-    }
-    
-    .stat-value {
-        font-size: 18px;
-        font-weight: bold;
-        color: #ffffff;
-    }
-    
-    /* Animations */
-    .status-active {
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: #00ff88;
-        box-shadow: 0 0 10px #00ff88;
-        animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
-    
-    /* Buttons */
-    .stButton>button {
-        background: linear-gradient(90deg, #00d9ff 0%, #0099ff 100%);
-        color: white;
-        border: none;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger("TITAN")
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DATABASE CONNECTION
+# MATHEMATICAL SAFETY LAYER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_resource
-def init_supabase():
-    """Initialize Supabase client safely"""
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return None
-    try:
-        client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        return client
-    except Exception as e:
-        st.error(f"❌ Database connection failed: {e}")
-        return None
-
-supabase = init_supabase()
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# DATA FETCHING FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def get_latest_signals():
-    """Fetch latest trading signals for all assets"""
-    if not supabase: return {}
+class SafeMath:
+    """Ensures all calculations produce valid, safe values - FIXED VERSION"""
     
-    try:
-        signals = {}
-        for symbol in ASSETS:
-            response = supabase.table("ai_oracle")\
-                .select("*")\
-                .eq("symbol", symbol)\
-                .order("created_at", desc=True)\
-                .limit(1)\
-                .execute()
+    @staticmethod
+    def calculate_levels(entry_price, direction, volatility):
+        """
+        Calculate Stop Loss and Take Profit with ROBUST safety checks
+        Returns: (stop_loss, take_profit)
+        """
+        
+        # === SAFETY CHECK 1: Validate volatility ===
+        min_volatility = entry_price * 0.001  # Min 0.1%
+        max_volatility = entry_price * 0.05   # Max 5%
+        
+        if volatility <= 0 or volatility < min_volatility or volatility > max_volatility:
+            volatility = entry_price * 0.003  # Fallback 0.3%
+            logger.warning(f"⚠️ Vol invalid for ${entry_price:.2f}, using {volatility:.5f}")
+        
+        # === CALCULATE DISTANCES ===
+        sl_distance = volatility * 1.5
+        tp_distance = sl_distance * Config.MIN_RR_RATIO
+        
+        # === SAFETY CHECK 2: Minimum distances ===
+        min_sl_distance = entry_price * 0.002  # Min 0.2%
+        if sl_distance < min_sl_distance:
+            sl_distance = min_sl_distance
+            tp_distance = sl_distance * Config.MIN_RR_RATIO
+            logger.warning(f"⚠️ SL too tight, using min: {sl_distance:.5f}")
+        
+        # === CALCULATE LEVELS ===
+        if direction == "BUY":
+            stop_loss = entry_price - sl_distance
+            take_profit = entry_price + tp_distance
             
-            if response.data:
-                signals[symbol] = response.data[0]
-        return signals
-    except Exception:
-        return {}
-
-def get_price_history(symbol, hours=4):
-    """Fetch price history for charting"""
-    if not supabase: return pd.DataFrame()
+            if stop_loss >= entry_price:
+                logger.error(f"❌ BUY SL invalid: {stop_loss:.5f} >= {entry_price:.5f}")
+                stop_loss = entry_price * 0.997
+                take_profit = entry_price * 1.006
+        
+        else:  # SELL
+            stop_loss = entry_price + sl_distance
+            take_profit = entry_price - tp_distance
+            
+            if stop_loss <= entry_price:
+                logger.error(f"❌ SELL SL invalid: {stop_loss:.5f} <= {entry_price:.5f}")
+                stop_loss = entry_price * 1.003
+                take_profit = entry_price * 0.994
+            
+            if take_profit <= 0:
+                logger.error(f"❌ TP negative: {take_profit:.5f}")
+                take_profit = entry_price * 0.994
+        
+        # === FINAL VALIDATION ===
+        if abs(stop_loss - entry_price) < 0.0001:
+            logger.critical(f"❌ CRITICAL: SL equals entry at {entry_price:.5f}!")
+            stop_loss = entry_price * (0.997 if direction == "BUY" else 1.003)
+        
+        if abs(take_profit - entry_price) < 0.0001:
+            logger.critical(f"❌ CRITICAL: TP equals entry at {entry_price:.5f}!")
+            take_profit = entry_price * (1.006 if direction == "BUY" else 0.994)
+        
+        return round(stop_loss, 5), round(take_profit, 5)
     
-    try:
-        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
-        response = supabase.table("mt4_feed")\
-            .select("*")\
-            .eq("symbol", symbol)\
-            .gte("created_at", cutoff)\
-            .order("created_at", desc=False)\
-            .execute()
-        
-        if response.data:
-            df = pd.DataFrame(response.data)
-            df['created_at'] = pd.to_datetime(df['created_at'])
-            return df
-        return pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-def get_performance_stats():
-    """Calculate overall performance statistics"""
-    if not supabase: return None
-    
-    try:
-        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
-        response = supabase.table("ai_oracle")\
-            .select("*")\
-            .gte("created_at", cutoff)\
-            .in_("recommendation", ["BUY", "SELL"])\
-            .execute()
-        
-        if not response.data: return None
-        
-        total_signals = len(response.data)
-        buy_signals = sum(1 for s in response.data if s['recommendation'] == 'BUY')
-        sell_signals = sum(1 for s in response.data if s['recommendation'] == 'SELL')
-        avg_confidence = sum(s.get('confidence_score', 0) for s in response.data) / total_signals if total_signals > 0 else 0
-        
-        return {
-            'total': total_signals,
-            'buy': buy_signals,
-            'sell': sell_signals,
-            'confidence': avg_confidence
-        }
-    except Exception:
-        return None
+    @staticmethod
+    def validate_price(price):
+        """Check if price is valid"""
+        return price > 0 and price < 1000000  # Reasonable range
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# VISUALIZATION FUNCTIONS
+# TRADING BRAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_price_chart(df, signal_data):
-    """Create interactive price chart with Plotly"""
-    if df.empty: return None
+class TradingEngine:
+    """Analyzes market data and generates trading signals"""
     
-    fig = go.Figure()
-    
-    # Price line
-    fig.add_trace(go.Scatter(
-        x=df['created_at'], y=df['price'],
-        mode='lines', name='Price',
-        line=dict(color='#00d9ff', width=2),
-        fill='tozeroy', fillcolor='rgba(0, 217, 255, 0.1)'
-    ))
-    
-    # Add entry/SL/TP lines if signal exists
-    if signal_data and signal_data.get('recommendation') in ['BUY', 'SELL']:
-        entry = signal_data.get('entry_price', 0)
-        sl = signal_data.get('stop_loss', 0)
-        tp = signal_data.get('take_profit', 0)
+    def __init__(self):
+        # Price history buffer for each symbol
+        self.price_buffer = {symbol: deque(maxlen=200) for symbol in Config.ASSETS}
         
-        if entry: fig.add_hline(y=entry, line_dash="dash", line_color="white", annotation_text="ENTRY")
-        if sl: fig.add_hline(y=sl, line_dash="dot", line_color="#ff0044", annotation_text="SL")
-        if tp: fig.add_hline(y=tp, line_dash="dot", line_color="#00ff88", annotation_text="TP")
+        # Last signal sent (avoid spam)
+        self.last_signal = {symbol: None for symbol in Config.ASSETS}
+        self.last_signal_time = {symbol: 0 for symbol in Config.ASSETS}
     
-    fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        height=350,
-        margin=dict(l=10, r=10, t=30, b=10),
-        xaxis=dict(showgrid=False, title=""),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title="Price"),
-        hovermode='x unified',
-        showlegend=False
-    )
-    return fig
-
-def render_signal_card(symbol, signal_data):
-    """Render a trading signal card"""
-    if not signal_data:
-        st.markdown(f"""
-        <div class="signal-wait">
-            <div class="signal-title">⚪ {symbol}</div>
-            <div style="color: #aaa; font-size: 14px;">Scanning Market...</div>
-        </div>
-        """, unsafe_allow_html=True)
-        return
+    def add_tick(self, symbol, price):
+        """Add new price to history"""
+        if symbol in self.price_buffer:
+            self.price_buffer[symbol].append(price)
     
-    rec = signal_data.get('recommendation', 'WAIT')
-    price = signal_data.get('current_price', 0)
-    entry = signal_data.get('entry_price', 0)
-    sl = signal_data.get('stop_loss', 0)
-    tp = signal_data.get('take_profit', 0)
-    conf = signal_data.get('confidence_score', 0)
-    details = signal_data.get('details', '')
-    
-    # Card Logic
-    card_class = "signal-wait"
-    icon = "⚪"
-    color = "#888"
-    
-    if rec == 'BUY':
-        card_class = "signal-buy"
-        icon = "🟢"
-        color = "#00ff88"
-    elif rec == 'SELL':
-        card_class = "signal-sell"
-        icon = "🔴"
-        color = "#ff0044"
-    
-    st.markdown(f"""
-    <div class="{card_class}">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div class="signal-title">{icon} {symbol} &nbsp; {rec}</div>
-            <div style="background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 5px; font-weight: bold; color: {color};">
-                {conf}% CONFIDENCE
-            </div>
-        </div>
+    def analyze(self, symbol, current_price):
+        """
+        Analyze market and return trading signal
+        Returns: dict with signal details or None
+        """
         
-        <div class="price-big">${price:,.2f}</div>
+        # Get price history
+        history = list(self.price_buffer[symbol])
         
-        <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-            <div>
-                <div class="stat-label">ENTRY</div>
-                <div class="stat-value" style="color: #fff;">${entry:,.2f}</div>
-            </div>
-            <div>
-                <div class="stat-label">STOP LOSS</div>
-                <div class="stat-value" style="color: #ff0044;">${sl:,.2f}</div>
-            </div>
-            <div>
-                <div class="stat-label">TAKE PROFIT</div>
-                <div class="stat-value" style="color: #00ff88;">${tp:,.2f}</div>
-            </div>
-        </div>
+        # Need minimum data
+        if len(history) < Config.MIN_TICKS_WARMUP:
+            return {
+                'status': 'WARMUP',
+                'progress': f"{len(history)}/{Config.MIN_TICKS_WARMUP}",
+                'message': 'Collecting data...'
+            }
         
-        <div style="margin-top: 15px; font-size: 12px; color: #888; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-            DETAILS: {details}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        # Convert to numpy for calculations
+        prices = np.array(history)
+        
+        # === TECHNICAL INDICATORS ===
+        
+        # Moving Averages
+        ma_fast = np.mean(prices[-Config.MA_FAST:])
+        ma_slow = np.mean(prices[-Config.MA_SLOW:])
+        
+        # ATR (Average True Range) - volatility measure
+        price_changes = np.abs(np.diff(prices))
+        atr = np.mean(price_changes[-14:]) * 2.0 if len(price_changes) >= 14 else np.std(prices) * 0.5
+        
+        # RSI (Relative Strength Index)
+        deltas = np.diff(prices)
+        gains = deltas[deltas > 0]
+        losses = -deltas[deltas < 0]
+        
+        avg_gain = np.mean(gains) if len(gains) > 0 else 0.0001
+        avg_loss = np.mean(losses) if len(losses) > 0 else 0.0001
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        # === TRADING LOGIC ===
+        
+        signal = None
+        reason = ""
+        confidence = 0
+        
+        # Strategy 1: Trend Following (Momentum)
+        if current_price > ma_slow and ma_fast > ma_slow:
+            # Uptrend confirmed
+            if rsi > 50 and rsi < 70:
+                signal = "BUY"
+                reason = "Momentum Trend Up"
+                confidence = 85
+        
+        elif current_price < ma_slow and ma_fast < ma_slow:
+            # Downtrend confirmed
+            if rsi < 50 and rsi > 30:
+                signal = "SELL"
+                reason = "Momentum Trend Down"
+                confidence = 85
+        
+        # Strategy 2: Mean Reversion (Oversold/Overbought)
+        if rsi < Config.RSI_OVERSOLD:
+            signal = "BUY"
+            reason = "Oversold Reversal"
+            confidence = 75
+        
+        elif rsi > Config.RSI_OVERBOUGHT:
+            signal = "SELL"
+            reason = "Overbought Reversal"
+            confidence = 75
+        
+        # === SIGNAL FILTERING ===
+        
+        # Avoid sending same signal repeatedly
+        if signal:
+            # Check if signal changed or enough time passed (30 seconds)
+            if signal == self.last_signal[symbol]:
+                if time.time() - self.last_signal_time[symbol] < 30:
+                    signal = None  # Skip duplicate
+        
+        # === PREPARE RESULT ===
+        
+        if signal:
+            # Calculate Stop Loss and Take Profit
+            sl, tp = SafeMath.calculate_levels(current_price, signal, atr)
+            
+            # Update cache
+            self.last_signal[symbol] = signal
+            self.last_signal_time[symbol] = time.time()
+            
+            return {
+                'status': 'SIGNAL',
+                'signal': signal,
+                'entry': current_price,
+                'stop_loss': sl,
+                'take_profit': tp,
+                'confidence': confidence,
+                'reason': reason,
+                'atr': round(atr, 5),
+                'rsi': round(rsi, 1)
+            }
+        
+        else:
+            # No signal, market scanning
+            return {
+                'status': 'SCANNING',
+                'message': f'RSI: {rsi:.1f} | Trend: {"UP" if ma_fast > ma_slow else "DOWN"}',
+                'rsi': round(rsi, 1)
+            }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# MAIN APP
+# DATABASE CONNECTOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class DatabaseConnector:
+    """Handles all Supabase communication"""
+    
+    def __init__(self):
+        try:
+            self.client = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
+            self.connected = True
+            logger.info("✅ Connected to Supabase")
+        except Exception as e:
+            logger.error(f"❌ Supabase connection failed: {e}")
+            self.connected = False
+        
+        # Rate limiting
+        self.last_feed_update = {symbol: 0 for symbol in Config.ASSETS}
+        self.last_oracle_update = {symbol: 0 for symbol in Config.ASSETS}
+    
+    def send_price_feed(self, symbol, price, equity):
+        """
+        Send price to mt4_feed table (for charts)
+        Rate limited to 1 update per second per symbol
+        """
+        if not self.connected:
+            return
+        
+        # Rate limit check
+        if time.time() - self.last_feed_update[symbol] < 1.0:
+            return
+        
+        try:
+            self.client.table("mt4_feed").insert({
+                "symbol": symbol,
+                "price": round(price, 5),
+                "equity": round(equity, 2)
+            }).execute()
+            
+            self.last_feed_update[symbol] = time.time()
+        except:
+            pass  # Silent fail for feed updates
+    
+    def send_trading_signal(self, symbol, signal_data):
+        """
+        Send trading signal to ai_oracle table (for app.py display)
+        """
+        if not self.connected:
+            return
+        
+        try:
+            # Prepare payload compatible with your app.py
+            payload = {
+                "symbol": symbol,
+                "recommendation": signal_data.get('signal', 'WAIT'),
+                "current_price": round(signal_data.get('entry', 0), 2),
+                "entry_price": round(signal_data.get('entry', 0), 2),
+                "stop_loss": round(signal_data.get('stop_loss', 0), 2),
+                "take_profit": round(signal_data.get('take_profit', 0), 2),
+                "confidence_score": signal_data.get('confidence', 0),
+                "details": f"TITAN V90 | {signal_data.get('reason', 'Scanning')}",
+                "market_regime": "BALANCED_HUNTER",
+                "prob_buy": 100 if signal_data.get('signal') == 'BUY' else 0,
+                "prob_sell": 100 if signal_data.get('signal') == 'SELL' else 0
+            }
+            
+            self.client.table("ai_oracle").insert(payload).execute()
+            
+            logger.info(f"📡 Signal sent: {symbol} {signal_data.get('signal', 'WAIT')}")
+            
+            self.last_oracle_update[symbol] = time.time()
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to send signal: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN LOOP
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    # Header
-    st.markdown("""
-    <div style="text-align: center; padding-bottom: 20px;">
-        <h1 style="color: #00d9ff; font-size: 42px; margin: 0; text-shadow: 0 0 20px rgba(0,217,255,0.5);">
-            🏛️ TITAN ORACLE PRIME
-        </h1>
-        <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 10px;">
-            <div class="status-active"></div>
-            <span style="color: #00ff88; font-weight: bold; font-size: 14px;">SYSTEM ONLINE</span>
-            <span style="color: #666;">•</span>
-            <span style="color: #aaa; font-size: 14px;">V90 ENTERPRISE CORE</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    """Main execution loop"""
     
-    # Sidebar
-    with st.sidebar:
-        st.markdown("### ⚙️ CONTROL PANEL")
-        auto_refresh = st.checkbox("🔄 Auto Refresh", value=True)
-        
-        st.markdown("---")
-        st.markdown("### 📊 ASSETS")
-        selected_assets = st.multiselect("Active Feeds", ASSETS, default=ASSETS)
-        
-        st.markdown("---")
-        st.markdown("### 📈 24H STATISTICS")
-        stats = get_performance_stats()
-        
-        if stats:
-            c1, c2 = st.columns(2)
-            c1.metric("Signals", stats['total'])
-            c1.metric("Buy", stats['buy'])
-            c2.metric("Confidence", f"{stats['confidence']:.0f}%")
-            c2.metric("Sell", stats['sell'])
-        else:
-            st.info("No data in 24h")
-            
-        if st.button("🔄 Force Refresh", use_container_width=True):
-            st.rerun()
-
-    # Main Grid
-    if not supabase:
-        st.error("🚨 CRITICAL: Database connection failed. Check Credentials.")
-        st.stop()
-        
-    signals = get_latest_signals()
+    print("\n" + "═" * 70)
+    print("🏛️  TITAN V90 ORACLE PRIME - SIMPLIFIED EDITION")
+    print("═" * 70)
+    print(f"Assets: {', '.join(Config.ASSETS)}")
+    print(f"MT4 Path: {Config.MT4_PATH}")
+    print("═" * 70 + "\n")
     
-    if not selected_assets:
-        st.warning("Select assets from sidebar")
+    # Validate configuration
+    if not Config.validate():
+        print("\n❌ Configuration error. Check your .env file")
         return
-
-    # Dynamic Grid
-    cols = st.columns(2)
-    for idx, symbol in enumerate(selected_assets):
-        with cols[idx % 2]:
-            signal_data = signals.get(symbol)
-            render_signal_card(symbol, signal_data)
+    
+    # Initialize components
+    engine = TradingEngine()
+    db = DatabaseConnector()
+    
+    if not db.connected:
+        print("\n⚠️  Running without database connection (check SUPABASE credentials)")
+    
+    logger.info("🚀 System online - Processing market data...")
+    
+    # Main loop
+    iteration = 0
+    
+    while True:
+        iteration += 1
+        cycle_start = time.time()
+        
+        for symbol in Config.ASSETS:
+            # Read MT4 JSON file
+            file_path = os.path.join(Config.MT4_PATH, f"{symbol}_data.json")
             
-            # Chart Toggle
-            with st.expander(f"📈 {symbol} Analysis Chart", expanded=False):
-                df = get_price_history(symbol, hours=4)
-                if not df.empty:
-                    chart = create_price_chart(df, signal_data)
-                    st.plotly_chart(chart, use_container_width=True)
+            if not os.path.exists(file_path):
+                continue
+            
+            try:
+                # Read file
+                with open(file_path, 'r', encoding='utf-8-sig') as f:
+                    content = f.read().strip()
+                
+                if not content:
+                    continue
+                
+                data = json.loads(content)
+                
+                # Extract data
+                bid = float(data.get('bid', 0))
+                ask = float(data.get('ask', 0))
+                equity = float(data.get('equity', 10000))
+                
+                # Calculate mid price
+                if bid > 0 and ask > 0:
+                    price = (bid + ask) / 2.0
                 else:
-                    st.caption("Waiting for price feed...")
+                    price = float(data.get('price', 0))
+                
+                # Validate price
+                if not SafeMath.validate_price(price):
+                    continue
+                
+                # Send price feed to database (for charts)
+                db.send_price_feed(symbol, price, equity)
+                
+                # Add to analysis buffer
+                engine.add_tick(symbol, price)
+                
+                # Analyze market
+                result = engine.analyze(symbol, price)
+                
+                # Handle result
+                if result['status'] == 'WARMUP':
+                    # Still collecting data
+                    if iteration % 50 == 0:  # Log every 50 iterations
+                        print(f"⏳ {symbol}: {result['progress']} - {result['message']}", end='\r')
+                
+                elif result['status'] == 'SIGNAL':
+                    # NEW TRADING SIGNAL!
+                    print(f"\n🎯 {symbol} {result['signal']} @ ${price:.2f}")
+                    print(f"   SL: ${result['stop_loss']:.2f} | TP: ${result['take_profit']:.2f}")
+                    print(f"   Reason: {result['reason']} | Confidence: {result['confidence']}%")
+                    
+                    # Send to database
+                    db.send_trading_signal(symbol, result)
+                
+                elif result['status'] == 'SCANNING':
+                    # Market scanning
+                    if iteration % 100 == 0:  # Log every 100 iterations
+                        print(f"👁️  {symbol}: ${price:.2f} | {result['message']}", end='\r')
+            
+            except json.JSONDecodeError:
+                continue
+            except Exception as e:
+                logger.debug(f"Error processing {symbol}: {e}")
+                continue
+        
+        # Performance log every 1000 iterations
+        if iteration % 1000 == 0:
+            logger.info(f"💓 System healthy | Iteration {iteration}")
+        
+        # CPU throttle (don't burn the processor)
+        elapsed = time.time() - cycle_start
+        if elapsed < 0.1:
+            time.sleep(0.1 - elapsed)
 
-    # Auto Refresh Loop
-    if auto_refresh:
-        time.sleep(2)
-        st.rerun()
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n🛑 System shutdown requested")
+        print("✅ TITAN V90 stopped gracefully\n")
+    except Exception as e:
+        logger.critical(f"💀 Fatal error: {e}", exc_info=True)
