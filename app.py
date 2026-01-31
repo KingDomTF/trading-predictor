@@ -285,6 +285,12 @@ def load_custom_css():
             opacity: 0.75;
         }
         
+        .signal-card-closed {
+            border: 1px solid rgba(100, 116, 139, 0.4);
+            color: #94A3B8;
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(20, 25, 35, 0.98) 100%);
+        }
+        
         .signal-card:hover {
             transform: translateY(-2px);
             box-shadow: 
@@ -734,7 +740,9 @@ def create_price_chart(df, signal_data):
     return fig
 
 def render_signal_panel(symbol, signal_data):
-    """Render the Premium Card for a specific symbol - REDESIGNED"""
+    """Render the Premium Card for a specific symbol - WITH MARKET CLOSED LOGIC"""
+    
+    # 1. CHECK NO DATA
     if not signal_data:
         st.markdown(f"""
         <div class="signal-card signal-card-wait">
@@ -752,7 +760,57 @@ def render_signal_panel(symbol, signal_data):
         """, unsafe_allow_html=True)
         return
 
-    # Extract Data
+    # 2. TIME CHECK (MARKET CLOSED LOGIC)
+    created_at = signal_data.get('created_at', '')
+    is_stale = False
+    time_str = "Unknown"
+    
+    try:
+        # Parse timestamp from Supabase
+        signal_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        # Calculate difference from NOW
+        time_diff = (datetime.now(signal_time.tzinfo) - signal_time).total_seconds()
+        
+        # If older than 10 minutes (600 seconds) -> MARKET CLOSED
+        if time_diff > 600:
+            is_stale = True
+            
+        # Format time string
+        if time_diff < 60: time_str = "Just now"
+        elif time_diff < 3600: time_str = f"{int(time_diff/60)}m ago"
+        elif time_diff < 86400: time_str = f"{int(time_diff/3600)}h ago"
+        else: time_str = f"{int(time_diff/86400)}d ago"
+            
+    except Exception as e:
+        time_str = "Unknown"
+
+    # 3. RENDER "MARKET CLOSED" CARD
+    if is_stale:
+        st.markdown(f"""
+        <div class="signal-card signal-card-closed">
+            <div class="signal-header">
+                <div>
+                    <div class="signal-type" style="color: #94A3B8;">MARKET CLOSED</div>
+                    <div class="signal-symbol">{symbol}</div>
+                </div>
+                <div class="signal-icon">💤</div>
+            </div>
+            
+            <div style="text-align: center; padding: 1.5rem 0;">
+                <div style="font-family: 'Space Mono'; color: #64748B; margin-bottom: 1.5rem; font-size: 0.9rem;">
+                    Last update received {time_str}.<br>System in standby mode.
+                </div>
+                
+                <div style="background: rgba(30, 41, 59, 0.4); padding: 1rem; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.1); display: inline-block; min-width: 200px;">
+                    <div style="font-size: 0.75rem; color: #64748B; text-transform: uppercase; margin-bottom: 5px; font-family: 'Rajdhani', sans-serif; font-weight: 600;">Last Known Price</div>
+                    <div style="font-family: 'Orbitron', monospace; font-size: 1.5rem; color: #94A3B8;">${signal_data.get('current_price', 0):,.2f}</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    # 4. RENDER ACTIVE SIGNAL CARD (If market open)
     rec = signal_data.get('recommendation', 'WAIT')
     price = signal_data.get('current_price', 0)
     entry = signal_data.get('entry_price', 0)
@@ -769,7 +827,7 @@ def render_signal_panel(symbol, signal_data):
     else:
         card_class, icon, color = "signal-card-wait", "⚪", "#64748B"
 
-    # HTML Render with enhanced design
+    # HTML Render
     st.markdown(f"""
     <div class="signal-card {card_class}">
         <div class="signal-header">
@@ -898,8 +956,7 @@ def main():
                 df = get_price_history(symbol, hours=4)
                 if not df.empty:
                     chart = create_price_chart(df, signal_data)
-                    if chart:
-                        st.plotly_chart(chart, use_container_width=True)
+                    st.plotly_chart(chart, use_container_width=True)
                 else:
                     st.markdown("""
                     <div style="text-align: center; padding: 3rem 0; color: #64748B; font-family: 'Space Mono', monospace;">
