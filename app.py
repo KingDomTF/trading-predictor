@@ -33,8 +33,8 @@ class AppConfig:
     PAGE_ICON = "🏛️"
     LAYOUT = "wide"
     
-    # Assets to display
-    ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD","XAGUSD"]
+    # --- LISTA ASSET AGGIORNATA ---
+    ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
     
     # Refresh rates
     AUTO_REFRESH_RATE = 5  # Seconds
@@ -158,11 +158,9 @@ def load_custom_css():
 def init_supabase():
     """Initialize Supabase client (Hybrid: Cloud Secrets + Local .env)"""
     try:
-        # Try Streamlit Secrets first (Production)
         if 'SUPABASE_URL' in st.secrets:
             url = st.secrets["SUPABASE_URL"]
             key = st.secrets["SUPABASE_KEY"]
-        # Fallback to Environment Variables (Local)
         else:
             url = os.getenv("SUPABASE_URL")
             key = os.getenv("SUPABASE_KEY")
@@ -308,7 +306,7 @@ def render_signal_panel(symbol, signal_data):
     <div class="{card_class}">
         <div class="signal-icon">{icon}</div>
         <div class="signal-type">{symbol} - {rec}</div>
-        <div class="price-display" style="color: {p_color};">${price:,.5f}</div>
+        <div class="price-display" style="color: {p_color};">${price:,.2f}</div>
         
         <div class="confidence-bar">
             <div class="confidence-fill" style="width: {conf}%;"></div>
@@ -318,15 +316,15 @@ def render_signal_panel(symbol, signal_data):
         <div class="stats-grid">
             <div class="stat-box">
                 <div class="stat-label">Entry</div>
-                <div class="stat-value stat-value-blue">${entry:,.5f}</div>
+                <div class="stat-value stat-value-blue">${entry:,.2f}</div>
             </div>
             <div class="stat-box">
                 <div class="stat-label">Stop Loss</div>
-                <div class="stat-value stat-value-red">${sl:,.5f}</div>
+                <div class="stat-value stat-value-red">${sl:,.2f}</div>
             </div>
             <div class="stat-box">
                 <div class="stat-label">Take Profit</div>
-                <div class="stat-value stat-value-green">${tp:,.5f}</div>
+                <div class="stat-value stat-value-green">${tp:,.2f}</div>
             </div>
         </div>
         <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; color: #aaa; font-size: 13px;">
@@ -388,15 +386,11 @@ def main():
                     chart = create_price_chart(df, signal_data)
                     st.plotly_chart(chart, use_container_width=True)
                 else:
-                    st.info("Waiting for Price Feed data from MT4...")
+                    st.info(f"Waiting for Price Feed data for {symbol}...")
 
     # 6. Auto-Refresh
     time.sleep(AppConfig.AUTO_REFRESH_RATE)
     st.rerun()
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     main()
