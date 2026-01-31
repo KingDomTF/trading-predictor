@@ -97,50 +97,36 @@ class SafeMath:
     @staticmethod
     def calculate_levels(entry_price, direction, volatility):
         """
-        Calculate Stop Loss and Take Profit with safety checks
+        Calculate Stop Loss and Take Profit with ROBUST safety checks
         Returns: (stop_loss, take_profit)
         """
         
-        # Ensure volatility is reasonable
-        if volatility <= 0 or volatility > entry_price * 0.05:
-            # Fallback to 0.3% if volatility is invalid
-            volatility = entry_price * 0.003
+        # === SAFETY CHECK 1: Validate volatility ===
+        min_volatility = entry_price * 0.001  # Min 0.1%
+        max_volatility = entry_price * 0.05   # Max 5%
         
-        # Calculate distances
-        sl_distance = volatility * 1.5  # 1.5x ATR for stop
-        tp_distance = sl_distance * Config.MIN_RR_RATIO  # 2:1 minimum
+        if volatility <= 0 or volatility < min_volatility or volatility > max_volatility:
+            volatility = entry_price * 0.003  # Fallback 0.3%
         
-        # Calculate levels based on direction
+        # === CALCULATE DISTANCES ===
+        sl_distance = volatility * 1.5
+        tp_distance = sl_distance * Config.MIN_RR_RATIO
+        
+        # === SAFETY CHECK 2: Minimum distances ===
+        min_sl_distance = entry_price * 0.002  # Min 0.2%
+        if sl_distance < min_sl_distance:
+            sl_distance = min_sl_distance
+            tp_distance = sl_distance * Config.MIN_RR_RATIO
+        
+        # === CALCULATE LEVELS ===
         if direction == "BUY":
             stop_loss = entry_price - sl_distance
             take_profit = entry_price + tp_distance
-            
-            # Safety check: SL must be below entry
-            if stop_loss >= entry_price:
-                stop_loss = entry_price * 0.997  # 0.3% below
-                take_profit = entry_price * 1.006  # 0.6% above
-                
         else:  # SELL
             stop_loss = entry_price + sl_distance
             take_profit = entry_price - tp_distance
             
-            # Safety check: SL must be above entry
-            if stop_loss <= entry_price:
-                stop_loss = entry_price * 1.003  # 0.3% above
-                take_profit = entry_price * 0.994  # 0.6% below
-        
-        # Final validation
-        if stop_loss <= 0 or take_profit <= 0:
-            # Emergency fallback
-            if direction == "BUY":
-                stop_loss = entry_price * 0.997
-                take_profit = entry_price * 1.006
-            else:
-                stop_loss = entry_price * 1.003
-                take_profit = entry_price * 0.994
-        
-        # Round to 2 decimals for clean display
-        return round(stop_loss, 2), round(take_profit, 2)
+        return round(stop_loss, 5), round(take_profit, 5)
     
     @staticmethod
     def validate_price(price):
@@ -170,9 +156,7 @@ class TradingEngine:
     def analyze(self, symbol, current_price):
         """
         Analyze market and return trading signal
-        Returns: dict with signal details or None
         """
-        
         # Get price history
         history = list(self.price_buffer[symbol])
         
@@ -188,74 +172,59 @@ class TradingEngine:
         prices = np.array(history)
         
         # === TECHNICAL INDICATORS ===
-        
-        # Moving Averages
         ma_fast = np.mean(prices[-Config.MA_FAST:])
         ma_slow = np.mean(prices[-Config.MA_SLOW:])
         
-        # ATR (Average True Range) - volatility measure
+        # ATR (Volatility)
         price_changes = np.abs(np.diff(prices))
         atr = np.mean(price_changes[-14:]) * 2.0 if len(price_changes) >= 14 else np.std(prices) * 0.5
         
-        # RSI (Relative Strength Index)
+        # RSI
         deltas = np.diff(prices)
         gains = deltas[deltas > 0]
         losses = -deltas[deltas < 0]
-        
         avg_gain = np.mean(gains) if len(gains) > 0 else 0.0001
         avg_loss = np.mean(losses) if len(losses) > 0 else 0.0001
-        
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
         
         # === TRADING LOGIC ===
-        
         signal = None
         reason = ""
         confidence = 0
         
-        # Strategy 1: Trend Following (Momentum)
+        # Trend Following
         if current_price > ma_slow and ma_fast > ma_slow:
-            # Uptrend confirmed
             if rsi > 50 and rsi < 70:
                 signal = "BUY"
                 reason = "Momentum Trend Up"
                 confidence = 85
-        
         elif current_price < ma_slow and ma_fast < ma_slow:
-            # Downtrend confirmed
             if rsi < 50 and rsi > 30:
                 signal = "SELL"
                 reason = "Momentum Trend Down"
                 confidence = 85
         
-        # Strategy 2: Mean Reversion (Oversold/Overbought)
+        # Mean Reversion
         if rsi < Config.RSI_OVERSOLD:
             signal = "BUY"
             reason = "Oversold Reversal"
             confidence = 75
-        
         elif rsi > Config.RSI_OVERBOUGHT:
             signal = "SELL"
             reason = "Overbought Reversal"
             confidence = 75
         
         # === SIGNAL FILTERING ===
-        
-        # Avoid sending same signal repeatedly
         if signal:
-            # Check if signal changed or enough time passed (30 seconds)
+            # Check for duplicates or timing
             if signal == self.last_signal[symbol]:
                 if time.time() - self.last_signal_time[symbol] < 30:
                     signal = None  # Skip duplicate
         
-        # === PREPARE RESULT ===
-        
+        # === RESULT ===
         if signal:
-            # Calculate Stop Loss and Take Profit
             sl, tp = SafeMath.calculate_levels(current_price, signal, atr)
-            
-            # Update cache
             self.last_signal[symbol] = signal
             self.last_signal_time[symbol] = time.time()
             
@@ -266,17 +235,12 @@ class TradingEngine:
                 'stop_loss': sl,
                 'take_profit': tp,
                 'confidence': confidence,
-                'reason': reason,
-                'atr': round(atr, 5),
-                'rsi': round(rsi, 1)
+                'reason': reason
             }
-        
         else:
-            # No signal, market scanning
             return {
                 'status': 'SCANNING',
-                'message': f'RSI: {rsi:.1f} | Trend: {"UP" if ma_fast > ma_slow else "DOWN"}',
-                'rsi': round(rsi, 1)
+                'message': f'RSI: {rsi:.1f} | Trend: {"UP" if ma_fast > ma_slow else "DOWN"}'
             }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -295,42 +259,23 @@ class DatabaseConnector:
             logger.error(f"❌ Supabase connection failed: {e}")
             self.connected = False
         
-        # Rate limiting
         self.last_feed_update = {symbol: 0 for symbol in Config.ASSETS}
-        self.last_oracle_update = {symbol: 0 for symbol in Config.ASSETS}
     
     def send_price_feed(self, symbol, price, equity):
-        """
-        Send price to mt4_feed table (for charts)
-        Rate limited to 1 update per second per symbol
-        """
-        if not self.connected:
-            return
-        
-        # Rate limit check
-        if time.time() - self.last_feed_update[symbol] < 1.0:
-            return
+        if not self.connected: return
+        if time.time() - self.last_feed_update[symbol] < 1.0: return
         
         try:
             self.client.table("mt4_feed").insert({
-                "symbol": symbol,
-                "price": round(price, 5),
-                "equity": round(equity, 2)
+                "symbol": symbol, "price": round(price, 5), "equity": round(equity, 2)
             }).execute()
-            
             self.last_feed_update[symbol] = time.time()
-        except:
-            pass  # Silent fail for feed updates
+        except: pass
     
     def send_trading_signal(self, symbol, signal_data):
-        """
-        Send trading signal to ai_oracle table (for app.py display)
-        """
-        if not self.connected:
-            return
+        if not self.connected: return
         
         try:
-            # Prepare payload compatible with your app.py
             payload = {
                 "symbol": symbol,
                 "recommendation": signal_data.get('signal', 'WAIT'),
@@ -344,13 +289,8 @@ class DatabaseConnector:
                 "prob_buy": 100 if signal_data.get('signal') == 'BUY' else 0,
                 "prob_sell": 100 if signal_data.get('signal') == 'SELL' else 0
             }
-            
             self.client.table("ai_oracle").insert(payload).execute()
-            
             logger.info(f"📡 Signal sent: {symbol} {signal_data.get('signal', 'WAIT')}")
-            
-            self.last_oracle_update[symbol] = time.time()
-            
         except Exception as e:
             logger.error(f"❌ Failed to send signal: {e}")
 
@@ -359,30 +299,14 @@ class DatabaseConnector:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    """Main execution loop"""
+    print(f"\n🏛️  TITAN V90 ORACLE PRIME\n{'═'*30}\nAssets: {', '.join(Config.ASSETS)}\nMT4 Path: {Config.MT4_PATH}\n")
     
-    print("\n" + "═" * 70)
-    print("🏛️  TITAN V90 ORACLE PRIME - SIMPLIFIED EDITION")
-    print("═" * 70)
-    print(f"Assets: {', '.join(Config.ASSETS)}")
-    print(f"MT4 Path: {Config.MT4_PATH}")
-    print("═" * 70 + "\n")
+    if not Config.validate(): return
     
-    # Validate configuration
-    if not Config.validate():
-        print("\n❌ Configuration error. Check your .env file")
-        return
-    
-    # Initialize components
     engine = TradingEngine()
     db = DatabaseConnector()
     
-    if not db.connected:
-        print("\n⚠️  Running without database connection (check SUPABASE credentials)")
-    
     logger.info("🚀 System online - Processing market data...")
-    
-    # Main loop
     iteration = 0
     
     while True:
@@ -390,90 +314,39 @@ def main():
         cycle_start = time.time()
         
         for symbol in Config.ASSETS:
-            # Read MT4 JSON file
             file_path = os.path.join(Config.MT4_PATH, f"{symbol}_data.json")
-            
-            if not os.path.exists(file_path):
-                continue
+            if not os.path.exists(file_path): continue
             
             try:
-                # Read file
                 with open(file_path, 'r', encoding='utf-8-sig') as f:
                     content = f.read().strip()
-                
-                if not content:
-                    continue
+                if not content: continue
                 
                 data = json.loads(content)
-                
-                # Extract data
                 bid = float(data.get('bid', 0))
                 ask = float(data.get('ask', 0))
                 equity = float(data.get('equity', 10000))
+                price = (bid + ask) / 2.0 if bid > 0 else float(data.get('price', 0))
                 
-                # Calculate mid price
-                if bid > 0 and ask > 0:
-                    price = (bid + ask) / 2.0
-                else:
-                    price = float(data.get('price', 0))
+                if not SafeMath.validate_price(price): continue
                 
-                # Validate price
-                if not SafeMath.validate_price(price):
-                    continue
-                
-                # Send price feed to database (for charts)
                 db.send_price_feed(symbol, price, equity)
-                
-                # Add to analysis buffer
                 engine.add_tick(symbol, price)
-                
-                # Analyze market
                 result = engine.analyze(symbol, price)
                 
-                # Handle result
-                if result['status'] == 'WARMUP':
-                    # Still collecting data
-                    if iteration % 50 == 0:  # Log every 50 iterations
-                        print(f"⏳ {symbol}: {result['progress']} - {result['message']}", end='\r')
-                
-                elif result['status'] == 'SIGNAL':
-                    # NEW TRADING SIGNAL!
-                    print(f"\n🎯 {symbol} {result['signal']} @ ${price:.2f}")
-                    print(f"   SL: ${result['stop_loss']:.2f} | TP: ${result['take_profit']:.2f}")
-                    print(f"   Reason: {result['reason']} | Confidence: {result['confidence']}%")
-                    
-                    # Send to database
+                if result['status'] == 'SIGNAL':
+                    print(f"\n🎯 {symbol} {result['signal']} @ ${price:.2f} | Conf: {result['confidence']}%")
                     db.send_trading_signal(symbol, result)
-                
                 elif result['status'] == 'SCANNING':
-                    # Market scanning
-                    if iteration % 100 == 0:  # Log every 100 iterations
+                    if iteration % 100 == 0:
                         print(f"👁️  {symbol}: ${price:.2f} | {result['message']}", end='\r')
             
-            except json.JSONDecodeError:
-                continue
-            except Exception as e:
-                logger.debug(f"Error processing {symbol}: {e}")
-                continue
+            except Exception: continue
         
-        # Performance log every 1000 iterations
-        if iteration % 1000 == 0:
-            logger.info(f"💓 System healthy | Iteration {iteration}")
+        if iteration % 1000 == 0: logger.info(f"💓 System healthy | Iteration {iteration}")
         
-        # CPU throttle (don't burn the processor)
         elapsed = time.time() - cycle_start
-        if elapsed < 0.1:
-            time.sleep(0.1 - elapsed)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════════
+        if elapsed < 0.1: time.sleep(0.1 - elapsed)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\n🛑 System shutdown requested")
-        print("✅ TITAN V90 stopped gracefully\n")
-    except Exception as e:
-        logger.critical(f"💀 Fatal error: {e}", exc_info=True)
+    main()
