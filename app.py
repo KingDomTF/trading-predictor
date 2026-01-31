@@ -1,176 +1,170 @@
 """
 ═══════════════════════════════════════════════════════════════════════════════
-TITAN V90 DASHBOARD - PREMIUM FRONTEND INTERFACE
+TITAN ORACLE DASHBOARD - STREAMLIT FRONTEND
 ═══════════════════════════════════════════════════════════════════════════════
-Professional Real-Time Trading Terminal powered by TITAN V90 Backend
-Visualizes market data, AI signals, and performance metrics via Streamlit
+Real-time trading signals visualization powered by TITAN V90 Oracle Prime
+Author: TITAN Trading Systems
+Version: 1.0
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
-import os
-import time
+import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import streamlit as st
 from datetime import datetime, timedelta
-
-# Dependency check & Import
-try:
-    from supabase import create_client
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    st.error("❌ Missing libraries. Run: pip install supabase python-dotenv plotly pandas")
-    st.stop()
+import time
+import os
+from supabase import create_client
+from dotenv import load_dotenv
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
+# CONFIGURATION & SETUP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class AppConfig:
-    """Frontend Configuration"""
-    PAGE_TITLE = "TITAN Oracle Prime"
-    PAGE_ICON = "🏛️"
-    LAYOUT = "wide"
-    
-    # Assets to display
-    ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30", "ETHUSD"]
-    
-    # Refresh rates
-    AUTO_REFRESH_RATE = 5  # Seconds
-
-# Initialize Page
 st.set_page_config(
-    page_title=AppConfig.PAGE_TITLE,
-    page_icon=AppConfig.PAGE_ICON,
-    layout=AppConfig.LAYOUT,
-    initial_sidebar_state="collapsed"
+    page_title="TITAN Oracle Prime",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# VISUAL STYLING (CSS ENGINE)
-# ═══════════════════════════════════════════════════════════════════════════════
+# Caricamento Variabili d'Ambiente (Ibrido: Locale + Cloud)
+load_dotenv()
 
-def load_custom_css():
-    """Injects the Premium 'Cyberpunk/Bloomberg' Style"""
-    st.markdown("""
-    <style>
-        /* === GLOBAL THEME === */
-        .main { background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0a0e27 100%); }
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        
-        /* === HEADER === */
-        .titan-header {
-            background: linear-gradient(135deg, rgba(0,217,255,0.1) 0%, rgba(0,153,255,0.1) 100%);
-            border: 2px solid rgba(0,217,255,0.3);
-            border-radius: 20px;
-            padding: 30px;
-            text-align: center;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 40px rgba(0,217,255,0.2);
-        }
-        .titan-title {
-            font-size: 56px; font-weight: 900;
-            background: linear-gradient(135deg, #00d9ff 0%, #0099ff 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            margin: 0; text-shadow: 0 0 30px rgba(0,217,255,0.5);
-        }
-        .titan-subtitle { font-size: 18px; color: #aaaaaa; margin-top: 10px; }
-        
-        /* === STATUS BADGE === */
-        .status-badge {
-            display: inline-block; background: rgba(0,255,136,0.2);
-            border: 1px solid #00ff88; padding: 8px 20px;
-            border-radius: 20px; font-size: 14px; color: #00ff88; margin-top: 15px;
-        }
-        .status-dot {
-            display: inline-block; width: 10px; height: 10px;
-            background: #00ff88; border-radius: 50%; margin-right: 8px;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 10px #00ff88; }
-            50% { opacity: 0.5; box-shadow: 0 0 20px #00ff88; }
-        }
+# Tenta di prendere le credenziali da Streamlit Secrets (Cloud) o .env (Locale)
+try:
+    if 'SUPABASE_URL' in st.secrets:
+        SUPABASE_URL = st.secrets["SUPABASE_URL"]
+        SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    else:
+        SUPABASE_URL = os.getenv("SUPABASE_URL")
+        SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+except FileNotFoundError:
+    # Fallback per locale se secrets.toml non esiste
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-        /* === TABS STYLING === */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px; background: rgba(26,31,58,0.6);
-            padding: 15px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);
-        }
-        .stTabs [data-baseweb="tab"] {
-            background: linear-gradient(135deg, rgba(22,33,62,0.8) 0%, rgba(15,52,96,0.8) 100%);
-            border: 2px solid rgba(0,217,255,0.3); border-radius: 12px;
-            padding: 12px 24px; color: #ffffff; font-weight: 600;
-        }
-        .stTabs [aria-selected="true"] {
-            background: linear-gradient(135deg, #00d9ff 0%, #0099ff 100%);
-            border-color: #00d9ff; color: #000000; box-shadow: 0 8px 25px rgba(0,217,255,0.4);
-        }
-
-        /* === SIGNAL CARDS === */
-        .signal-card-buy {
-            background: linear-gradient(135deg, rgba(30,60,40,0.95) 0%, rgba(45,95,62,0.95) 100%);
-            border: 2px solid #00ff88; border-radius: 20px; padding: 25px;
-            box-shadow: 0 10px 40px rgba(0,255,136,0.3); margin: 20px 0;
-        }
-        .signal-card-sell {
-            background: linear-gradient(135deg, rgba(60,30,30,0.95) 0%, rgba(95,45,45,0.95) 100%);
-            border: 2px solid #ff0044; border-radius: 20px; padding: 25px;
-            box-shadow: 0 10px 40px rgba(255,0,68,0.3); margin: 20px 0;
-        }
-        .signal-card-wait {
-            background: linear-gradient(135deg, rgba(42,42,60,0.8) 0%, rgba(58,58,78,0.8) 100%);
-            border: 2px solid rgba(136,136,136,0.5); border-radius: 20px;
-            padding: 25px; margin: 20px 0; opacity: 0.7;
-        }
-
-        /* === TYPOGRAPHY & METRICS === */
-        .signal-icon { font-size: 48px; margin-bottom: 15px; }
-        .signal-type { font-size: 32px; font-weight: bold; margin-bottom: 10px; }
-        .price-display { font-size: 56px; font-weight: 900; margin: 20px 0; text-shadow: 0 0 20px currentColor; }
-        
-        .confidence-bar { background: rgba(255,255,255,0.1); height: 8px; border-radius: 10px; margin: 15px 0; overflow: hidden; }
-        .confidence-fill { height: 100%; background: linear-gradient(90deg, #00ff88 0%, #00d9ff 100%); border-radius: 10px; }
-
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 25px 0; }
-        .stat-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; text-align: center; }
-        .stat-label { font-size: 12px; color: #888888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
-        .stat-value { font-size: 28px; font-weight: bold; color: #ffffff; }
-        
-        .stat-value-green { color: #00ff88; }
-        .stat-value-red { color: #ff0044; }
-        .stat-value-blue { color: #00d9ff; }
-
-        .metric-card {
-            background: linear-gradient(135deg, rgba(22,33,62,0.6) 0%, rgba(15,52,96,0.6) 100%);
-            border: 1px solid rgba(0,217,255,0.3); border-radius: 15px; padding: 20px; margin: 10px 0;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+# Assets tracking
+ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DATABASE CONNECTOR
+# CUSTOM CSS (CYBERPUNK THEME)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+st.markdown("""
+<style>
+    /* Main theme */
+    .stApp {
+        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+        color: white;
+    }
+    
+    /* Metric cards */
+    .metric-card {
+        background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+        border-radius: 15px;
+        padding: 20px;
+        margin: 10px 0;
+        border: 1px solid #00d9ff;
+        box-shadow: 0 4px 15px rgba(0, 217, 255, 0.1);
+    }
+    
+    /* Signal cards */
+    .signal-buy {
+        background: linear-gradient(135deg, #0f2e1d 0%, #1a4a30 100%);
+        border: 2px solid #00ff88;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+    }
+    
+    .signal-sell {
+        background: linear-gradient(135deg, #2e0f0f 0%, #4a1a1a 100%);
+        border: 2px solid #ff0044;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 0 15px rgba(255, 0, 68, 0.2);
+    }
+    
+    .signal-wait {
+        background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+        border: 1px solid #444;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 15px 0;
+        opacity: 0.8;
+    }
+    
+    /* Typography */
+    .price-big {
+        font-size: 36px;
+        font-weight: 800;
+        color: #fff;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    }
+    
+    .signal-title {
+        font-size: 20px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .stat-label {
+        font-size: 12px;
+        color: #8b949e;
+        margin-bottom: 2px;
+        text-transform: uppercase;
+    }
+    
+    .stat-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: #ffffff;
+    }
+    
+    /* Animations */
+    .status-active {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #00ff88;
+        box-shadow: 0 0 10px #00ff88;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+    
+    /* Buttons */
+    .stButton>button {
+        background: linear-gradient(90deg, #00d9ff 0%, #0099ff 100%);
+        color: white;
+        border: none;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATABASE CONNECTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_resource
 def init_supabase():
-    """Initialize Supabase client (Hybrid: Cloud Secrets + Local .env)"""
+    """Initialize Supabase client safely"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
     try:
-        # Try Streamlit Secrets first (Production)
-        if 'SUPABASE_URL' in st.secrets:
-            url = st.secrets["SUPABASE_URL"]
-            key = st.secrets["SUPABASE_KEY"]
-        # Fallback to Environment Variables (Local)
-        else:
-            url = os.getenv("SUPABASE_URL")
-            key = os.getenv("SUPABASE_KEY")
-
-        if not url or not key:
-            return None
-            
-        return create_client(url, key)
+        client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        return client
     except Exception as e:
         st.error(f"❌ Database connection failed: {e}")
         return None
@@ -178,25 +172,33 @@ def init_supabase():
 supabase = init_supabase()
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DATA ENGINE
+# DATA FETCHING FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_latest_signal(symbol):
-    """Fetch latest AI signal from database"""
-    if not supabase: return None
+def get_latest_signals():
+    """Fetch latest trading signals for all assets"""
+    if not supabase: return {}
+    
     try:
-        response = supabase.table("ai_oracle")\
-            .select("*")\
-            .eq("symbol", symbol)\
-            .order("created_at", desc=True)\
-            .limit(1)\
-            .execute()
-        return response.data[0] if response.data else None
-    except: return None
+        signals = {}
+        for symbol in ASSETS:
+            response = supabase.table("ai_oracle")\
+                .select("*")\
+                .eq("symbol", symbol)\
+                .order("created_at", desc=True)\
+                .limit(1)\
+                .execute()
+            
+            if response.data:
+                signals[symbol] = response.data[0]
+        return signals
+    except Exception:
+        return {}
 
 def get_price_history(symbol, hours=4):
-    """Fetch price candles for charting"""
+    """Fetch price history for charting"""
     if not supabase: return pd.DataFrame()
+    
     try:
         cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
         response = supabase.table("mt4_feed")\
@@ -211,11 +213,13 @@ def get_price_history(symbol, hours=4):
             df['created_at'] = pd.to_datetime(df['created_at'])
             return df
         return pd.DataFrame()
-    except: return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
 
-def get_24h_stats():
-    """Calculate 24h performance metrics"""
+def get_performance_stats():
+    """Calculate overall performance statistics"""
     if not supabase: return None
+    
     try:
         cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
         response = supabase.table("ai_oracle")\
@@ -226,102 +230,202 @@ def get_24h_stats():
         
         if not response.data: return None
         
-        total = len(response.data)
-        buy = sum(1 for s in response.data if s['recommendation'] == 'BUY')
-        sell = sum(1 for s in response.data if s['recommendation'] == 'SELL')
-        avg_conf = sum(s.get('confidence_score', 0) for s in response.data) / total if total > 0 else 0
+        total_signals = len(response.data)
+        buy_signals = sum(1 for s in response.data if s['recommendation'] == 'BUY')
+        sell_signals = sum(1 for s in response.data if s['recommendation'] == 'SELL')
+        avg_confidence = sum(s.get('confidence_score', 0) for s in response.data) / total_signals if total_signals > 0 else 0
         
-        return {'total': total, 'buy': buy, 'sell': sell, 'confidence': avg_conf}
-    except: return None
+        return {
+            'total': total_signals,
+            'buy': buy_signals,
+            'sell': sell_signals,
+            'confidence': avg_confidence
+        }
+    except Exception:
+        return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# UI COMPONENTS
+# VISUALIZATION FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def create_price_chart(df, signal_data):
-    """Render interactive Plotly chart"""
+    """Create interactive price chart with Plotly"""
     if df.empty: return None
     
     fig = go.Figure()
     
-    # Main Price Line
+    # Price line
     fig.add_trace(go.Scatter(
-        x=df['created_at'], y=df['price'], mode='lines', name='Price',
-        line=dict(color='#00d9ff', width=3),
-        fill='tozeroy', fillcolor='rgba(0,217,255,0.1)'
+        x=df['created_at'], y=df['price'],
+        mode='lines', name='Price',
+        line=dict(color='#00d9ff', width=2),
+        fill='tozeroy', fillcolor='rgba(0, 217, 255, 0.1)'
     ))
     
-    # Trading Levels (Entry/SL/TP)
+    # Add entry/SL/TP lines if signal exists
     if signal_data and signal_data.get('recommendation') in ['BUY', 'SELL']:
         entry = signal_data.get('entry_price', 0)
         sl = signal_data.get('stop_loss', 0)
         tp = signal_data.get('take_profit', 0)
         
-        if entry > 0: fig.add_hline(y=entry, line_dash="dash", line_color="#ffffff", annotation_text="ENTRY")
-        if sl > 0: fig.add_hline(y=sl, line_dash="dot", line_color="#ff0044", annotation_text="SL")
-        if tp > 0: fig.add_hline(y=tp, line_dash="dot", line_color="#00ff88", annotation_text="TP")
+        if entry: fig.add_hline(y=entry, line_dash="dash", line_color="white", annotation_text="ENTRY")
+        if sl: fig.add_hline(y=sl, line_dash="dot", line_color="#ff0044", annotation_text="SL")
+        if tp: fig.add_hline(y=tp, line_dash="dot", line_color="#00ff88", annotation_text="TP")
     
-    # Styling
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(10,14,39,0.5)',
-        height=450,
-        margin=dict(l=20, r=20, t=40, b=20),
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title=""),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="Price"),
-        hovermode='x unified', font=dict(color='#ffffff')
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=350,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis=dict(showgrid=False, title=""),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title="Price"),
+        hovermode='x unified',
+        showlegend=False
     )
     return fig
 
-def render_signal_panel(symbol, signal_data):
-    """Render the Premium Card for a specific symbol"""
+def render_signal_card(symbol, signal_data):
+    """Render a trading signal card"""
     if not signal_data:
         st.markdown(f"""
-        <div class="signal-card-wait">
-            <div class="signal-icon">⚪</div>
-            <div class="signal-type">{symbol}</div>
-            <p style="color: #888;">Scanning Market...</p>
+        <div class="signal-wait">
+            <div class="signal-title">⚪ {symbol}</div>
+            <div style="color: #aaa; font-size: 14px;">Scanning Market...</div>
         </div>
         """, unsafe_allow_html=True)
         return
-
-    # Extract Data
+    
     rec = signal_data.get('recommendation', 'WAIT')
     price = signal_data.get('current_price', 0)
     entry = signal_data.get('entry_price', 0)
     sl = signal_data.get('stop_loss', 0)
     tp = signal_data.get('take_profit', 0)
     conf = signal_data.get('confidence_score', 0)
-    details = signal_data.get('details', 'No details')
-
-    # Styling Logic
+    details = signal_data.get('details', '')
+    
+    # Card Logic
+    card_class = "signal-wait"
+    icon = "⚪"
+    color = "#888"
+    
     if rec == 'BUY':
-        card_class, icon, p_color = "signal-card-buy", "🟢", "#00ff88"
+        card_class = "signal-buy"
+        icon = "🟢"
+        color = "#00ff88"
     elif rec == 'SELL':
-        card_class, icon, p_color = "signal-card-sell", "🔴", "#ff0044"
-    else:
-        card_class, icon, p_color = "signal-card-wait", "⚪", "#888888"
-
-    # HTML Render
+        card_class = "signal-sell"
+        icon = "🔴"
+        color = "#ff0044"
+    
     st.markdown(f"""
     <div class="{card_class}">
-        <div class="signal-icon">{icon}</div>
-        <div class="signal-type">{symbol} - {rec}</div>
-        <div class="price-display" style="color: {p_color};">${price:,.5f}</div>
-        
-        <div class="confidence-bar">
-            <div class="confidence-fill" style="width: {conf}%;"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="signal-title">{icon} {symbol} &nbsp; {rec}</div>
+            <div style="background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 5px; font-weight: bold; color: {color};">
+                {conf}% CONFIDENCE
+            </div>
         </div>
-        <div style="text-align: center; color: #aaa; font-size: 14px;">Confidence: {conf}%</div>
         
-        <div class="stats-grid">
-            <div class="stat-box">
-                <div class="stat-label">Entry</div>
-                <div class="stat-value stat-value-blue">${entry:,.5f}</div>
+        <div class="price-big">${price:,.2f}</div>
+        
+        <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+            <div>
+                <div class="stat-label">ENTRY</div>
+                <div class="stat-value" style="color: #fff;">${entry:,.2f}</div>
             </div>
-            <div class="stat-box">
-                <div class="stat-label">Stop Loss</div>
-                <div class="stat-value stat-value-red">${sl:,.5f}</div>
+            <div>
+                <div class="stat-label">STOP LOSS</div>
+                <div class="stat-value" style="color: #ff0044;">${sl:,.2f}</div>
             </div>
-            <div class="stat
+            <div>
+                <div class="stat-label">TAKE PROFIT</div>
+                <div class="stat-value" style="color: #00ff88;">${tp:,.2f}</div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 15px; font-size: 12px; color: #888; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+            DETAILS: {details}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN APP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def main():
+    # Header
+    st.markdown("""
+    <div style="text-align: center; padding-bottom: 20px;">
+        <h1 style="color: #00d9ff; font-size: 42px; margin: 0; text-shadow: 0 0 20px rgba(0,217,255,0.5);">
+            🏛️ TITAN ORACLE PRIME
+        </h1>
+        <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 10px;">
+            <div class="status-active"></div>
+            <span style="color: #00ff88; font-weight: bold; font-size: 14px;">SYSTEM ONLINE</span>
+            <span style="color: #666;">•</span>
+            <span style="color: #aaa; font-size: 14px;">V90 ENTERPRISE CORE</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Sidebar
+    with st.sidebar:
+        st.markdown("### ⚙️ CONTROL PANEL")
+        auto_refresh = st.checkbox("🔄 Auto Refresh", value=True)
+        
+        st.markdown("---")
+        st.markdown("### 📊 ASSETS")
+        selected_assets = st.multiselect("Active Feeds", ASSETS, default=ASSETS)
+        
+        st.markdown("---")
+        st.markdown("### 📈 24H STATISTICS")
+        stats = get_performance_stats()
+        
+        if stats:
+            c1, c2 = st.columns(2)
+            c1.metric("Signals", stats['total'])
+            c1.metric("Buy", stats['buy'])
+            c2.metric("Confidence", f"{stats['confidence']:.0f}%")
+            c2.metric("Sell", stats['sell'])
+        else:
+            st.info("No data in 24h")
+            
+        if st.button("🔄 Force Refresh", use_container_width=True):
+            st.rerun()
+
+    # Main Grid
+    if not supabase:
+        st.error("🚨 CRITICAL: Database connection failed. Check Credentials.")
+        st.stop()
+        
+    signals = get_latest_signals()
+    
+    if not selected_assets:
+        st.warning("Select assets from sidebar")
+        return
+
+    # Dynamic Grid
+    cols = st.columns(2)
+    for idx, symbol in enumerate(selected_assets):
+        with cols[idx % 2]:
+            signal_data = signals.get(symbol)
+            render_signal_card(symbol, signal_data)
+            
+            # Chart Toggle
+            with st.expander(f"📈 {symbol} Analysis Chart", expanded=False):
+                df = get_price_history(symbol, hours=4)
+                if not df.empty:
+                    chart = create_price_chart(df, signal_data)
+                    st.plotly_chart(chart, use_container_width=True)
+                else:
+                    st.caption("Waiting for price feed...")
+
+    # Auto Refresh Loop
+    if auto_refresh:
+        time.sleep(2)
+        st.rerun()
+
+if __name__ == "__main__":
+    main()
