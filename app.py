@@ -804,6 +804,11 @@ def create_price_chart(df, signal_data):
     return fig
 
 def render_signal_panel(symbol, signal_data):
+    """
+    CORREZIONE PRINCIPALE: Uso corretto di st.markdown() con unsafe_allow_html=True
+    invece di concatenare stringhe HTML in variabili Python
+    """
+    
     # --- MARKET CLOSED LOGIC (10 Minutes) ---
     created_at = signal_data.get('created_at', '') if signal_data else ''
     is_stale = False
@@ -823,23 +828,22 @@ def render_signal_panel(symbol, signal_data):
     # --- RENDER CARD: MARKET CLOSED ---
     if not signal_data or is_stale:
         last_price = signal_data.get('current_price', 0) if signal_data else 0
-        # CORREZIONE: HTML allineato a sinistra per evitare che markdown lo interpreti come codice
         st.markdown(f"""
-<div class="signal-card signal-card-closed">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-            <div class="signal-symbol">{symbol}</div>
-            <div style="font-size: 2rem; color: #5A6678; font-weight:800; font-family: 'Syne', sans-serif;">MARKET CLOSED</div>
+        <div class="signal-card signal-card-closed">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <div class="signal-symbol">{symbol}</div>
+                    <div style="font-size: 2rem; color: #5A6678; font-weight:800; font-family: 'Syne', sans-serif;">MARKET CLOSED</div>
+                </div>
+                <div style="font-size: 3rem; opacity: 0.3;">💤</div>
+            </div>
+            <div style="margin-top:1.5rem; border-top:1px solid #2A3340; padding-top:1.5rem;">
+                <div class="price-label">LAST KNOWN PRICE</div>
+                <div style="font-family:'Syne', sans-serif; font-size:2.5rem; font-weight: 800; color:#3A4350;">${last_price:,.2f}</div>
+                <div style="color:#5A6678; font-size:0.75rem; margin-top:0.75rem; font-family: 'Space Mono', monospace;">Last update: {time_str}</div>
+            </div>
         </div>
-        <div style="font-size: 3rem; opacity: 0.3;">💤</div>
-    </div>
-    <div style="margin-top:1.5rem; border-top:1px solid #2A3340; padding-top:1.5rem;">
-        <div class="price-label">LAST KNOWN PRICE</div>
-        <div style="font-family:'Syne', sans-serif; font-size:2.5rem; font-weight: 800; color:#3A4350;">${last_price:,.2f}</div>
-        <div style="color:#5A6678; font-size:0.75rem; margin-top:0.75rem; font-family: 'Space Mono', monospace;">Last update: {time_str}</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         return
 
     # --- RENDER CARD: ACTIVE SIGNAL ---
@@ -859,52 +863,51 @@ def render_signal_panel(symbol, signal_data):
     else: 
         card_cls, icon, col = "signal-card-wait", "●", "#5A6678"
 
-    # CORREZIONE: HTML allineato a sinistra per evitare che markdown lo interpreti come codice
     st.markdown(f"""
-<div class="signal-card {card_cls}">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div>
-            <div class="signal-symbol">{symbol}</div>
-            <div class="signal-type" style="color:{col}">{rec}</div>
+    <div class="signal-card {card_cls}">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+                <div class="signal-symbol">{symbol}</div>
+                <div class="signal-type" style="color:{col}">{rec}</div>
+            </div>
+            <div style="font-size:3rem; opacity: 0.8; line-height: 1;">{icon}</div>
         </div>
-        <div style="font-size:3rem; opacity: 0.8; line-height: 1;">{icon}</div>
-    </div>
-    
-    <div style="margin: 1.5rem 0;">
-        <div class="price-label">CURRENT PRICE</div>
-        <div class="price-display">${price:,.2f}</div>
-    </div>
+        
+        <div style="margin: 1.5rem 0;">
+            <div class="price-label">CURRENT PRICE</div>
+            <div class="price-display">${price:,.2f}</div>
+        </div>
 
-    <div class="confidence-container">
-        <div class="confidence-header">
-            <span class="confidence-label">AI Confidence</span>
-            <span class="confidence-value" style="color:{col};">{conf}%</span>
+        <div class="confidence-container">
+            <div class="confidence-header">
+                <span class="confidence-label">AI Confidence</span>
+                <span class="confidence-value" style="color:{col};">{conf}%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" style="width:{conf}%; background:{col};"></div>
+            </div>
         </div>
-        <div class="progress-bar-bg">
-            <div class="progress-bar-fill" style="width:{conf}%; background:{col};"></div>
-        </div>
-    </div>
 
-    <div class="stats-grid">
-        <div class="stat-box">
-            <div class="stat-label">Entry</div>
-            <div class="stat-value val-blue">${entry:,.2f}</div>
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-label">Entry</div>
+                <div class="stat-value val-blue">${entry:,.2f}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Stop Loss</div>
+                <div class="stat-value val-sell">${sl:,.2f}</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Target</div>
+                <div class="stat-value val-buy">${tp:,.2f}</div>
+            </div>
         </div>
-        <div class="stat-box">
-            <div class="stat-label">Stop Loss</div>
-            <div class="stat-value val-sell">${sl:,.2f}</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Target</div>
-            <div class="stat-value val-buy">${tp:,.2f}</div>
+        
+        <div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid #2A3340; color:#5A6678; font-size:0.8rem; text-align:center; font-family: 'JetBrains Mono', monospace;">
+            {details}
         </div>
     </div>
-    
-    <div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid #2A3340; color:#5A6678; font-size:0.8rem; text-align:center; font-family: 'JetBrains Mono', monospace;">
-        {details}
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN APP
@@ -919,18 +922,18 @@ def main():
     
     # HEADER
     st.markdown("""
-<div class="titan-header">
-    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;">
-        <div class="titan-branding">
-            <div class="titan-title">TITAN ORACLE</div>
-            <div class="titan-subtitle">Next-Gen Trading Intelligence</div>
-        </div>
-        <div class="status-badge">
-            <span class="status-dot"></span> SYSTEM ACTIVE
+    <div class="titan-header">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;">
+            <div class="titan-branding">
+                <div class="titan-title">TITAN ORACLE</div>
+                <div class="titan-subtitle">Next-Gen Trading Intelligence</div>
+            </div>
+            <div class="status-badge">
+                <span class="status-dot"></span> SYSTEM ACTIVE
+            </div>
         </div>
     </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
     # TOP METRICS
     stats = get_24h_stats()
@@ -982,12 +985,12 @@ def main():
                 
             with col_right:
                 st.markdown(f"""
-<div class="chart-container">
-    <div class="chart-header">
-        <div class="chart-title">Price Action</div>
-        <div class="chart-badge">{symbol}</div>
-    </div>
-""", unsafe_allow_html=True)
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <div class="chart-title">Price Action</div>
+                        <div class="chart-badge">{symbol}</div>
+                    </div>
+                """, unsafe_allow_html=True)
                 
                 df = get_price_history(symbol, hours=4)
                 if not df.empty:
