@@ -4,14 +4,13 @@ TITAN V90 DASHBOARD - PREMIUM FRONTEND INTERFACE
 ═══════════════════════════════════════════════════════════════════════════════
 Professional Real-Time Trading Terminal powered by TITAN V90 Backend
 Visualizes market data, AI signals, and performance metrics via Streamlit
-Theme: Neo-Financial Brutalism (No Chart Version)
+Theme: Titanium Antracite & Zen Green (No Chart Version)
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
 import os
 import time
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 from datetime import datetime, timedelta
 
@@ -21,7 +20,7 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    st.error("❌ Missing libraries. Run: pip install supabase python-dotenv plotly pandas")
+    st.error("❌ Missing libraries. Run: pip install supabase python-dotenv pandas")
     st.stop()
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -49,180 +48,184 @@ st.set_page_config(
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# VISUAL STYLING (CSS ENGINE)
+# VISUAL STYLING (CSS ENGINE) - ANTHRACITE & ZEN GREEN THEME
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def load_custom_css():
-    """Injects the Style (Note: HTML strings are unindented to fix rendering)"""
+    """Injects the Titanium Anthracite & Zen Green Style"""
     st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@300;400;600;800&family=Syne:wght@400;600;700;800&display=swap');
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Inter:wght@300;400;600&display=swap');
+        
+        /* === GLOBAL THEME === */
+        * { box-sizing: border-box; }
+        
+        .main { 
+            background-color: #0E1012;
+            background-image: linear-gradient(145deg, #16181C 0%, #0B0D0F 100%);
+            color: #E4E8F0;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        h1, h2, h3, h4, h5, h6 { font-family: 'Rajdhani', sans-serif !important; }
+        
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        .block-container { padding-top: 2rem !important; padding-bottom: 3rem !important; }
+        
+        /* === HEADER === */
+        .titan-header {
+            background: linear-gradient(180deg, #1B1E23 0%, #16181C 100%);
+            border: 1px solid #2D333B;
+            border-radius: 16px;
+            padding: 2.5rem 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            position: relative;
+            overflow: hidden;
+            text-align: center;
+        }
+        
+        .titan-header::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, #69F0AE, transparent);
+            opacity: 0.5;
+        }
 
-/* === GLOBAL THEME === */
-* { box-sizing: border-box; margin: 0; padding: 0; }
+        .titan-title {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(90deg, #FFFFFF 0%, #B0B0B0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+        }
+        
+        .titan-subtitle {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.1rem;
+            color: #69F0AE; /* Verde Riposante */
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-top: 5px;
+            font-weight: 600;
+        }
+        
+        /* === STATUS BADGE === */
+        .status-badge {
+            background: rgba(105, 240, 174, 0.08);
+            border: 1px solid rgba(105, 240, 174, 0.2);
+            color: #69F0AE;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        .status-dot {
+            width: 8px; height: 8px; background: #69F0AE;
+            border-radius: 50%; box-shadow: 0 0 8px #69F0AE;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-.main { 
-    background: linear-gradient(135deg, #0A0E12 0%, #0D1117 50%, #0A0E12 100%);
-    background-attachment: fixed;
-    color: #E8ECF1;
-    font-family: 'JetBrains Mono', monospace;
-}
+        /* === TABS STYLING === */
+        .stTabs [data-baseweb="tab-list"] {
+            background-color: #16181C;
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid #2D333B;
+            gap: 5px;
+            justify-content: center;
+        }
+        .stTabs [data-baseweb="tab"] {
+            background-color: transparent;
+            color: #888;
+            border-radius: 8px;
+            border: none;
+            padding: 10px 30px;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+            font-size: 1.2rem;
+            flex: 1; 
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #252930;
+            color: #69F0AE !important;
+            border: 1px solid #2D333B;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
 
-h1, h2, h3, h4, h5, h6 { 
-    font-family: 'Syne', sans-serif !important;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-}
+        /* === SIGNAL CARDS (Centrale) === */
+        .signal-card {
+            background: #1B1E23;
+            border: 1px solid #2D333B;
+            border-radius: 16px;
+            padding: 3rem;
+            margin: 1rem auto;
+            max-width: 800px; /* Limita larghezza per eleganza */
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+        
+        .signal-card:hover { transform: translateY(-3px); border-color: #3E4650; }
 
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-.block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
+        .signal-card-buy { border-top: 4px solid #69F0AE; }
+        .signal-card-sell { border-top: 4px solid #FF5252; }
+        .signal-card-wait { border-top: 4px solid #555; opacity: 0.9; }
+        .signal-card-closed { border-top: 4px solid #555; background: #141619; }
 
-/* === BUTTON STYLING === */
-.stButton>button {
-    background: linear-gradient(135deg, #13171D 0%, #1A1F28 100%);
-    color: #E8ECF1;
-    border: 2px solid #2A3340;
-    border-radius: 12px;
-    font-family: 'Space Mono', monospace;
-    font-weight: 700;
-    text-transform: uppercase;
-    transition: all 0.3s;
-}
-.stButton>button:hover {
-    border-color: #00FFF0;
-    color: #00FFF0;
-    box-shadow: 0 0 15px rgba(0, 255, 240, 0.2);
-}
+        .signal-type {
+            font-size: 3rem; font-weight: 800; letter-spacing: 2px;
+            font-family: 'Rajdhani', sans-serif;
+            text-align: center; margin-bottom: 10px;
+        }
+        .signal-symbol {
+            font-size: 1.2rem; color: #69F0AE;
+            font-weight: 600; letter-spacing: 2px; 
+            text-align: center; margin-bottom: 2rem;
+        }
+        .price-display {
+            font-size: 4.5rem; font-weight: 700; color: #FFF;
+            font-family: 'Rajdhani', sans-serif;
+            text-align: center;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            margin: 20px 0;
+        }
+        .price-label { font-size: 0.9rem; color: #888; text-transform: uppercase; letter-spacing: 2px; text-align: center; }
 
-/* === HEADER === */
-.titan-header {
-    background: linear-gradient(135deg, #13171D 0%, #1A1F28 100%);
-    border: 2px solid #2A3340;
-    border-radius: 20px;
-    padding: 2.5rem 2rem;
-    margin-bottom: 2rem;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-    position: relative;
-    overflow: hidden;
-}
+        /* === STATS GRID === */
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 30px; }
+        .stat-box {
+            background: #23272E;
+            border: 1px solid #2D333B;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stat-label { font-size: 0.8rem; color: #888; text-transform: uppercase; margin-bottom: 8px; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; color: #FFF; font-family: 'Rajdhani', sans-serif; }
+        
+        .val-buy { color: #69F0AE; }
+        .val-sell { color: #FF5252; }
+        .val-blue { color: #40C4FF; }
 
-.titan-title {
-    font-size: 3.5rem;
-    font-weight: 800;
-    margin: 0;
-    background: linear-gradient(135deg, #FFFFFF 0%, #00FFF0 50%, #FF006E 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 40px rgba(0, 255, 240, 0.3);
-}
+        /* === TOP METRICS === */
+        .metric-card-top {
+            background: #1B1E23; border: 1px solid #2D333B;
+            border-radius: 12px; padding: 15px; text-align: center;
+        }
+        .metric-label-top { font-size: 0.8rem; color: #888; margin-bottom: 5px; }
+        .metric-val-top { font-size: 1.8rem; font-weight: 700; color: #FFF; font-family: 'Rajdhani', sans-serif; }
 
-.titan-subtitle {
-    font-family: 'Space Mono', monospace;
-    font-size: 0.95rem;
-    color: #8892A0;
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-    margin-top: 0.5rem;
-}
-
-/* === STATUS BADGE === */
-.status-badge {
-    background: rgba(0, 255, 240, 0.1);
-    border: 1px solid rgba(0, 255, 240, 0.3);
-    color: #00FFF0;
-    padding: 0.5rem 1rem;
-    border-radius: 50px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: 'Space Mono', monospace;
-}
-.status-dot {
-    width: 8px; height: 8px; background: #00FFF0;
-    border-radius: 50%; box-shadow: 0 0 10px #00FFF0;
-    animation: pulse 2s infinite;
-}
-@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-/* === TABS === */
-.stTabs [data-baseweb="tab-list"] {
-    background: #13171D;
-    padding: 8px;
-    border-radius: 12px;
-    border: 2px solid #2A3340;
-    justify-content: center; /* Center Tabs */
-}
-.stTabs [data-baseweb="tab"] {
-    background: transparent;
-    color: #5A6678;
-    border: none;
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-}
-.stTabs [aria-selected="true"] {
-    background: rgba(0, 255, 240, 0.1);
-    color: #00FFF0 !important;
-    border: 1px solid rgba(0, 255, 240, 0.3);
-}
-
-/* === SIGNAL CARDS === */
-.signal-card {
-    background: #13171D;
-    border: 2px solid #2A3340;
-    border-radius: 20px;
-    padding: 2rem;
-    margin: 1rem 0;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-    transition: transform 0.3s;
-}
-.signal-card:hover { transform: translateY(-4px); }
-
-.signal-card-buy { border-left: 4px solid #00FFF0; }
-.signal-card-sell { border-left: 4px solid #FF006E; }
-.signal-card-wait { border-left: 4px solid #5A6678; opacity: 0.7; }
-.signal-card-closed { border-left: 4px solid #3A4350; background: #0F1216; opacity: 0.8; }
-
-.signal-type {
-    font-size: 2.5rem; font-weight: 800; font-family: 'Syne', sans-serif;
-}
-.signal-symbol {
-    font-size: 0.9rem; color: #8892A0; font-family: 'Space Mono', monospace; letter-spacing: 0.1em;
-}
-.price-display {
-    font-size: 3.5rem; font-weight: 800; color: #FFF; font-family: 'Syne', sans-serif;
-    text-shadow: 0 0 20px rgba(255,255,255,0.1);
-}
-.price-label { font-size: 0.7rem; color: #5A6678; text-transform: uppercase; font-family: 'Space Mono', monospace; }
-
-/* === STATS GRID === */
-.stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 1.5rem; }
-.stat-box {
-    background: rgba(42, 51, 64, 0.2);
-    border: 1px solid #2A3340;
-    border-radius: 12px;
-    padding: 1rem;
-    text-align: center;
-}
-.stat-label { font-size: 0.65rem; color: #5A6678; text-transform: uppercase; margin-bottom: 5px; font-family: 'Space Mono', monospace; }
-.stat-value { font-size: 1.3rem; font-weight: 800; color: #E8ECF1; font-family: 'Syne', sans-serif; }
-
-.val-buy { color: #00FFF0; }
-.val-sell { color: #FF006E; }
-.val-blue { color: #5B9FFF; }
-
-/* === TOP METRICS === */
-.metric-card-top {
-    background: #13171D; border: 2px solid #2A3340;
-    border-radius: 16px; padding: 1.5rem; text-align: center;
-}
-.metric-label-top { font-size: 0.7rem; color: #5A6678; margin-bottom: 0.5rem; font-family: 'Space Mono', monospace; text-transform: uppercase; }
-.metric-val-top { font-size: 2.2rem; font-weight: 800; color: #E8ECF1; font-family: 'Syne', sans-serif; }
-
-</style>
-""", unsafe_allow_html=True)
+    </style>
+    """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATABASE CONNECTOR
@@ -282,7 +285,7 @@ def render_signal_panel(symbol, signal_data):
         try:
             signal_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             time_diff = (datetime.now(signal_time.tzinfo) - signal_time).total_seconds()
-            if time_diff > 600: is_stale = True
+            if time_diff > 600: is_stale = True # 10 minuti
             
             if time_diff < 60: time_str = "Now"
             elif time_diff < 3600: time_str = f"{int(time_diff/60)}m ago"
@@ -294,17 +297,13 @@ def render_signal_panel(symbol, signal_data):
         last_price = signal_data.get('current_price', 0) if signal_data else 0
         st.markdown(f"""
 <div class="signal-card signal-card-closed">
-<div style="display:flex; justify-content:space-between; align-items:center;">
-<div>
+<div style="text-align:center;">
 <div class="signal-symbol">{symbol}</div>
-<div style="font-size: 2rem; color: #5A6678; font-weight:800; font-family: 'Syne', sans-serif;">MARKET CLOSED</div>
-</div>
-<div style="font-size: 3rem; opacity: 0.3;">💤</div>
-</div>
-<div style="margin-top:1.5rem; border-top:1px solid #2A3340; padding-top:1.5rem;">
+<div style="font-size: 2.5rem; color: #888; font-weight:700; margin: 10px 0;">MARKET CLOSED</div>
+<div style="font-size: 4rem; margin: 20px 0;">💤</div>
 <div class="price-label">LAST KNOWN PRICE</div>
-<div style="font-family:'Syne', sans-serif; font-size:2.5rem; font-weight: 800; color:#3A4350;">${last_price:,.2f}</div>
-<div style="color:#5A6678; font-size:0.75rem; margin-top:0.75rem; font-family: 'Space Mono', monospace;">Last update: {time_str}</div>
+<div class="price-display" style="color: #666; font-size: 3rem;">${last_price:,.2f}</div>
+<div style="color:#555; font-size:0.9rem; margin-top:20px;">Last update: {time_str}</div>
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -319,38 +318,35 @@ def render_signal_panel(symbol, signal_data):
     conf = signal_data.get('confidence_score', 0)
     details = signal_data.get('details', 'Analysis')
 
-    if rec == 'BUY': card_cls, icon, col = "signal-card-buy", "▲", "#00FFF0"
-    elif rec == 'SELL': card_cls, icon, col = "signal-card-sell", "▼", "#FF006E"
-    else: card_cls, icon, col = "signal-card-wait", "●", "#5A6678"
+    if rec == 'BUY': card_cls, icon, col = "signal-card-buy", "▲", "#69F0AE"
+    elif rec == 'SELL': card_cls, icon, col = "signal-card-sell", "▼", "#FF5252"
+    else: card_cls, icon, col = "signal-card-wait", "●", "#888"
 
     st.markdown(f"""
 <div class="signal-card {card_cls}">
-<div style="display:flex; justify-content:space-between; align-items:flex-start;">
-<div>
 <div class="signal-symbol">{symbol}</div>
-<div class="signal-type" style="color:{col}">{rec}</div>
-</div>
-<div style="font-size:3rem; opacity: 0.8; line-height: 1;">{icon}</div>
-</div>
-<div style="margin: 1.5rem 0;">
+<div class="signal-type" style="color:{col}">{rec} {icon}</div>
+
 <div class="price-label">CURRENT PRICE</div>
 <div class="price-display">${price:,.2f}</div>
+
+<div style="background:#23272E; border-radius:8px; padding:15px; margin: 25px 0;">
+<div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+<span style="color:#888; font-size:0.9rem; font-weight:600;">AI CONFIDENCE</span>
+<span style="color:{col}; font-weight:700; font-size:1rem;">{conf}%</span>
 </div>
-<div style="background:rgba(42, 51, 64, 0.3); border-radius:10px; padding:1rem; margin-bottom:1.5rem; border:1px solid #2A3340;">
-<div style="display:flex; justify-content:space-between; margin-bottom:0.75rem;">
-<span style="color:#5A6678; font-size:0.75rem; font-family:'Space Mono'; font-weight:700;">CONFIDENCE</span>
-<span style="color:{col}; font-weight:800; font-family:'Syne';">{conf}%</span>
-</div>
-<div style="background:#1A1F28; height:8px; border-radius:4px; overflow:hidden;">
+<div style="background:#333; height:8px; border-radius:4px;">
 <div style="background:{col}; width:{conf}%; height:100%; border-radius:4px; box-shadow: 0 0 10px {col};"></div>
 </div>
 </div>
+
 <div class="stats-grid">
 <div class="stat-box"><div class="stat-label">ENTRY</div><div class="stat-value val-blue">${entry:,.2f}</div></div>
 <div class="stat-box"><div class="stat-label">STOP LOSS</div><div class="stat-value val-sell">${sl:,.2f}</div></div>
-<div class="stat-box"><div class="stat-label">TARGET</div><div class="stat-value val-buy">${tp:,.2f}</div></div>
+<div class="stat-box"><div class="stat-label">TAKE PROFIT</div><div class="stat-value val-buy">${tp:,.2f}</div></div>
 </div>
-<div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid #2A3340; color:#5A6678; font-size:0.8rem; text-align:center; font-family:'JetBrains Mono';">
+
+<div style="margin-top:25px; padding-top:15px; border-top:1px solid #2D333B; color:#666; font-size:0.9rem; text-align:center;">
 {details}
 </div>
 </div>
@@ -370,14 +366,10 @@ def main():
     # HEADER
     st.markdown("""
 <div class="titan-header">
-<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;">
-<div class="titan-branding">
 <div class="titan-title">TITAN ORACLE</div>
-<div class="titan-subtitle">Neo-Financial Intelligence</div>
-</div>
+<div class="titan-subtitle">Enterprise Trading Intelligence</div>
 <div class="status-badge">
 <div class="status-dot"></div> SYSTEM ONLINE
-</div>
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -393,33 +385,10 @@ def main():
         'conf': stats['confidence'] if stats else 0
     }
     
-    with c1: st.markdown(f"""
-<div class="metric-card-top">
-<div class="metric-label-top">Total Signals</div>
-<div class="metric-val-top val-blue">{vals["total"]}</div>
-</div>
-""", unsafe_allow_html=True)
-    
-    with c2: st.markdown(f"""
-<div class="metric-card-top">
-<div class="metric-label-top">Buy Signals</div>
-<div class="metric-val-top val-buy">{vals["buy"]}</div>
-</div>
-""", unsafe_allow_html=True)
-    
-    with c3: st.markdown(f"""
-<div class="metric-card-top">
-<div class="metric-label-top">Sell Signals</div>
-<div class="metric-val-top val-sell">{vals["sell"]}</div>
-</div>
-""", unsafe_allow_html=True)
-    
-    with c4: st.markdown(f"""
-<div class="metric-card-top">
-<div class="metric-label-top">Avg Confidence</div>
-<div class="metric-val-top" style="color:#E8ECF1;">{vals["conf"]:.0f}%</div>
-</div>
-""", unsafe_allow_html=True)
+    with c1: st.markdown(f'<div class="metric-card-top"><div class="metric-label-top">TOTAL SIGNALS</div><div class="metric-val-top val-blue">{vals["total"]}</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="metric-card-top"><div class="metric-label-top">BUY</div><div class="metric-val-top val-buy">{vals["buy"]}</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="metric-card-top"><div class="metric-label-top">SELL</div><div class="metric-val-top val-sell">{vals["sell"]}</div></div>', unsafe_allow_html=True)
+    with c4: st.markdown(f'<div class="metric-card-top"><div class="metric-label-top">AVG CONFIDENCE</div><div class="metric-val-top" style="color:#E0E0E0;">{vals["conf"]:.0f}%</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -428,12 +397,9 @@ def main():
     
     for idx, symbol in enumerate(AppConfig.ASSETS):
         with tabs[idx]:
-            # LAYOUT CENTRATO (3 Colonne: Spazio - Card - Spazio)
-            c1, c2, c3 = st.columns([1, 2, 1])
-            
-            with c2:
-                signal_data = get_latest_signal(symbol)
-                render_signal_panel(symbol, signal_data)
+            # Centered layout using a single main call
+            signal_data = get_latest_signal(symbol)
+            render_signal_panel(symbol, signal_data)
 
     time.sleep(AppConfig.AUTO_REFRESH_RATE)
     st.rerun()
