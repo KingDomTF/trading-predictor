@@ -4,7 +4,7 @@ TITAN V90 DASHBOARD - PREMIUM FRONTEND INTERFACE
 ═══════════════════════════════════════════════════════════════════════════════
 Professional Real-Time Trading Terminal powered by TITAN V90 Backend
 Visualizes market data, AI signals, and performance metrics via Streamlit
-Theme: Neo-Financial Brutalism (Fixed Indentation)
+Theme: Neo-Financial Brutalism (No Chart Version)
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
@@ -153,6 +153,7 @@ footer {visibility: hidden;}
     padding: 8px;
     border-radius: 12px;
     border: 2px solid #2A3340;
+    justify-content: center; /* Center Tabs */
 }
 .stTabs [data-baseweb="tab"] {
     background: transparent;
@@ -220,15 +221,6 @@ footer {visibility: hidden;}
 .metric-label-top { font-size: 0.7rem; color: #5A6678; margin-bottom: 0.5rem; font-family: 'Space Mono', monospace; text-transform: uppercase; }
 .metric-val-top { font-size: 2.2rem; font-weight: 800; color: #E8ECF1; font-family: 'Syne', sans-serif; }
 
-/* === CHART === */
-.chart-container {
-    background: #13171D; border: 2px solid #2A3340;
-    border-radius: 20px; padding: 1.5rem; margin: 1rem 0;
-}
-.chart-header { display: flex; justify-content: space-between; border-bottom: 1px solid #2A3340; padding-bottom: 1rem; margin-bottom: 1rem; }
-.chart-title { font-size: 1.2rem; font-family: 'Syne', sans-serif; font-weight: 800; }
-.chart-badge { background: rgba(42, 51, 64, 0.5); padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; color: #8892A0; font-family: 'Space Mono', monospace; }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -263,18 +255,6 @@ def get_latest_signal(symbol):
         return response.data[0] if response.data else None
     except: return None
 
-def get_price_history(symbol, hours=4):
-    if not supabase: return pd.DataFrame()
-    try:
-        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
-        response = supabase.table("mt4_feed").select("*").eq("symbol", symbol).gte("created_at", cutoff).order("created_at", desc=False).execute()
-        if response.data:
-            df = pd.DataFrame(response.data)
-            df['created_at'] = pd.to_datetime(df['created_at'])
-            return df
-        return pd.DataFrame()
-    except: return pd.DataFrame()
-
 def get_24h_stats():
     if not supabase: return None
     try:
@@ -289,37 +269,8 @@ def get_24h_stats():
     except: return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# UI COMPONENTS
+# UI COMPONENTS (RENDERERS)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-def create_price_chart(df, signal_data):
-    if df.empty: return None
-    fig = go.Figure()
-    
-    # Price Line
-    fig.add_trace(go.Scatter(
-        x=df['created_at'], y=df['price'], mode='lines', name='Price',
-        line=dict(color='#00FFF0', width=2), 
-        fill='tozeroy', fillcolor='rgba(0, 255, 240, 0.05)'
-    ))
-    
-    if signal_data and signal_data.get('recommendation') in ['BUY', 'SELL']:
-        entry = signal_data.get('entry_price', 0)
-        sl = signal_data.get('stop_loss', 0)
-        tp = signal_data.get('take_profit', 0)
-        
-        if entry > 0: fig.add_hline(y=entry, line_dash="dash", line_color="#5B9FFF", annotation_text="ENTRY")
-        if sl > 0: fig.add_hline(y=sl, line_dash="dot", line_color="#FF006E", annotation_text="SL")
-        if tp > 0: fig.add_hline(y=tp, line_dash="dot", line_color="#00FFF0", annotation_text="TP")
-    
-    fig.update_layout(
-        template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        height=450, margin=dict(l=10, r=10, t=30, b=20),
-        xaxis=dict(showgrid=True, gridcolor='#2A3340', title="", showline=False),
-        yaxis=dict(showgrid=True, gridcolor='#2A3340', title="", showline=False),
-        hovermode='x unified', font=dict(color='#E8ECF1', family='JetBrains Mono')
-    )
-    return fig
 
 def render_signal_panel(symbol, signal_data):
     # --- MARKET CLOSED CHECK (10 Min) ---
@@ -477,29 +428,12 @@ def main():
     
     for idx, symbol in enumerate(AppConfig.ASSETS):
         with tabs[idx]:
-            col_left, col_right = st.columns([1, 1.6])
-            signal_data = get_latest_signal(symbol)
+            # LAYOUT CENTRATO (3 Colonne: Spazio - Card - Spazio)
+            c1, c2, c3 = st.columns([1, 2, 1])
             
-            with col_left:
+            with c2:
+                signal_data = get_latest_signal(symbol)
                 render_signal_panel(symbol, signal_data)
-                
-            with col_right:
-                st.markdown(f"""
-<div class="chart-container">
-<div class="chart-header">
-<div class="chart-title">Price Action</div>
-<div class="chart-badge">{symbol}</div>
-</div>
-""", unsafe_allow_html=True)
-                
-                df = get_price_history(symbol, hours=4)
-                if not df.empty:
-                    chart = create_price_chart(df, signal_data)
-                    st.plotly_chart(chart, use_container_width=True)
-                else:
-                    st.info("📡 Awaiting market data...")
-                
-                st.markdown("</div>", unsafe_allow_html=True)
 
     time.sleep(AppConfig.AUTO_REFRESH_RATE)
     st.rerun()
