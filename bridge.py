@@ -47,8 +47,8 @@ class Config:
     # MT4 data path
     MT4_PATH = os.getenv("MT4_PATH", "").rstrip(os.sep)
     
-    # Trading assets (adjust to your needs)
-    ASSETS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30", "ETHUSD"]
+    # --- LISTA ASSET AGGIORNATA ---
+    ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
     
     # Strategy parameters
     MIN_TICKS_WARMUP = 30          # Minimum data points before trading
