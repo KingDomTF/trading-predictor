@@ -805,8 +805,7 @@ def create_price_chart(df, signal_data):
 
 def render_signal_panel(symbol, signal_data):
     """
-    CORREZIONE PRINCIPALE: Uso corretto di st.markdown() con unsafe_allow_html=True
-    invece di concatenare stringhe HTML in variabili Python
+    ⚠️ CORREZIONE CRITICA: Aggiunto unsafe_allow_html=True
     """
     
     # --- MARKET CLOSED LOGIC (10 Minutes) ---
