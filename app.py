@@ -1,6 +1,7 @@
 import os
 import time
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 from datetime import datetime, timedelta
 
@@ -17,7 +18,7 @@ class AppConfig:
     PAGE_ICON = "⚡"
     LAYOUT = "wide"
     ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
-    AUTO_REFRESH_RATE = 5 
+    AUTO_REFRESH_RATE = 2
 
 st.set_page_config(page_title=AppConfig.PAGE_TITLE, page_icon=AppConfig.PAGE_ICON, layout=AppConfig.LAYOUT, initial_sidebar_state="collapsed")
 
@@ -77,7 +78,14 @@ def get_24h_stats():
 
 def render_signal_panel(symbol, signal_data):
     if not signal_data:
-        st.markdown(f'<div class="signal-card"><div class="signal-symbol">{symbol}</div><div class="price-display" style="font-size:2rem; color:#666;">AWAITING DATA...</div></div>', unsafe_allow_html=True)
+        # HTML FIX: Niente spazi a sinistra
+        st.markdown(f"""
+<div class="signal-card" style="border-top: 4px solid #555;">
+<div class="signal-symbol">{symbol}</div>
+<div class="price-display" style="font-size:2rem; color:#666;">AWAITING DATA...</div>
+<div style="text-align:center; color:#555; margin-top:10px;">Attiva bridge.py sul tuo PC</div>
+</div>
+""", unsafe_allow_html=True)
         return
 
     rec = signal_data.get('recommendation', 'WAIT')
@@ -86,17 +94,27 @@ def render_signal_panel(symbol, signal_data):
     sl = signal_data.get('stop_loss', 0)
     tp = signal_data.get('take_profit', 0)
     conf = signal_data.get('confidence_score', 0)
+    
     col = "#69F0AE" if rec == 'BUY' else "#FF5252" if rec == 'SELL' else "#888"
     cls = "signal-card-buy" if rec == 'BUY' else "signal-card-sell" if rec == 'SELL' else ""
 
+    # HTML FIX: Niente spazi a sinistra
     st.markdown(f"""
 <div class="signal-card {cls}">
 <div class="signal-symbol">{symbol}</div>
-<div style="font-family:'Rajdhani'; font-size:2.5rem; font-weight:800; color:{col}; text-align:center;">{rec}</div>
+<div style="font-family:'Rajdhani'; font-size:3.5rem; font-weight:800; color:{col}; text-align:center; letter-spacing:2px;">{rec}</div>
 <div class="price-display">${price:,.2f}</div>
-<div style="background:#333; height:6px; border-radius:3px; margin: 20px 0;"><div style="background:{col}; width:{conf}%; height:100%; border-radius:3px;"></div></div>
+<div style="background:#23272E; border-radius:8px; padding:10px; margin: 20px 0;">
+<div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+<span style="color:#888; font-size:0.8rem;">CONFIDENCE</span>
+<span style="color:{col}; font-weight:700;">{conf}%</span>
+</div>
+<div style="background:#333; height:6px; border-radius:3px;">
+<div style="background:{col}; width:{conf}%; height:100%; border-radius:3px;"></div>
+</div>
+</div>
 <div class="stats-grid">
-<div class="stat-box"><div class="stat-label">ENTRY</div><div class="stat-value">${entry:,.2f}</div></div>
+<div class="stat-box"><div class="stat-label">ENTRY</div><div class="stat-value" style="color:#40C4FF;">${entry:,.2f}</div></div>
 <div class="stat-box"><div class="stat-label">STOP LOSS</div><div class="stat-value" style="color:#FF5252;">${sl:,.2f}</div></div>
 <div class="stat-box"><div class="stat-label">TARGET</div><div class="stat-value" style="color:#69F0AE;">${tp:,.2f}</div></div>
 </div>
