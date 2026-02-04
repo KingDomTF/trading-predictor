@@ -1,11 +1,11 @@
 """
 ═══════════════════════════════════════════════════════════════════════════════
-TITAN V90 'ORACLE PRIME' - LOGIC FIX (BUY vs SELL MATH)
+TITAN V90 BRIDGE - FINAL VERSION
 ═══════════════════════════════════════════════════════════════════════════════
-Backend engine.
-CORREZIONE CRITICA:
-- Ora calcola SL e TP in modo diverso per BUY e SELL.
-- Risolve il bug dove i SELL mostravano numeri da BUY.
+Correzioni applicate:
+1. Calcolo matematico STOP LOSS/TAKE PROFIT differenziato per BUY e SELL.
+2. Indentazione corretta e pulita.
+3. Invia segnali alla tabella 'trading_signals' e prezzi a 'price_history'.
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
@@ -21,8 +21,10 @@ from datetime import datetime
 from supabase import create_client
 from dotenv import load_dotenv
 
+# Carica le variabili d'ambiente
 load_dotenv()
 
+# Configurazione Sistema
 class Config:
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -31,9 +33,11 @@ class Config:
     MIN_TICKS_WARMUP = 30
     PRICE_HISTORY_INTERVAL = 5
 
+# Setup Logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger("TITAN")
 
+# Motore di Trading
 class TradingEngine:
     def __init__(self):
         self.price_buffer = {symbol: deque(maxlen=200) for symbol in Config.ASSETS}
@@ -51,11 +55,11 @@ class TradingEngine:
         prices = np.array(history)
         rsi = self.calculate_rsi(prices)
         
-        # LOGICA DI TRADING SEMPLIFICATA E ROBUSTA
+        # LOGICA DI TRADING
         signal = None
         reason = ""
         
-        # RSI Strategy
+        # Strategia RSI Semplice ma Efficace
         if rsi < 30:
             signal = "BUY"
             reason = "Oversold Bounce"
@@ -63,7 +67,7 @@ class TradingEngine:
             signal = "SELL"
             reason = "Overbought Reversal"
             
-        # Filtro Anti-Spam (Evita di mandare lo stesso segnale ogni secondo)
+        # Filtro Anti-Spam (120 secondi di pausa tra segnali uguali)
         if signal and (signal != self.last_signal[symbol] or time.time() - self.last_signal_time[symbol] > 120):
             self.last_signal[symbol] = signal
             self.last_signal_time[symbol] = time.time()
@@ -90,21 +94,30 @@ class TradingEngine:
         rs = avg_gain / avg_loss
         return 100 - (100 / (1 + rs))
 
+# Loop Principale
 def main():
     if not Config.SUPABASE_URL: 
         logger.error("❌ SUPABASE_URL mancante nel file .env")
         return
         
-    supabase = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
+    try:
+        supabase = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
+    except Exception as e:
+        logger.error(f"❌ Errore connessione Supabase: {e}")
+        return
+
     engine = TradingEngine()
     last_history_update = {s: 0 for s in Config.ASSETS}
 
-    print("🚀 TITAN BRIDGE AVVIATO - In attesa di dati MT4...")
+    print(f"🚀 TITAN BRIDGE AVVIATO - Monitoraggio di {len(Config.ASSETS)} asset...")
 
     while True:
         for symbol in Config.ASSETS:
             file_path = os.path.join(Config.MT4_PATH, f"{symbol}_data.json")
-            if not os.path.exists(file_path): continue
+            
+            # Se il file non esiste ancora, passa al prossimo
+            if not os.path.exists(file_path): 
+                continue
             
             try:
                 # Legge il file JSON generato da MT4
@@ -117,15 +130,21 @@ def main():
                 ask = float(data.get('ask', 0))
                 price = (bid + ask) / 2
                 
+                if price == 0: continue
+
                 # 1. Invia Prezzo per il Grafico (ogni 5 secondi)
                 if time.time() - last_history_update[symbol] > Config.PRICE_HISTORY_INTERVAL:
-                    supabase.table("price_history").insert({"symbol": symbol, "price": price}).execute()
-                    last_history_update[symbol] = time.time()
+                    try:
+                        supabase.table("price_history").insert({"symbol": symbol, "price": price}).execute()
+                        last_history_update[symbol] = time.time()
+                    except Exception as e:
+                        # Ignora errori di rete temporanei per il grafico
+                        pass
 
                 # 2. Analizza per Segnali
                 res = engine.analyze(symbol, price)
                 
-               if res['status'] == 'SIGNAL':
+                if res['status'] == 'SIGNAL':
                     # === CALCOLO MATEMATICO CORRETTO (BUY vs SELL) ===
                     if res['signal'] == 'BUY':
                         # BUY: SL sotto (-0.5%), TP sopra (+1.0%)
@@ -148,7 +167,7 @@ def main():
                     }
                     
                     supabase.table("trading_signals").insert(payload).execute()
-                    logger.info(f"🎯 {symbol} {res['signal']} inviato! Entry: {price} SL: {round(sl,2)} TP: {round(tp,2)}") Entry: {price} SL: {round(sl,2)} TP: {round(tp,2)}")
+                    logger.info(f"🎯 {symbol} {res['signal']} inviato! Entry: {price:.2f} SL: {sl:.2f} TP: {tp:.2f}")
                     
             except Exception as e:
                 # logger.error(f"Errore loop: {e}")
