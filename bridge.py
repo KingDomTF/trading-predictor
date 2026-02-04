@@ -125,15 +125,16 @@ def main():
                 # 2. Analizza per Segnali
                 res = engine.analyze(symbol, price)
                 
-                if res['status'] == 'SIGNAL':
-                    # === CALCOLO MATEMATICO CORRETTO ===
-                    # Qui stava l'errore: ora differenziamo BUY da SELL
+               if res['status'] == 'SIGNAL':
+                    # === CALCOLO MATEMATICO CORRETTO (BUY vs SELL) ===
                     if res['signal'] == 'BUY':
-                        sl = price * 0.995  # Stop Loss SOTTO il prezzo (-0.5%)
-                        tp = price * 1.010  # Take Profit SOPRA il prezzo (+1.0%)
-                    else: # SELL
-                        sl = price * 1.005  # Stop Loss SOPRA il prezzo (+0.5%)
-                        tp = price * 0.990  # Take Profit SOTTO il prezzo (-1.0%)
+                        # BUY: SL sotto (-0.5%), TP sopra (+1.0%)
+                        sl = price * 0.995  
+                        tp = price * 1.010  
+                    else: 
+                        # SELL: SL sopra (+0.5%), TP sotto (-1.0%)
+                        sl = price * 1.005  
+                        tp = price * 0.990  
 
                     payload = {
                         "symbol": symbol, 
@@ -147,7 +148,7 @@ def main():
                     }
                     
                     supabase.table("trading_signals").insert(payload).execute()
-                    logger.info(f"🎯 {symbol} {res['signal']} inviato! Entry: {price} SL: {round(sl,2)} TP: {round(tp,2)}")
+                    logger.info(f"🎯 {symbol} {res['signal']} inviato! Entry: {price} SL: {round(sl,2)} TP: {round(tp,2)}") Entry: {price} SL: {round(sl,2)} TP: {round(tp,2)}")
                     
             except Exception as e:
                 # logger.error(f"Errore loop: {e}")
