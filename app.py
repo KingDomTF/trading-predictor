@@ -28,8 +28,6 @@ def load_custom_css():
 * { box-sizing: border-box; }
 .main { background-color: #0E1012; background-image: linear-gradient(145deg, #16181C 0%, #0B0D0F 100%); color: #E4E8F0; font-family: 'Inter', sans-serif; }
 #MainMenu, footer {visibility: hidden;}
-.stButton>button { background: #1B1E23; color: #E0E0E0; border: 1px solid #2D333B; border-radius: 8px; font-family: 'Rajdhani', sans-serif; font-weight: 600; transition: all 0.3s ease; width: 100%; }
-.stButton>button:hover { border-color: #69F0AE; color: #69F0AE; background: #252930; }
 .titan-header { background: #1B1E23; border: 1px solid #2D333B; border-radius: 16px; padding: 2rem; margin-bottom: 2rem; text-align: center; border-top: 3px solid #69F0AE; }
 .titan-title { font-family: 'Rajdhani'; font-size: 3rem; font-weight: 700; color: #FFFFFF; margin: 0; }
 .titan-subtitle { font-family: 'Rajdhani'; font-size: 1rem; color: #69F0AE; text-transform: uppercase; letter-spacing: 2px; }
@@ -60,7 +58,6 @@ supabase = init_supabase()
 def get_latest_signal(symbol):
     if not supabase: return None
     try:
-        # Corretto nome tabella a 'trading_signals'
         res = supabase.table("trading_signals").select("*").eq("symbol", symbol).order("created_at", desc=True).limit(1).execute()
         return res.data[0] if res.data else None
     except: return None
@@ -109,7 +106,7 @@ def render_signal_panel(symbol, signal_data):
 def main():
     load_custom_css()
     if not supabase:
-        st.error("Configura i Secrets su Streamlit Cloud (SUPABASE_URL e SUPABASE_KEY).")
+        st.error("Configura i Secrets su Streamlit Cloud.")
         st.stop()
 
     st.markdown('<div class="titan-header"><div class="titan-title">TITAN ORACLE</div><div class="titan-subtitle">Enterprise Trading Intelligence</div></div>', unsafe_allow_html=True)
