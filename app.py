@@ -1,180 +1,305 @@
-"""
-🚀 TITAN Oracle - Script di Verifica Setup
-Usa questo script per verificare che tutto sia configurato correttamente
-"""
-
 import os
-import sys
-from pathlib import Path
+import time
+import pandas as pd
+import streamlit as st
+from datetime import datetime, timedelta
 
-def check_env_file():
-    """Verifica presenza e validità file .env"""
-    print("\n📝 Controllo file .env...")
-    
-    if not os.path.exists(".env"):
-        print("❌ File .env NON trovato!")
-        print("   → Crea il file .env copiando .env.template")
-        print("   → Compila con i tuoi dati Supabase e MT4_PATH")
-        return False
-    
-    # Leggi variabili
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    mt4_path = os.getenv("MT4_PATH")
-    
-    issues = []
-    
-    if not url or "tuoprogetto" in url:
-        issues.append("   ❌ SUPABASE_URL non configurato correttamente")
-    else:
-        print(f"   ✅ SUPABASE_URL: {url[:30]}...")
-    
-    if not key or "tua_supabase" in key:
-        issues.append("   ❌ SUPABASE_KEY non configurato correttamente")
-    else:
-        print(f"   ✅ SUPABASE_KEY: {key[:20]}...")
-    
-    if not mt4_path or "TuoNome" in mt4_path:
-        issues.append("   ❌ MT4_PATH non configurato correttamente")
-    elif not os.path.isdir(mt4_path):
-        issues.append(f"   ❌ MT4_PATH non esiste: {mt4_path}")
-    else:
-        print(f"   ✅ MT4_PATH: {mt4_path}")
-    
-    if issues:
-        print("\n".join(issues))
-        return False
-    
-    return True
+try:
+    from supabase import create_client
+except ImportError:
+    st.error("⚠️ Librerie mancanti. Verifica il file requirements.txt")
+    st.stop()
 
-def check_dependencies():
-    """Verifica dipendenze Python"""
-    print("\n📦 Controllo dipendenze Python...")
-    
-    required = ["streamlit", "supabase", "dotenv", "pandas", "numpy"]
-    missing = []
-    
-    for pkg in required:
-        try:
-            if pkg == "dotenv":
-                __import__("dotenv")
-            else:
-                __import__(pkg)
-            print(f"   ✅ {pkg}")
-        except ImportError:
-            missing.append(pkg)
-            print(f"   ❌ {pkg} - MANCANTE")
-    
-    if missing:
-        print(f"\n💡 Installa dipendenze mancanti con:")
-        print(f"   pip install {' '.join(missing)}")
-        return False
-    
-    return True
+class AppConfig:
+    PAGE_TITLE = "TITAN Oracle Prime"
+    PAGE_ICON = "⚡"
+    LAYOUT = "wide"
+    ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
+    AUTO_REFRESH_RATE = 5 
 
-def check_mt4_files():
-    """Verifica presenza file JSON da MT4"""
-    print("\n📂 Controllo file MT4...")
-    
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    mt4_path = os.getenv("MT4_PATH", "")
-    
-    if not mt4_path or not os.path.isdir(mt4_path):
-        print("   ⚠️  MT4_PATH non valido - salta controllo")
-        return True
-    
-    symbols = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
-    found = 0
-    
-    for symbol in symbols:
-        filepath = os.path.join(mt4_path, f"{symbol}_data.json")
-        if os.path.exists(filepath):
-            print(f"   ✅ {symbol}_data.json")
-            found += 1
-        else:
-            print(f"   ❌ {symbol}_data.json - NON TROVATO")
-    
-    if found == 0:
-        print("\n   ⚠️  Nessun file JSON trovato!")
-        print("   → Assicurati che l'EA TITAN_DataExporter.mq4 sia attivo in MT4")
-        print("   → Verifica che sia compilato e in esecuzione su un grafico")
-        return False
-    elif found < len(symbols):
-        print(f"\n   ⚠️  Trovati {found}/{len(symbols)} file")
-        print("   → Alcuni simboli potrebbero non essere disponibili nel tuo broker")
-        print("   → Puoi rimuoverli da Config.ASSETS in bridge_improved.py")
-    
-    return True
+st.set_page_config(
+    page_title=AppConfig.PAGE_TITLE, 
+    page_icon=AppConfig.PAGE_ICON, 
+    layout=AppConfig.LAYOUT, 
+    initial_sidebar_state="collapsed"
+)
 
-def check_supabase_connection():
-    """Verifica connessione a Supabase"""
-    print("\n🔌 Test connessione Supabase...")
-    
+def load_custom_css():
+    st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Inter:wght@400;600&display=swap');
+* { box-sizing: border-box; }
+.main { 
+    background-color: #0E1012; 
+    background-image: linear-gradient(145deg, #16181C 0%, #0B0D0F 100%); 
+    color: #E4E8F0; 
+    font-family: 'Inter', sans-serif; 
+}
+#MainMenu, footer {visibility: hidden;}
+.titan-header { 
+    background: #1B1E23; 
+    border: 1px solid #2D333B; 
+    border-radius: 16px; 
+    padding: 2rem; 
+    margin-bottom: 2rem; 
+    text-align: center; 
+    border-top: 3px solid #69F0AE; 
+}
+.titan-title { 
+    font-family: 'Rajdhani'; 
+    font-size: 3rem; 
+    font-weight: 700; 
+    color: #FFFFFF; 
+    margin: 0; 
+}
+.titan-subtitle { 
+    font-family: 'Rajdhani'; 
+    font-size: 1rem; 
+    color: #69F0AE; 
+    text-transform: uppercase; 
+    letter-spacing: 2px; 
+}
+.stTabs [data-baseweb="tab-list"] { 
+    background-color: #16181C; 
+    padding: 8px; 
+    border-radius: 12px; 
+    border: 1px solid #2D333B; 
+    justify-content: center; 
+}
+.stTabs [data-baseweb="tab"] { 
+    color: #888; 
+    font-family: 'Rajdhani'; 
+    font-weight: 600; 
+    font-size: 1.1rem; 
+}
+.stTabs [aria-selected="true"] { 
+    background-color: #252930; 
+    color: #69F0AE !important; 
+    border-radius: 8px; 
+}
+.signal-card { 
+    background: #1B1E23; 
+    border: 1px solid #2D333B; 
+    border-radius: 16px; 
+    padding: 2.5rem; 
+    margin: 1rem auto; 
+    max-width: 700px; 
+    box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
+}
+.signal-card-buy { border-top: 4px solid #69F0AE; }
+.signal-card-sell { border-top: 4px solid #FF5252; }
+.signal-symbol { 
+    font-size: 1.2rem; 
+    color: #69F0AE; 
+    font-weight: 600; 
+    text-align: center; 
+    font-family: 'Rajdhani'; 
+}
+.price-display { 
+    font-size: 4rem; 
+    font-weight: 700; 
+    color: #FFF; 
+    text-align: center; 
+    font-family: 'Rajdhani'; 
+    margin: 15px 0; 
+}
+.stats-grid { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr 1fr; 
+    gap: 15px; 
+    margin-top: 25px; 
+}
+.stat-box { 
+    background: #23272E; 
+    border: 1px solid #2D333B; 
+    border-radius: 10px; 
+    padding: 15px; 
+    text-align: center; 
+}
+.stat-label { 
+    font-size: 0.7rem; 
+    color: #888; 
+    text-transform: uppercase; 
+}
+.stat-value { 
+    font-size: 1.2rem; 
+    font-weight: 700; 
+    color: #FFF; 
+    font-family: 'Rajdhani'; 
+}
+</style>
+""", unsafe_allow_html=True)
+
+@st.cache_resource
+def init_supabase():
+    """Initialize Supabase client using secrets or env vars"""
+    # Try Streamlit secrets first (for Cloud deployment)
     try:
-        from dotenv import load_dotenv
-        from supabase import create_client
-        
-        load_dotenv()
+        url = st.secrets.get("SUPABASE_URL")
+        key = st.secrets.get("SUPABASE_KEY")
+    except:
+        # Fallback to environment variables (for local)
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
-        
-        if not url or not key:
-            print("   ⚠️  Credenziali mancanti - salta test")
-            return True
-        
-        client = create_client(url, key)
-        
-        # Test semplice
-        result = client.table("trading_signals").select("*").limit(1).execute()
-        print("   ✅ Connessione riuscita!")
-        return True
-        
+    
+    if not url or not key:
+        st.error("⚠️ SUPABASE_URL e SUPABASE_KEY non configurati!")
+        st.info("Configura i secrets su Streamlit Cloud o il file .env locale")
+        return None
+    
+    try:
+        return create_client(url, key)
     except Exception as e:
-        print(f"   ❌ Errore connessione: {str(e)[:100]}")
-        print("   → Verifica che le credenziali Supabase siano corrette")
-        print("   → Assicurati che le tabelle esistano nel database")
-        return False
+        st.error(f"❌ Errore connessione Supabase: {e}")
+        return None
+
+supabase = init_supabase()
+
+def get_latest_signal(symbol):
+    """Get most recent signal for a symbol"""
+    if not supabase: 
+        return None
+    try:
+        res = supabase.table("trading_signals")\
+            .select("*")\
+            .eq("symbol", symbol)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        st.error(f"Errore caricamento {symbol}: {e}")
+        return None
+
+def get_24h_stats():
+    """Get 24h trading statistics"""
+    if not supabase: 
+        return None
+    try:
+        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+        res = supabase.table("trading_signals")\
+            .select("*")\
+            .gte("created_at", cutoff)\
+            .in_("recommendation", ["BUY", "SELL"])\
+            .execute()
+        
+        if not res.data: 
+            return None
+        
+        total = len(res.data)
+        buy = sum(1 for s in res.data if s['recommendation'] == 'BUY')
+        sell = sum(1 for s in res.data if s['recommendation'] == 'SELL')
+        avg_conf = sum(s.get('confidence_score', 0) for s in res.data) / total if total > 0 else 0
+        
+        return {
+            'total': total, 
+            'buy': buy, 
+            'sell': sell, 
+            'confidence': avg_conf
+        }
+    except Exception as e:
+        st.error(f"Errore statistiche: {e}")
+        return None
+
+def render_signal_panel(symbol, signal_data):
+    """Render signal card for a symbol"""
+    # Check if data is stale (> 10 min old)
+    is_stale = False
+    time_str = "N/A"
+    
+    if signal_data:
+        try:
+            created_at = signal_data.get('created_at')
+            if created_at:
+                t = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                diff = (datetime.now(t.tzinfo) - t).total_seconds()
+                is_stale = diff > 600  # 10 minutes
+                time_str = f"{int(diff/60)}m ago" if diff < 3600 else f"{int(diff/3600)}h ago"
+        except:
+            is_stale = True
+
+    # Market closed view
+    if not signal_data or is_stale:
+        p = signal_data.get('current_price', 0) if signal_data else 0
+        st.markdown(f"""
+<div class="signal-card" style="border-top: 4px solid #444;">
+<div class="signal-symbol">{symbol}</div>
+<div style="font-family:'Rajdhani'; font-size:2.5rem; font-weight:800; color:#555; text-align:center;">MARKET CLOSED</div>
+<div class="price-display" style="color:#444;">${p:,.2f}</div>
+<div style="text-align:center; color:#444; font-size:0.8rem;">Last Seen: {time_str}</div>
+</div>
+""", unsafe_allow_html=True)
+        return
+
+    # Active signal view
+    rec = signal_data.get('recommendation', 'WAIT')
+    price = signal_data.get('current_price', 0)
+    sl = signal_data.get('stop_loss', 0)
+    tp = signal_data.get('take_profit', 0)
+    conf = signal_data.get('confidence_score', 0)
+    
+    col = "#69F0AE" if rec == 'BUY' else "#FF5252"
+    cls = "signal-card-buy" if rec == 'BUY' else "signal-card-sell"
+
+    st.markdown(f"""
+<div class="signal-card {cls}">
+<div class="signal-symbol">{symbol}</div>
+<div style="font-family:'Rajdhani'; font-size:3rem; font-weight:800; color:{col}; text-align:center;">{rec}</div>
+<div class="price-display">${price:,.2f}</div>
+<div class="stats-grid">
+<div class="stat-box">
+    <div class="stat-label">STOP LOSS</div>
+    <div class="stat-value" style="color:#FF5252;">${sl:,.2f}</div>
+</div>
+<div class="stat-box">
+    <div class="stat-label">CONFIDENCE</div>
+    <div class="stat-value">{conf}%</div>
+</div>
+<div class="stat-box">
+    <div class="stat-label">TARGET</div>
+    <div class="stat-value" style="color:#69F0AE;">${tp:,.2f}</div>
+</div>
+</div>
+<div style="text-align:center; color:#888; font-size:0.75rem; margin-top:15px;">{time_str}</div>
+</div>
+""", unsafe_allow_html=True)
 
 def main():
-    print("="*60)
-    print("🎯 TITAN Oracle - Verifica Setup")
-    print("="*60)
+    load_custom_css()
     
-    checks = [
-        ("Dipendenze", check_dependencies),
-        ("File .env", check_env_file),
-        ("File MT4", check_mt4_files),
-        ("Connessione Supabase", check_supabase_connection),
-    ]
+    # Header
+    st.markdown(
+        '<div class="titan-header">'
+        '<div class="titan-title">TITAN ORACLE</div>'
+        '<div class="titan-subtitle">Enterprise Trading Intelligence</div>'
+        '</div>', 
+        unsafe_allow_html=True
+    )
     
-    results = []
+    # 24h Stats
+    stats = get_24h_stats()
+    c1, c2, c3, c4 = st.columns(4)
     
-    for name, func in checks:
-        try:
-            result = func()
-            results.append(result)
-        except Exception as e:
-            print(f"\n❌ Errore durante controllo '{name}': {e}")
-            results.append(False)
+    with c1: 
+        st.metric("Signals (24h)", stats['total'] if stats else 0)
+    with c2: 
+        st.metric("Buy", stats['buy'] if stats else 0)
+    with c3: 
+        st.metric("Sell", stats['sell'] if stats else 0)
+    with c4: 
+        st.metric("Avg Conf", f"{stats['confidence'] if stats else 0:.0f}%")
     
-    print("\n" + "="*60)
+    # Asset tabs
+    tabs = st.tabs(AppConfig.ASSETS)
     
-    if all(results):
-        print("✅ TUTTO OK! Sistema pronto per l'avvio")
-        print("\n🚀 Prossimi passi:")
-        print("   1. python bridge_improved.py  (avvia rilevamento)")
-        print("   2. streamlit run app.py       (apri dashboard)")
-    else:
-        print("⚠️  Alcuni controlli non sono passati")
-        print("   → Consulta la GUIDA_COMPLETA.md per istruzioni dettagliate")
-        print("   → Risolvi i problemi evidenziati sopra e riesegui questo script")
+    for idx, symbol in enumerate(AppConfig.ASSETS):
+        with tabs[idx]:
+            signal = get_latest_signal(symbol)
+            render_signal_panel(symbol, signal)
     
-    print("="*60)
+    # Auto-refresh
+    time.sleep(AppConfig.AUTO_REFRESH_RATE)
+    st.rerun()
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()
