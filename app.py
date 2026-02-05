@@ -1,64 +1,180 @@
-import os, time, streamlit as st
-from datetime import datetime
-from supabase import create_client
+"""
+🚀 TITAN Oracle - Script di Verifica Setup
+Usa questo script per verificare che tutto sia configurato correttamente
+"""
 
-st.set_page_config(page_title="TITAN Oracle Prime", layout="wide")
+import os
+import sys
+from pathlib import Path
 
-# CSS Professionale allineato a sinistra per evitare errori DIV
-st.markdown("""
-<style>
-.main { background-color: #0E1012; color: #E4E8F0; font-family: 'Inter', sans-serif; }
-.signal-card { background: #1B1E23; border-radius: 16px; padding: 2rem; border-top: 4px solid #69F0AE; max-width: 600px; margin: 0 auto; }
-.price-display { font-size: 4rem; font-weight: 800; text-align: center; font-family: 'Rajdhani'; }
-.invalid-signal { opacity: 0.5; filter: grayscale(1); }
-</style>
-""", unsafe_allow_html=True)
+def check_env_file():
+    """Verifica presenza e validità file .env"""
+    print("\n📝 Controllo file .env...")
+    
+    if not os.path.exists(".env"):
+        print("❌ File .env NON trovato!")
+        print("   → Crea il file .env copiando .env.template")
+        print("   → Compila con i tuoi dati Supabase e MT4_PATH")
+        return False
+    
+    # Leggi variabili
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    mt4_path = os.getenv("MT4_PATH")
+    
+    issues = []
+    
+    if not url or "tuoprogetto" in url:
+        issues.append("   ❌ SUPABASE_URL non configurato correttamente")
+    else:
+        print(f"   ✅ SUPABASE_URL: {url[:30]}...")
+    
+    if not key or "tua_supabase" in key:
+        issues.append("   ❌ SUPABASE_KEY non configurato correttamente")
+    else:
+        print(f"   ✅ SUPABASE_KEY: {key[:20]}...")
+    
+    if not mt4_path or "TuoNome" in mt4_path:
+        issues.append("   ❌ MT4_PATH non configurato correttamente")
+    elif not os.path.isdir(mt4_path):
+        issues.append(f"   ❌ MT4_PATH non esiste: {mt4_path}")
+    else:
+        print(f"   ✅ MT4_PATH: {mt4_path}")
+    
+    if issues:
+        print("\n".join(issues))
+        return False
+    
+    return True
 
-db = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+def check_dependencies():
+    """Verifica dipendenze Python"""
+    print("\n📦 Controllo dipendenze Python...")
+    
+    required = ["streamlit", "supabase", "dotenv", "pandas", "numpy"]
+    missing = []
+    
+    for pkg in required:
+        try:
+            if pkg == "dotenv":
+                __import__("dotenv")
+            else:
+                __import__(pkg)
+            print(f"   ✅ {pkg}")
+        except ImportError:
+            missing.append(pkg)
+            print(f"   ❌ {pkg} - MANCANTE")
+    
+    if missing:
+        print(f"\n💡 Installa dipendenze mancanti con:")
+        print(f"   pip install {' '.join(missing)}")
+        return False
+    
+    return True
 
-def get_data(symbol):
+def check_mt4_files():
+    """Verifica presenza file JSON da MT4"""
+    print("\n📂 Controllo file MT4...")
+    
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    mt4_path = os.getenv("MT4_PATH", "")
+    
+    if not mt4_path or not os.path.isdir(mt4_path):
+        print("   ⚠️  MT4_PATH non valido - salta controllo")
+        return True
+    
+    symbols = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
+    found = 0
+    
+    for symbol in symbols:
+        filepath = os.path.join(mt4_path, f"{symbol}_data.json")
+        if os.path.exists(filepath):
+            print(f"   ✅ {symbol}_data.json")
+            found += 1
+        else:
+            print(f"   ❌ {symbol}_data.json - NON TROVATO")
+    
+    if found == 0:
+        print("\n   ⚠️  Nessun file JSON trovato!")
+        print("   → Assicurati che l'EA TITAN_DataExporter.mq4 sia attivo in MT4")
+        print("   → Verifica che sia compilato e in esecuzione su un grafico")
+        return False
+    elif found < len(symbols):
+        print(f"\n   ⚠️  Trovati {found}/{len(symbols)} file")
+        print("   → Alcuni simboli potrebbero non essere disponibili nel tuo broker")
+        print("   → Puoi rimuoverli da Config.ASSETS in bridge_improved.py")
+    
+    return True
+
+def check_supabase_connection():
+    """Verifica connessione a Supabase"""
+    print("\n🔌 Test connessione Supabase...")
+    
     try:
-        s = db.table("trading_signals").select("*").eq("symbol", symbol).order("created_at", desc=True).limit(1).execute()
-        p = db.table("price_history").select("*").eq("symbol", symbol).limit(1).execute()
-        return (s.data[0] if s.data else None), (p.data[0] if p.data else None)
-    except: return None, None
+        from dotenv import load_dotenv
+        from supabase import create_client
+        
+        load_dotenv()
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        
+        if not url or not key:
+            print("   ⚠️  Credenziali mancanti - salta test")
+            return True
+        
+        client = create_client(url, key)
+        
+        # Test semplice
+        result = client.table("trading_signals").select("*").limit(1).execute()
+        print("   ✅ Connessione riuscita!")
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Errore connessione: {str(e)[:100]}")
+        print("   → Verifica che le credenziali Supabase siano corrette")
+        print("   → Assicurati che le tabelle esistano nel database")
+        return False
 
 def main():
-    st.title("⚡ TITAN INSTITUTIONAL FEED")
-    assets = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
-    tabs = st.tabs(assets)
+    print("="*60)
+    print("🎯 TITAN Oracle - Verifica Setup")
+    print("="*60)
     
-    for idx, sym in enumerate(assets):
-        with tabs[idx]:
-            sig, price_data = get_data(sym)
-            curr_p = price_data['price'] if price_data else 0
-            
-            # --- MOTORE DI VALIDAZIONE ---
-            is_valid = False
-            if sig:
-                # Controlla se il prezzo attuale ha già invalidato il trade
-                if sig['recommendation'] == "BUY":
-                    is_valid = curr_p > sig['stop_loss'] and curr_p < sig['take_profit']
-                else:
-                    is_valid = curr_p < sig['stop_loss'] and curr_p > sig['take_profit']
-            
-            if is_valid:
-                col = "#69F0AE" if sig['recommendation'] == "BUY" else "#FF5252"
-                st.markdown(f"""
-<div class="signal-card" style="border-top-color: {col}">
-<h2 style="text-align:center; color:{col}">{sig['recommendation']}</h2>
-<div class="price-display">${curr_p:,.2f}</div>
-<div style="display:flex; justify-content:space-around; margin-top:20px;">
-<div style="text-align:center">ENTRY<br><b>${sig['entry_price']:,.2f}</b></div>
-<div style="text-align:center; color:#FF5252">STOP LOSS<br><b>${sig['stop_loss']:,.2f}</b></div>
-<div style="text-align:center; color:#69F0AE">TARGET<br><b>${sig['take_profit']:,.2f}</b></div>
-</div>
-</div>
-""", unsafe_allow_html=True)
-            else:
-                st.info(f"🔍 SCANNING {sym}... No high-probability institutional setups currently active.")
+    checks = [
+        ("Dipendenze", check_dependencies),
+        ("File .env", check_env_file),
+        ("File MT4", check_mt4_files),
+        ("Connessione Supabase", check_supabase_connection),
+    ]
+    
+    results = []
+    
+    for name, func in checks:
+        try:
+            result = func()
+            results.append(result)
+        except Exception as e:
+            print(f"\n❌ Errore durante controllo '{name}': {e}")
+            results.append(False)
+    
+    print("\n" + "="*60)
+    
+    if all(results):
+        print("✅ TUTTO OK! Sistema pronto per l'avvio")
+        print("\n🚀 Prossimi passi:")
+        print("   1. python bridge_improved.py  (avvia rilevamento)")
+        print("   2. streamlit run app.py       (apri dashboard)")
+    else:
+        print("⚠️  Alcuni controlli non sono passati")
+        print("   → Consulta la GUIDA_COMPLETA.md per istruzioni dettagliate")
+        print("   → Risolvi i problemi evidenziati sopra e riesegui questo script")
+    
+    print("="*60)
 
-    time.sleep(1)
-    st.rerun()
-
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
