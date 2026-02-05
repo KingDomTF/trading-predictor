@@ -9,7 +9,7 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    st.error("❌ Librerie mancanti. Verifica il file requirements.txt")
+    st.error("❌ Librerie mancanti.")
     st.stop()
 
 class AppConfig:
@@ -17,7 +17,8 @@ class AppConfig:
     PAGE_ICON = "⚡"
     LAYOUT = "wide"
     ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
-    AUTO_REFRESH_RATE = 5 
+    # AGGIORNAMENTO RAPIDO: 1 secondo
+    AUTO_REFRESH_RATE = 1 
 
 st.set_page_config(page_title=AppConfig.PAGE_TITLE, page_icon=AppConfig.PAGE_ICON, layout=AppConfig.LAYOUT, initial_sidebar_state="collapsed")
 
@@ -55,62 +56,66 @@ def init_supabase():
 
 supabase = init_supabase()
 
-def get_latest_signal(symbol):
-    if not supabase: return None
+def get_latest_data(symbol):
+    if not supabase: return None, None
     try:
-        res = supabase.table("trading_signals").select("*").eq("symbol", symbol).order("created_at", desc=True).limit(1).execute()
-        return res.data[0] if res.data else None
-    except: return None
+        # Prendi l'ultimo segnale
+        sig_res = supabase.table("trading_signals").select("*").eq("symbol", symbol).order("created_at", desc=True).limit(1).execute()
+        # Prendi il prezzo più recente in assoluto (Tabella price_history)
+        price_res = supabase.table("price_history").select("price, created_at").eq("symbol", symbol).order("created_at", desc=True).limit(1).execute()
+        
+        signal = sig_res.data[0] if sig_res.data else None
+        live_price = price_res.data[0] if price_res.data else None
+        return signal, live_price
+    except: return None, None
 
-def get_24h_stats():
-    if not supabase: return None
-    try:
-        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
-        res = supabase.table("trading_signals").select("*").gte("created_at", cutoff).in_("recommendation", ["BUY", "SELL"]).execute()
-        if not res.data: return None
-        total = len(res.data)
-        buy = sum(1 for s in res.data if s['recommendation'] == 'BUY')
-        sell = sum(1 for s in res.data if s['recommendation'] == 'SELL')
-        avg_conf = sum(s.get('confidence_score', 0) for s in res.data) / total if total > 0 else 0
-        return {'total': total, 'buy': buy, 'sell': sell, 'confidence': avg_conf}
-    except: return None
-
-def render_signal_panel(symbol, signal_data):
-    # Logica Mercato Chiuso (stale data > 10 min)
-    is_stale = False
-    time_str = "N/A"
-    if signal_data:
-        t = datetime.fromisoformat(signal_data.get('created_at').replace('Z', '+00:00'))
+def render_signal_panel(symbol, signal_data, live_price_data):
+    # Controllo freschezza dato (se il prezzo è più vecchio di 10 min, mercato chiuso)
+    is_stale = True
+    current_p = 0
+    if live_price_data:
+        t = datetime.fromisoformat(live_price_data['created_at'].replace('Z', '+00:00'))
         diff = (datetime.now(t.tzinfo) - t).total_seconds()
         is_stale = diff > 600
-        time_str = f"{int(diff/60)}m ago" if diff < 3600 else f"{int(diff/3600)}h ago"
+        current_p = live_price_data['price']
 
-    if not signal_data or is_stale:
-        p = signal_data.get('current_price', 0) if signal_data else 0
+    if is_stale:
         st.markdown(f"""
 <div class="signal-card" style="border-top: 4px solid #444;">
 <div class="signal-symbol">{symbol}</div>
 <div style="font-family:'Rajdhani'; font-size:2.5rem; font-weight:800; color:#555; text-align:center;">MARKET CLOSED</div>
-<div class="price-display" style="color:#444;">${p:,.2f}</div>
-<div style="text-align:center; color:#444; font-size:0.8rem;">Last Seen: {time_str}</div>
+<div class="price-display" style="color:#444;">${current_p:,.2f}</div>
+<div style="text-align:center; color:#444; font-size:0.8rem;">Check Bridge Status</div>
 </div>
 """, unsafe_allow_html=True)
         return
 
-    rec = signal_data.get('recommendation', 'WAIT')
-    price = signal_data.get('current_price', 0)
-    sl, tp = signal_data.get('stop_loss', 0), signal_data.get('take_profit', 0)
-    col = "#69F0AE" if rec == 'BUY' else "#FF5252"
-    cls = "signal-card-buy" if rec == 'BUY' else "signal-card-sell"
+    # Visualizza segnale attivo con prezzo in tempo reale
+    rec = signal_data.get('recommendation', 'SCANNING') if signal_data else 'SCANNING'
+    sl = signal_data.get('stop_loss', 0) if signal_data else 0
+    tp = signal_data.get('take_profit', 0) if signal_data else 0
+    conf = signal_data.get('confidence_score', 0) if signal_data else 0
+    
+    col = "#69F0AE" if rec == 'BUY' else "#FF5252" if rec == 'SELL' else "#40C4FF"
+    cls = "signal-card-buy" if rec == 'BUY' else "signal-card-sell" if rec == 'SELL' else ""
 
     st.markdown(f"""
 <div class="signal-card {cls}">
 <div class="signal-symbol">{symbol}</div>
 <div style="font-family:'Rajdhani'; font-size:3rem; font-weight:800; color:{col}; text-align:center;">{rec}</div>
-<div class="price-display">${price:,.2f}</div>
+<div class="price-display">${current_p:,.2f}</div>
+<div style="background:#23272E; border-radius:8px; padding:10px; margin: 20px 0;">
+<div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+<span style="color:#888; font-size:0.8rem;">AI CONFIDENCE</span>
+<span style="color:{col}; font-weight:700;">{conf}%</span>
+</div>
+<div style="background:#333; height:6px; border-radius:3px;">
+<div style="background:{col}; width:{conf}%; height:100%; border-radius:3px;"></div>
+</div>
+</div>
 <div class="stats-grid">
+<div class="stat-box"><div class="stat-label">ENTRY</div><div class="stat-value" style="color:#40C4FF;">${signal_data.get('entry_price',0) if signal_data else 0:,.2f}</div></div>
 <div class="stat-box"><div class="stat-label">STOP LOSS</div><div class="stat-value" style="color:#FF5252;">${sl:,.2f}</div></div>
-<div class="stat-box"><div class="stat-label">CONFIDENCE</div><div class="stat-value">{signal_data.get('confidence_score')}%</div></div>
 <div class="stat-box"><div class="stat-label">TARGET</div><div class="stat-value" style="color:#69F0AE;">${tp:,.2f}</div></div>
 </div>
 </div>
@@ -118,17 +123,14 @@ def render_signal_panel(symbol, signal_data):
 
 def main():
     load_custom_css()
-    st.markdown('<div class="titan-header"><div class="titan-title">TITAN ORACLE</div><div class="titan-subtitle">Enterprise Trading Intelligence</div></div>', unsafe_allow_html=True)
-    stats = get_24h_stats()
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.metric("Signals (24h)", stats['total'] if stats else 0)
-    with c2: st.metric("Buy", stats['buy'] if stats else 0)
-    with c3: st.metric("Sell", stats['sell'] if stats else 0)
-    with c4: st.metric("Avg Conf", f"{stats['confidence'] if stats else 0:.0f}%")
+    st.markdown('<div class="titan-header"><div class="titan-title">TITAN ORACLE</div><div class="titan-subtitle">Ultra-Fast Institutional Feed</div></div>', unsafe_allow_html=True)
+    
     tabs = st.tabs(AppConfig.ASSETS)
     for idx, symbol in enumerate(AppConfig.ASSETS):
         with tabs[idx]:
-            render_signal_panel(symbol, get_latest_signal(symbol))
+            signal, live_price = get_latest_data(symbol)
+            render_signal_panel(symbol, signal, live_price)
+
     time.sleep(AppConfig.AUTO_REFRESH_RATE)
     st.rerun()
 
