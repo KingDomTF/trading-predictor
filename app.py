@@ -15,7 +15,7 @@ class AppConfig:
     PAGE_ICON = "⚡"
     LAYOUT = "wide"
     ASSETS = ["XAUUSD", "BTCUSD", "US500", "ETHUSD", "XAGUSD"]
-    AUTO_REFRESH_RATE = 5 
+    AUTO_REFRESH_RATE = 1  # Aggiornamento ogni 1 secondo 
 
 st.set_page_config(
     page_title=AppConfig.PAGE_TITLE, 
@@ -205,6 +205,7 @@ def render_signal_panel(symbol, signal_data):
     """Render signal card for a symbol"""
     # Check if data is stale (> 10 min old)
     is_stale = False
+    is_live = False
     time_str = "N/A"
     
     if signal_data:
@@ -214,7 +215,14 @@ def render_signal_panel(symbol, signal_data):
                 t = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                 diff = (datetime.now(t.tzinfo) - t).total_seconds()
                 is_stale = diff > 600  # 10 minutes
-                time_str = f"{int(diff/60)}m ago" if diff < 3600 else f"{int(diff/3600)}h ago"
+                is_live = diff < 10  # Meno di 10 secondi = LIVE
+                
+                if diff < 60:
+                    time_str = f"{int(diff)}s ago"
+                elif diff < 3600:
+                    time_str = f"{int(diff/60)}m ago"
+                else:
+                    time_str = f"{int(diff/3600)}h ago"
         except:
             is_stale = True
 
@@ -225,7 +233,7 @@ def render_signal_panel(symbol, signal_data):
 <div class="signal-card" style="border-top: 4px solid #444;">
 <div class="signal-symbol">{symbol}</div>
 <div style="font-family:'Rajdhani'; font-size:2.5rem; font-weight:800; color:#555; text-align:center;">MARKET CLOSED</div>
-<div class="price-display" style="color:#444;">${p:,.2f}</div>
+<div class="price-display" style="color:#444;">${p:.2f}</div>
 <div style="text-align:center; color:#444; font-size:0.8rem;">Last Seen: {time_str}</div>
 </div>
 """, unsafe_allow_html=True)
@@ -240,16 +248,21 @@ def render_signal_panel(symbol, signal_data):
     
     col = "#69F0AE" if rec == 'BUY' else "#FF5252"
     cls = "signal-card-buy" if rec == 'BUY' else "signal-card-sell"
+    
+    # Indicatore LIVE
+    live_indicator = ""
+    if is_live:
+        live_indicator = '<span style="color:#69F0AE; font-size:0.9rem; margin-left:10px;">● LIVE</span>'
 
     st.markdown(f"""
 <div class="signal-card {cls}">
-<div class="signal-symbol">{symbol}</div>
+<div class="signal-symbol">{symbol}{live_indicator}</div>
 <div style="font-family:'Rajdhani'; font-size:3rem; font-weight:800; color:{col}; text-align:center;">{rec}</div>
-<div class="price-display">${price:,.2f}</div>
+<div class="price-display">${price:.2f}</div>
 <div class="stats-grid">
 <div class="stat-box">
     <div class="stat-label">STOP LOSS</div>
-    <div class="stat-value" style="color:#FF5252;">${sl:,.2f}</div>
+    <div class="stat-value" style="color:#FF5252;">${sl:.2f}</div>
 </div>
 <div class="stat-box">
     <div class="stat-label">CONFIDENCE</div>
@@ -257,7 +270,7 @@ def render_signal_panel(symbol, signal_data):
 </div>
 <div class="stat-box">
     <div class="stat-label">TARGET</div>
-    <div class="stat-value" style="color:#69F0AE;">${tp:,.2f}</div>
+    <div class="stat-value" style="color:#69F0AE;">${tp:.2f}</div>
 </div>
 </div>
 <div style="text-align:center; color:#888; font-size:0.75rem; margin-top:15px;">{time_str}</div>
