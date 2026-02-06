@@ -24,7 +24,7 @@ class InstitutionalDetector:
     """
     Rileva accumulo/distribuzione istituzionale tramite:
     1. Order Flow Imbalance (OFI)
-    2. Volume Profile Analysis
+    2. Volume Absorption Analysis
     3. Wyckoff Patterns
     """
     
@@ -323,17 +323,8 @@ def main():
                 consecutive_errors[symbol] = 0  # Reset errori
                 mid_price = (bid + ask) / 2
                 
-                # Salva prezzi storici ogni 5 secondi
-                try:
-                    supabase.table("price_history").insert({
-                        "symbol": symbol,
-                        "price": mid_price,
-                        "bid": bid,
-                        "ask": ask,
-                        "volume": volume
-                    }).execute()
-                except Exception as e:
-                    logger.debug(f"Errore salvataggio price_history: {e}")
+                # PRICE_HISTORY DISABILITATO - non necessario per segnali
+                # Se vuoi riattivarlo, crea prima la tabella su Supabase
                 
                 # Analisi istituzionale
                 result = detector.analyze(symbol, bid, ask, volume)
