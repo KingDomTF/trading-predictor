@@ -19,6 +19,7 @@ class Config:
     TICK_BUFFER_SIZE = 200
     MIN_TICKS = 100
     SIGNAL_COOLDOWN = 300  # 5 minuti tra segnali
+    PRICE_UPDATE_INTERVAL = 2  # Aggiorna prezzi ogni 2 secondi
 
 class InstitutionalDetector:
     """
@@ -34,6 +35,7 @@ class InstitutionalDetector:
         self.ask_buffer = {s: deque(maxlen=Config.TICK_BUFFER_SIZE) for s in Config.ASSETS}
         self.volume_buffer = {s: deque(maxlen=Config.TICK_BUFFER_SIZE) for s in Config.ASSETS}
         self.last_signal_time = {s: 0 for s in Config.ASSETS}
+        self.last_price_update = {s: 0 for s in Config.ASSETS}  # Nuovo: traccia ultimi update prezzi
         
         # Stati di accumulo/distribuzione
         self.phase_tracker = {s: {'phase': 'NEUTRAL', 'strength': 0, 'duration': 0} for s in Config.ASSETS}
@@ -268,6 +270,14 @@ class InstitutionalDetector:
             }
         
         return None
+    
+    def should_update_price(self, symbol):
+        """Controlla se è ora di aggiornare il prezzo (ogni N secondi)"""
+        now = time.time()
+        if now - self.last_price_update[symbol] >= Config.PRICE_UPDATE_INTERVAL:
+            self.last_price_update[symbol] = now
+            return True
+        return False
 
 def main():
     """Main loop con gestione errori migliorata"""
@@ -293,6 +303,7 @@ def main():
     logger.info("🚀 TITAN INSTITUTIONAL WHALE RADAR ONLINE...")
     logger.info(f"📂 Monitoring: {Config.MT4_PATH}")
     logger.info(f"💹 Assets: {', '.join(Config.ASSETS)}")
+    logger.info(f"⏱️  Aggiornamento prezzi ogni {Config.PRICE_UPDATE_INTERVAL}s")
     logger.info("="*60)
     
     consecutive_errors = {s: 0 for s in Config.ASSETS}
@@ -323,8 +334,40 @@ def main():
                 consecutive_errors[symbol] = 0  # Reset errori
                 mid_price = (bid + ask) / 2
                 
-                # PRICE_HISTORY DISABILITATO - non necessario per segnali
-                # Se vuoi riattivarlo, crea prima la tabella su Supabase
+                # NUOVO: Aggiorna prezzo ogni N secondi (anche senza segnale)
+                if detector.should_update_price(symbol):
+                    try:
+                        # Cerca segnale esistente per questo symbol
+                        existing = supabase.table("trading_signals")\
+                            .select("*")\
+                            .eq("symbol", symbol)\
+                            .order("created_at", desc=True)\
+                            .limit(1)\
+                            .execute()
+                        
+                        if existing.data:
+                            # Aggiorna il prezzo del segnale esistente
+                            signal_id = existing.data[0]['id']
+                            supabase.table("trading_signals")\
+                                .update({"current_price": mid_price})\
+                                .eq("id", signal_id)\
+                                .execute()
+                            logger.debug(f"💹 {symbol}: Prezzo aggiornato → ${mid_price:.2f}")
+                        else:
+                            # Crea un segnale WAIT placeholder se non esiste
+                            supabase.table("trading_signals").insert({
+                                "symbol": symbol,
+                                "recommendation": "WAIT",
+                                "current_price": mid_price,
+                                "entry_price": mid_price,
+                                "stop_loss": mid_price * 0.99,
+                                "take_profit": mid_price * 1.01,
+                                "confidence_score": 50,
+                                "details": "Monitoring market..."
+                            }).execute()
+                            logger.info(f"📊 {symbol}: Primo prezzo registrato → ${mid_price:.2f}")
+                    except Exception as e:
+                        logger.debug(f"Errore aggiornamento prezzo {symbol}: {e}")
                 
                 # Analisi istituzionale
                 result = detector.analyze(symbol, bid, ask, volume)
